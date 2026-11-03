@@ -1,0 +1,175 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  ArrowLeftRight,
+  Bot,
+  Building2,
+  FileText,
+  LayoutDashboard,
+  Menu,
+  Sparkles,
+  Wallet,
+  X,
+} from 'lucide-react';
+import { useAuth } from '@/lib/auth';
+import { cn } from '@/lib/utils';
+import { ConnectButton } from './connect-button';
+import { Spinner } from './ui';
+
+const NAV = [
+  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/invoices', label: 'Invoices', icon: FileText },
+  { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
+  { href: '/dashboard/payments', label: 'Payments', icon: ArrowLeftRight },
+  { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
+  { href: '/dashboard/chat', label: 'Assistant', icon: Bot },
+];
+
+export function Logo({ light = false }: { light?: boolean }) {
+  return (
+    <Link href="/" className="flex items-center gap-2.5">
+      <span
+        className={cn(
+          'grid h-8 w-8 place-items-center rounded-[10px] text-[13px] font-bold tracking-tight',
+          light ? 'bg-white text-ink' : 'bg-ink text-white',
+        )}
+      >
+        K
+      </span>
+      <span className={cn('text-[15px] font-semibold tracking-tight', light ? 'text-white' : 'text-ink')}>
+        KEIZ
+      </span>
+    </Link>
+  );
+}
+
+export function Shell({ children }: { children: ReactNode }) {
+  const { session, loading } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !session?.user) router.replace('/login');
+  }, [loading, session, router]);
+
+  if (loading || !session?.user) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-white">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Spinner /> Redirecting to sign in
+        </div>
+      </div>
+    );
+  }
+
+  const nav = (
+    <nav className="flex flex-col gap-1">
+      {NAV.map((item) => {
+        const active =
+          item.href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={() => setOpen(false)}
+            className={cn(
+              'group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition',
+              active
+                ? 'bg-white/10 text-white'
+                : 'text-white/60 hover:bg-white/5 hover:text-white',
+            )}
+          >
+            <item.icon className="h-4 w-4" />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
+  return (
+    <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
+      <aside className="sticky top-0 hidden h-screen flex-col justify-between bg-ink px-4 py-5 lg:flex">
+        <div>
+          <div className="px-2">
+            <Logo light />
+          </div>
+          <div className="mt-8">{nav}</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+          <div className="flex items-center gap-2 text-[11px] text-white/50">
+            <Sparkles className="h-3.5 w-3.5" />
+            Workspace
+          </div>
+          <p className="mt-1 truncate text-[13px] font-medium text-white">{session.org?.name}</p>
+          <p className="mt-0.5 font-num text-[11px] text-white/40">
+            {session.user.accountId}
+          </p>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-col">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-line bg-paper/85 px-4 backdrop-blur-md sm:px-6">
+          <div className="flex items-center gap-3">
+            <button
+              className="rounded-lg p-1.5 text-muted hover:bg-ink/5 lg:hidden"
+              onClick={() => setOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <span className="text-[13px] font-medium text-muted">
+              {NAV.find((item) =>
+                item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href),
+              )?.label ?? 'Workspace'}
+            </span>
+          </div>
+          <ConnectButton compact />
+        </header>
+
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+      </div>
+
+      {open ? (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="absolute inset-0 bg-ink/50" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-0 h-full w-72 bg-ink px-4 py-5">
+            <div className="flex items-center justify-between px-2">
+              <Logo light />
+              <button onClick={() => setOpen(false)} className="p-1.5 text-white/60">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-8">{nav}</div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
+      </div>
+      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+    </div>
+  );
+}

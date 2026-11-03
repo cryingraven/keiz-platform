@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# This project pins the exact framework versions it was built against.
+# pnpm's release-age gate blocks same-day releases, so it is disabled here.
+minimumReleaseAge: 0
+
+allowBuilds:
+  browser-tabs-lock: true
+  esbuild: true
+  mongodb-memory-server: true
+  secp256k1: true

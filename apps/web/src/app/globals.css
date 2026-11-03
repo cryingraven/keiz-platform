@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b0d12;
+  --color-ink-soft: #1a1d26;
+  --color-paper: #f6f6f2;
+  --color-surface: #ffffff;
+  --color-line: #e5e5df;
+  --color-line-strong: #d3d3ca;
+  --color-muted: #6b6f76;
+  --color-brand: #4f46e5;
+  --color-brand-deep: #3730a3;
+  --color-brand-soft: #eef0ff;
+  --color-mint: #0f9d76;
+  --color-mint-soft: #e6f7f1;
+  --color-amber: #b45309;
+  --color-amber-soft: #fdf3e6;
+  --color-rose: #be123c;
+  --color-rose-soft: #fdeef2;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  --radius-card: 18px;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+  ::selection {
+    background: var(--color-brand);
+    color: white;
+  }
+  * {
+    border-color: var(--color-line);
+  }
+}
+
+@layer utilities {
+  .font-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+  }
+  .grid-lines {
+    background-image:
+      linear-gradient(to right, rgba(11, 13, 18, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(11, 13, 18, 0.045) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  .hero-fade {
+    mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "keiz",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @keiz/shared build && turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "seed": "pnpm --filter @keiz/api seed"
+  },
+  "devDependencies": {
+    "turbo": "2.11.10",
+    "typescript": "^5.9.3"
+  }
+}
