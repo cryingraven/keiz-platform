@@ -2,9 +2,9 @@
 
 A B2B spend workspace: vendor invoices, multi-step approval, cross-chain settlement through **NEAR Intents**, an AI finance assistant on **NEAR AI**, and a policy-bound **agent wallet**. Login uses **NEP-413** signed messages.
 
-The product surface is modelled on [Kyrim](https://kyrim.co.id) (invoice automation, vendor portal, spend dashboard) rebuilt as a NEAR-native reference app.
-
 ![KEIZ](https://img.shields.io/badge/NEAR-Intents-4f46e5) ![NEP-413](https://img.shields.io/badge/auth-NEP--413-0f9d76)
+
+**Docs:** [Architecture & diagrams](docs/architecture.md) · [Docs index](docs/README.md) · [Agent instructions](AGENTS.md)
 
 ## Stack
 
@@ -40,7 +40,7 @@ Then create demo data (after signing in, or from the CLI):
 pnpm --filter @keiz/api seed demo.near
 ```
 
-Open <http://localhost:3000>, sign in with a NEAR wallet, and press **Load demo data** if the workspace is empty.
+Open <http://localhost:3000>, sign in with a passkey or a NEAR wallet, and press **Load demo data** if the workspace is empty.
 
 ## What is implemented
 
@@ -132,7 +132,6 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 ## Passkey login (NEAR Auth)
 
 `/login` mirrors near.com's centered sign-in layout: a recommended **Sign in with passkey** card, plus a **NEAR Wallets** connector when `NEXT_PUBLIC_WALLET_LOGIN=true` (the default). Set it to `false` for passkey-only; the near-connect manifest is then never loaded.
- Set `NEXT_PUBLIC_WALLET_LOGIN=true` to restore the wallet option.
 
 Passkeys use [NEAR Auth](https://docs.auth.near.org): Auth0 issues a JWT, the `fast-auth` contract verifies it, and an MPC network signs the NEP-413 message.
 
@@ -169,6 +168,9 @@ See `.env.example`. The important ones:
 | `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | `testnet` + `fast-auth.testnet` (defaults) |
 | `NEAR_AUTH_RELAYER_ACCOUNT_ID` / `_PRIVATE_KEY` | Funded account that submits the `sign` call |
 | `AGENT_WALLET_MASTER_KEY` | 32-byte hex/base64 key for AES-256-GCM |
+| `OUTLAYER_ENABLED` | Enable OutLayer agent custody (new wallets become custody wallets) |
+| `OUTLAYER_NETWORK` | `testnet` or `mainnet`; cross-chain Intents are mainnet-only |
+| `OUTLAYER_BASE_URL` | Explicit API host; the SDK defaults are stale |
 
 Generate a master key with `openssl rand -hex 32`.
 
@@ -176,12 +178,13 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test
-pnpm --filter @keiz/api smoke         # 29 end-to-end checks, in-memory Mongo
-pnpm --filter @keiz/api smoke:mastra  # Mastra stream/tools/memory against a mock model
+pnpm test                              # 56 unit tests
+pnpm --filter @keiz/api smoke          # 30 end-to-end checks, in-memory Mongo
+pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
+pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 ```
 
-The first suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
+The main suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. The custody suite drives registration, delegated policy, withdraw, polling and settlement against a mock OutLayer API. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
 
 ## NEAR agent skills
 

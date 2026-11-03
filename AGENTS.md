@@ -9,11 +9,12 @@ pnpm install
 pnpm dev                              # web :3000 + api :3001 (turbo)
 pnpm build                            # shared -> api -> web
 pnpm typecheck
-pnpm test                             # unit: money, NEP-413, agent policy
+pnpm test                             # unit: money, NEP-413, policy, SSE, custody
 
 pnpm --filter @keiz/api test -- src/agent/policy.spec.ts   # one spec
-pnpm --filter @keiz/api smoke         # full e2e, in-memory Mongo, no network
-pnpm --filter @keiz/api smoke:mastra  # Mastra stream + tools + memory, mock model
+pnpm --filter @keiz/api smoke          # full e2e, in-memory Mongo, no network
+pnpm --filter @keiz/api smoke:outlayer # OutLayer custody against a mock API
+pnpm --filter @keiz/api smoke:mastra   # Mastra stream + tools + memory, mock model
 
 docker compose up -d                  # mongo :27017
 pnpm --filter @keiz/api db:memory     # fallback when Docker is down (ephemeral)
@@ -23,9 +24,10 @@ pnpm --filter @keiz/api seed demo.near
 ## Layout
 
 - `apps/web` — Next 16 App Router, Tailwind 4. Dashboard is client-rendered; data comes from `/api/*`.
-- `apps/api` — Nest 12 + Mongoose 9. Feature folders: `auth`, `invoices`, `payments`, `agent`, `chat`, `indexer`.
+- `apps/api` — Nest 12 + Mongoose 9. Feature folders: `auth`, `invoices`, `payments`, `agent`, `outlayer`, `chat`, `indexer`, `audit`.
 - `apps/api/src/chat` — Mastra agent, tools, memory and the SSE controller. Mastra owns conversations; there is no local thread schema.
 - `packages/shared` — the only place DTOs, Zod schemas, status enums and money helpers live.
+- `docs/architecture.md` — system context, request lifecycle, auth/payment/custody/chat sequences, state machines, data model, trust boundaries. Update the diagrams in the same change as the flow.
 - `.agents/skills/` — NEAR skills (near-intents, near-ai-cloud, near-dapp, near-kit). Read the relevant one before changing that integration.
 - Every query is scoped by `orgId` from the JWT. Never read `orgId` from a body, query param, or model/tool output.
 
@@ -84,8 +86,8 @@ There is no impersonation endpoint in the app. This script is dev-only.
 
 ## Testing
 
-- `apps/api/test/smoke.ts` boots the real app against `mongodb-memory-server` and runs 29 checks: auth scoping + refresh reuse, totals, approval, tenant isolation, quote→deposit→settle, event log, agent policy + atomic daily cap, RBAC, duplicate quotes, address/amount validation, audit log, local chat streaming, demo seed. Run it before touching payment code.
+- `apps/api/test/smoke.ts` boots the real app against `mongodb-memory-server` and runs 30 checks: auth scoping + refresh reuse, totals, approval, tenant isolation, quote→deposit→settle, event log, agent policy + atomic daily cap, RBAC, duplicate quotes, address/amount validation, audit log, local chat streaming, demo seed. Run it before touching payment code.
 - `apps/api/test/outlayer-smoke.ts` runs the custody flow against a mock OutLayer API: register, describe, token resolution, dry-run, withdraw, polling, invoice settlement.
 - `apps/api/test/mastra-smoke.ts` runs the real Mastra agent against a mock OpenAI-compatible server (`test/mock-openai.ts`), proving stream mapping, request-scoped tools, memory persistence and thread isolation without a NEAR AI key.
-- Unit tests are colocated `*.spec.ts`.
+- Unit tests are colocated `*.spec.ts` (44 API + 12 shared at the time of writing).
 - Mock payment: `POST /api/payments/:id/simulate?status=SUCCEEDED`, then `POST /api/payments/:id/refresh` (or wait for the 4s poller).
