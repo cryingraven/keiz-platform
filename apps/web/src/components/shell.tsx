@@ -5,9 +5,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeftRight,
+  BookOpen,
   Bot,
   Building2,
   FileText,
+  HandCoins,
   LayoutDashboard,
   Menu,
   Sparkles,
@@ -16,35 +18,21 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
+import { Logo } from './logo';
+import { NearCredit } from './landing/logos';
 import { ConnectButton } from './connect-button';
 import { Spinner } from './ui';
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/invoices', label: 'Invoices', icon: FileText },
+  { href: '/dashboard/invoices', label: 'Bills (AP)', icon: FileText },
+  { href: '/dashboard/receivables', label: 'Receivables (AR)', icon: HandCoins },
   { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
   { href: '/dashboard/payments', label: 'Payments', icon: ArrowLeftRight },
+  { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
   { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
   { href: '/dashboard/chat', label: 'Assistant', icon: Bot },
 ];
-
-export function Logo({ light = false }: { light?: boolean }) {
-  return (
-    <Link href="/" className="flex items-center gap-2.5">
-      <span
-        className={cn(
-          'grid h-8 w-8 place-items-center rounded-[10px] text-[13px] font-bold tracking-tight',
-          light ? 'bg-white text-ink' : 'bg-ink text-white',
-        )}
-      >
-        K
-      </span>
-      <span className={cn('text-[15px] font-semibold tracking-tight', light ? 'text-white' : 'text-ink')}>
-        KEIZ
-      </span>
-    </Link>
-  );
-}
 
 export function Shell({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
@@ -111,6 +99,9 @@ export function Shell({ children }: { children: ReactNode }) {
           <p className="mt-0.5 font-num text-[11px] text-white/40">
             {session.user.accountId}
           </p>
+          <div className="mt-3 border-t border-white/10 pt-2">
+            <NearCredit dark />
+          </div>
         </div>
       </aside>
 
@@ -139,7 +130,7 @@ export function Shell({ children }: { children: ReactNode }) {
       {open ? (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-ink/50" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-72 bg-ink px-4 py-5">
+          <div className="absolute left-0 top-0 flex h-full w-72 flex-col bg-ink px-4 py-5">
             <div className="flex items-center justify-between px-2">
               <Logo light />
               <button onClick={() => setOpen(false)} className="p-1.5 text-white/60">
@@ -147,6 +138,9 @@ export function Shell({ children }: { children: ReactNode }) {
               </button>
             </div>
             <div className="mt-8">{nav}</div>
+            <div className="mt-auto border-t border-white/10 px-2 pt-4">
+              <NearCredit dark />
+            </div>
           </div>
         </div>
       ) : null}

@@ -3,6 +3,7 @@ import { Mastra } from '@mastra/core/mastra';
 import { Memory } from '@mastra/memory';
 import { MongoDBStore } from '@mastra/mongodb';
 import { ConfigService } from '@nestjs/config';
+import { AccountingService } from '../accounting/accounting.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -51,6 +52,7 @@ export interface MastraDeps {
   vendors: VendorsService;
   payments: PaymentsService;
   agent: AgentService;
+  accounting: AccountingService;
 }
 
 export function createKeizMastra(deps: MastraDeps): KeizMastra {
@@ -85,6 +87,7 @@ export function createKeizMastra(deps: MastraDeps): KeizMastra {
     vendors: deps.vendors,
     payments: deps.payments,
     agent: deps.agent,
+    accounting: deps.accounting,
   });
 
   const agent = new Agent({

@@ -7,9 +7,21 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains' });
 
 export const metadata: Metadata = {
-  title: 'KEIZ — invoice payments on NEAR',
+  title: 'KEIZ — bills, invoices and books in one place',
   description:
-    'Approve invoices, settle cross-chain with NEAR Intents, and let a policy-bound AI agent handle the busywork.',
+    'Approve vendor bills, send customer invoices, pay across chains and keep a double-entry ledger in balance. TEE-backed custody and private AI inference.',
+  openGraph: {
+    title: 'KEIZ — bills, invoices and books in one place',
+    description:
+      'One workspace for vendor bills, customer invoices, approvals, payments and the books behind them. TEE-backed custody and private AI.',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'KEIZ — bills, invoices and books in one place',
+    description:
+      'One workspace for vendor bills, customer invoices, approvals, payments and the books behind them. TEE-backed custody and private AI.',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

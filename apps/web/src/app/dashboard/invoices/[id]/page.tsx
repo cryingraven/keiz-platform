@@ -128,7 +128,7 @@ export default function InvoiceDetailPage() {
         href="/dashboard/invoices"
         className="mb-5 inline-flex items-center gap-1.5 text-[12px] text-muted transition hover:text-ink"
       >
-        <ArrowLeft className="h-3.5 w-3.5" /> Invoices
+        <ArrowLeft className="h-3.5 w-3.5" /> Bills
       </Link>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">

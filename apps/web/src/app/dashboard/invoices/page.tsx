@@ -54,11 +54,11 @@ export default function InvoicesPage() {
   return (
     <div>
       <PageHeader
-        title="Invoices"
+        title="Bills (AP)"
         description="Vendor bills from draft to settlement."
         actions={
           <Button onClick={() => setFormOpen(true)}>
-            <Plus className="h-3.5 w-3.5" /> New invoice
+            <Plus className="h-3.5 w-3.5" /> New bill
           </Button>
         }
       />
@@ -108,11 +108,11 @@ export default function InvoicesPage() {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<FileText className="h-5 w-5" />}
-            title={query || filter !== 'ALL' ? 'No matches' : 'No invoices yet'}
+            title={query || filter !== 'ALL' ? 'No matches' : 'No bills yet'}
             body={
               query || filter !== 'ALL'
                 ? 'Try a different filter or clear the search.'
-                : 'Create your first invoice to start the approval flow.'
+                : 'Create your first vendor bill to start the approval flow.'
             }
             action={
               query || filter !== 'ALL' ? (
@@ -126,7 +126,7 @@ export default function InvoicesPage() {
                   Clear filters
                 </Button>
               ) : (
-                <Button onClick={() => setFormOpen(true)}>New invoice</Button>
+                <Button onClick={() => setFormOpen(true)}>New bill</Button>
               )
             }
           />

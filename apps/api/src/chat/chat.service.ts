@@ -301,6 +301,41 @@ export class ChatService {
       };
     }
 
+    if (
+      lower.includes('book') ||
+      lower.includes('cash') ||
+      lower.includes('receivable') ||
+      lower.includes('payable') ||
+      lower.includes('ledger') ||
+      lower.includes('balance')
+    ) {
+      const books = (await call('booksSummary', {}, () =>
+        tools.booksSummary.execute!({}, context),
+      )) as {
+        currency: string;
+        cash: string;
+        receivable: string;
+        payable: string;
+        revenue: string;
+        expenses: string;
+        netIncome: string;
+        balanced: boolean;
+      };
+      return {
+        events,
+        text: [
+          `Books (${books.currency})`,
+          `Cash: ${books.cash}`,
+          `Receivables: ${books.receivable}`,
+          `Payables: ${books.payable}`,
+          `Revenue: ${books.revenue}`,
+          `Expenses: ${books.expenses}`,
+          `Net income: ${books.netIncome}`,
+          `Trial balance: ${books.balanced ? 'balanced' : 'out of balance'}`,
+        ].join('\n'),
+      };
+    }
+
     if (lower.includes('spend') || lower.includes('summary') || lower.includes('burn')) {
       const summary = (await call('spendSummary', {}, () =>
         tools.spendSummary.execute!({}, context),
@@ -347,13 +382,13 @@ export class ChatService {
     return {
       events,
       text: [
-        'I can help with invoices, vendors, spend and agent payment proposals.',
+        'I can help with invoices, vendors, spend, books and agent payment proposals.',
         '',
         invoices.length
           ? `Latest invoices:\n${invoices.map((row) => `${row.number} (${row.status})`).join('\n')}`
           : 'No invoices yet - create one or load demo data.',
         '',
-        'Try: "show pending invoices", "spend summary", or "pay INV-1042".',
+        'Try: "show pending invoices", "spend summary", "books summary", or "pay INV-1042".',
       ].join('\n'),
     };
   }

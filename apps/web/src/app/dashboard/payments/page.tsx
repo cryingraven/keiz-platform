@@ -6,6 +6,7 @@ import { ArrowLeftRight, Boxes, ChevronRight } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { formatDate, shortAddress, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import { NearIntentsLogo } from '@/components/landing/logos';
 import { Badge, Card, EmptyState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 
 interface Payment {
@@ -56,6 +57,12 @@ export default function PaymentsPage() {
       <PageHeader
         title="Payments"
         description="Every quote, deposit and settlement, straight from the ledger."
+        actions={
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="text-[10px] uppercase tracking-wider text-muted">Settled by</span>
+            <NearIntentsLogo />
+          </div>
+        }
       />
 
       <div className="grid gap-3 sm:grid-cols-3">

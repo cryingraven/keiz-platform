@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { AccountingService } from '../accounting/accounting.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { Invoice, InvoiceDocument } from '../invoices/invoice.schema';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
+import { ReceivablesService } from '../receivables/receivables.service';
 import { Vendor, VendorDocument } from '../vendors/vendor.schema';
 
 function daysFromNow(days: number): string {
@@ -19,6 +21,8 @@ export class DemoService {
     @InjectModel(Payment.name) private readonly payments: Model<PaymentDocument>,
     private readonly invoicesService: InvoicesService,
     private readonly agent: AgentService,
+    private readonly receivables: ReceivablesService,
+    private readonly accounting: AccountingService,
   ) {}
 
   async seed(orgId: string, userId: string, accountId: string) {
@@ -151,12 +155,93 @@ export class DemoService {
       }
     }
 
+    // --- AR subledger: customers, customer invoices, receipts ---
+    const customers = await Promise.all([
+      this.receivables.createCustomer(orgId, {
+        name: 'Helios Labs',
+        email: 'finance@helioslabs.io',
+      }),
+      this.receivables.createCustomer(orgId, {
+        name: 'Meridian Retail',
+        email: 'ap@meridianretail.sg',
+      }),
+      this.receivables.createCustomer(orgId, {
+        name: 'Orbit Media',
+        email: 'billing@orbitmedia.id',
+      }),
+    ]);
+
+    const arSpecs = [
+      {
+        customer: 0,
+        number: 'AR-2001',
+        amount: '6800',
+        desc: 'Platform subscription - Q2',
+        due: 10,
+        status: 'ISSUED',
+      },
+      {
+        customer: 1,
+        number: 'AR-2002',
+        amount: '12000',
+        desc: 'Implementation retainer',
+        due: 20,
+        status: 'PARTIAL',
+        paid: '5000',
+      },
+      {
+        customer: 2,
+        number: 'AR-2003',
+        amount: '3400',
+        desc: 'Campaign retainer',
+        due: -5,
+        status: 'PAID',
+      },
+      {
+        customer: 0,
+        number: 'AR-2004',
+        amount: '9200',
+        desc: 'Data migration milestone',
+        due: -12,
+        status: 'ISSUED',
+      },
+    ] as const;
+
+    for (const spec of arSpecs) {
+      const receivable = await this.receivables.create(orgId, userId, {
+        customerId: customers[spec.customer].id,
+        number: spec.number,
+        issueDate: daysFromNow(-20),
+        dueDate: daysFromNow(spec.due),
+        currency: 'USD',
+        taxBps: 0,
+        notes: `Demo seed: ${spec.desc}`,
+        lineItems: [{ description: spec.desc, quantity: '1', unitPrice: spec.amount }],
+      });
+      await this.receivables.issue(orgId, String(receivable._id));
+
+      if (spec.status === 'PARTIAL' || spec.status === 'PAID') {
+        const receiptAmount = 'paid' in spec ? spec.paid : spec.amount;
+        await this.receivables.recordReceipt(orgId, userId, String(receivable._id), {
+          amount: receiptAmount,
+          method: 'BANK_TRANSFER',
+          reference: `Demo receipt for ${spec.number}`,
+        });
+      }
+    }
+
+    // Opening cash so the demo does not start with a negative cash balance.
+    await this.accounting.postOpeningBalance(orgId, 'USD', 25_000_000n);
+    await this.accounting.rebuild(orgId);
+
     await this.agent.getOrCreateWallet(orgId);
 
     return {
       seeded: true,
       vendors: vendors.length,
       invoices: specs.length,
+      customers: customers.length,
+      receivables: arSpecs.length,
     };
   }
 }

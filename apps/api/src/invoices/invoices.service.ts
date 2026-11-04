@@ -1,31 +1,30 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   CURRENCY_DECIMALS,
   CreateInvoiceInput,
-  applyBps,
+  computeInvoiceTotals,
   formatUnits,
-  parseUnits,
-  sumAmounts,
 } from '@keiz/shared';
+import { AccountingService } from '../accounting/accounting.service';
 import { UsersService } from '../users/users.service';
 import { Invoice, InvoiceDocument } from './invoice.schema';
 
-const QUANTITY_SCALE = 6;
-
-function lineTotal(quantity: string, unitPrice: string, decimals: number): bigint {
-  // quantity is unitless (hours, units) and allowed 6dp; price is in currency units.
-  const qty = parseUnits(quantity, QUANTITY_SCALE);
-  const price = parseUnits(unitPrice, decimals);
-  return (qty * price) / 10n ** BigInt(QUANTITY_SCALE);
-}
-
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     @InjectModel(Invoice.name) private readonly invoices: Model<InvoiceDocument>,
     private readonly users: UsersService,
+    private readonly accounting: AccountingService,
   ) {}
 
   async list(orgId: string, status?: string) {
@@ -52,13 +51,12 @@ export class InvoicesService {
 
   async create(orgId: string, userId: string, input: CreateInvoiceInput) {
     const decimals = CURRENCY_DECIMALS[input.currency] ?? 2;
-    const lines = input.lineItems.map((item) => ({
-      ...item,
-      lineTotal: lineTotal(item.quantity, item.unitPrice, decimals).toString(),
-    }));
-    const subtotal = sumAmounts(lines.map((line) => BigInt(line.lineTotal)));
-    const taxAmount = applyBps(subtotal, input.taxBps);
-    const total = subtotal + taxAmount;
+    let totals: ReturnType<typeof computeInvoiceTotals>;
+    try {
+      totals = computeInvoiceTotals(input.lineItems, decimals, input.taxBps);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
 
     const invoice = await this.invoices.create({
       orgId,
@@ -68,11 +66,11 @@ export class InvoicesService {
       dueDate: new Date(input.dueDate),
       currency: input.currency,
       decimals,
-      lineItems: lines,
-      subtotal: subtotal.toString(),
+      lineItems: totals.lines,
+      subtotal: totals.subtotal,
       taxBps: input.taxBps,
-      taxAmount: taxAmount.toString(),
-      total: total.toString(),
+      taxAmount: totals.taxAmount,
+      total: totals.total,
       status: 'DRAFT',
       notes: input.notes,
       createdByUserId: userId,
@@ -120,6 +118,12 @@ export class InvoicesService {
     } as never);
     invoice.status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
     await invoice.save();
+
+    if (invoice.status === 'APPROVED') {
+      await this.postQuietly(`invoice ${id} approved`, () =>
+        this.accounting.postApApproved(invoice),
+      );
+    }
     return invoice.toObject();
   }
 
@@ -150,9 +154,13 @@ export class InvoicesService {
   async markPaid(orgId: string, id: string) {
     const invoice = await this.invoices.findOne({ _id: id, orgId });
     if (!invoice) return null;
+    // The pollers and the refresh endpoint can call this more than once.
+    if (invoice.status === 'PAID') return invoice;
     invoice.status = 'PAID';
-    invoice.paidAt = new Date();
+    invoice.paidAt ??= new Date();
     await invoice.save();
+
+    await this.postQuietly(`invoice ${id} paid`, () => this.accounting.postApPaid(invoice));
     return invoice;
   }
 
@@ -166,8 +174,13 @@ export class InvoicesService {
     if (invoice.status === 'PAYMENT_PENDING') {
       throw new BadRequestException('Cancel the open payment before voiding the invoice');
     }
+    const previous = invoice.status;
     invoice.status = 'VOID';
     await invoice.save();
+
+    if (previous === 'APPROVED') {
+      await this.postQuietly(`invoice ${id} voided`, () => this.accounting.postApVoid(invoice));
+    }
     return invoice.toObject();
   }
 
@@ -185,6 +198,15 @@ export class InvoicesService {
     invoice.status = to as never;
     await invoice.save();
     return invoice.toObject();
+  }
+
+  /** Posting must never strand a business action; `rebuild` fixes any gap. */
+  private async postQuietly(label: string, post: () => Promise<unknown>) {
+    try {
+      await post();
+    } catch (error) {
+      this.logger.error(`Ledger posting failed (${label}): ${(error as Error).message}`);
+    }
   }
 
   /** Small helper used by the demo seeder / reporting. */

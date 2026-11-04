@@ -101,7 +101,7 @@ export function InvoiceForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="New invoice"
+      title="New vendor bill"
       description="Totals are computed in integer minor units on the server."
       wide
     >
@@ -238,7 +238,7 @@ export function InvoiceForm({
             Cancel
           </Button>
           <Button loading={busy} onClick={() => void submit()}>
-            Create invoice
+            Create bill
           </Button>
         </div>
       </div>

@@ -1,5 +1,7 @@
 import { Module, OnModuleDestroy, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AccountingModule } from '../accounting/accounting.module';
+import { AccountingService } from '../accounting/accounting.service';
 import { AgentModule } from '../agent/agent.module';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesModule } from '../invoices/invoices.module';
@@ -22,19 +24,27 @@ export class MastraLifecycle implements OnModuleDestroy {
 }
 
 @Module({
-  imports: [AgentModule, InvoicesModule, VendorsModule, PaymentsModule],
+  imports: [AccountingModule, AgentModule, InvoicesModule, VendorsModule, PaymentsModule],
   controllers: [ChatController],
   providers: [
     {
       provide: MASTRA,
-      inject: [ConfigService, InvoicesService, VendorsService, PaymentsService, AgentService],
+      inject: [
+        ConfigService,
+        InvoicesService,
+        VendorsService,
+        PaymentsService,
+        AgentService,
+        AccountingService,
+      ],
       useFactory: (
         config: ConfigService,
         invoices: InvoicesService,
         vendors: VendorsService,
         payments: PaymentsService,
         agent: AgentService,
-      ) => createKeizMastra({ config, invoices, vendors, payments, agent }),
+        accounting: AccountingService,
+      ) => createKeizMastra({ config, invoices, vendors, payments, agent, accounting }),
     },
     MastraLifecycle,
     ChatService,

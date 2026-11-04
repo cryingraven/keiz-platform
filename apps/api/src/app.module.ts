@@ -16,6 +16,7 @@ import { HealthController } from './health/health.controller';
 import { IndexerModule } from './indexer/indexer.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { PaymentsModule } from './payments/payments.module';
+import { ReceivablesModule } from './receivables/receivables.module';
 import { UsersModule } from './users/users.module';
 import { VendorsModule } from './vendors/vendors.module';
 
@@ -41,6 +42,7 @@ import { VendorsModule } from './vendors/vendors.module';
     VendorsModule,
     InvoicesModule,
     PaymentsModule,
+    ReceivablesModule,
     AgentModule,
     ChatModule,
     IndexerModule,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { invoiceNumber, payoutChain, positiveDecimal, validatePayoutAddress } from './validation';
+import { RECEIPT_METHODS, RECEIVABLE_STATUSES } from './types';
 
 export const NEAR_ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 
@@ -76,6 +77,51 @@ export const invoiceDecisionSchema = z.object({
   comment: z.string().max(1000).optional(),
 });
 
+export const createCustomerSchema = z.object({
+  name: z.string().min(1).max(120),
+  email: z.email(),
+  taxId: z.string().max(60).optional(),
+  billingAddress: z.string().max(300).optional(),
+});
+
+export const createReceivableSchema = z.object({
+  customerId: z.string().min(1),
+  number: invoiceNumber,
+  issueDate: z.iso.datetime().optional(),
+  dueDate: z.iso.datetime(),
+  currency: currencySchema.default('USD'),
+  taxBps: z.number().int().min(0).max(10_000).default(0),
+  notes: z.string().max(2000).optional(),
+  lineItems: z.array(invoiceLineItemSchema).min(1).max(50),
+});
+
+export const recordReceiptSchema = z.object({
+  amount: positiveDecimal,
+  receivedAt: z.iso.datetime().optional(),
+  method: z.enum(RECEIPT_METHODS).default('BANK_TRANSFER'),
+  reference: z.string().max(200).optional(),
+  txHash: z.string().max(200).optional(),
+});
+
+const journalAmount = z
+  .string()
+  .max(40)
+  .regex(/^\d+(\.\d{1,18})?$/, 'Use a non-negative amount')
+  .default('0');
+
+export const journalLineSchema = z.object({
+  accountCode: z.string().min(1).max(20),
+  debit: journalAmount,
+  credit: journalAmount,
+});
+
+export const manualJournalSchema = z.object({
+  date: z.iso.datetime().optional(),
+  memo: z.string().min(1).max(500),
+  currency: currencySchema.default('USD'),
+  lines: z.array(journalLineSchema).min(2).max(50),
+});
+
 export const createPaymentSchema = z.object({
   invoiceId: z.string().min(1),
   originAsset: z.string().max(200).default(''),
@@ -123,6 +169,11 @@ export type LoginVerifyInput = z.infer<typeof loginVerifySchema>;
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type InvoiceLineItemInput = z.infer<typeof invoiceLineItemSchema>;
+export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export type CreateReceivableInput = z.infer<typeof createReceivableSchema>;
+export type RecordReceiptInput = z.infer<typeof recordReceiptSchema>;
+export type ManualJournalInput = z.infer<typeof manualJournalSchema>;
+export type JournalLineInput = z.infer<typeof journalLineSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type AgentPolicyInput = z.infer<typeof agentPolicySchema>;
 export type ProposeAgentPaymentInput = z.infer<typeof proposeAgentPaymentSchema>;
@@ -138,9 +189,46 @@ export const paymentListQuerySchema = z.object({
   invoiceId: z.string().min(1).max(64).optional(),
 });
 
+export const receivableListQuerySchema = z.object({
+  status: z.enum(RECEIVABLE_STATUSES).optional(),
+  customerId: z.string().min(1).max(64).optional(),
+  currency: currencySchema.optional(),
+});
+
+const isoDateQuery = z.iso.datetime().optional();
+
+export const accountingQuerySchema = z.object({
+  currency: currencySchema.optional(),
+  from: isoDateQuery,
+  to: isoDateQuery,
+});
+
+export const journalQuerySchema = accountingQuerySchema.extend({
+  accountCode: z.string().min(1).max(20).optional(),
+  sourceType: z.enum(['invoice', 'receivable', 'receipt', 'manual', 'opening']).optional(),
+  sourceId: z.string().min(1).max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+export const agingQuerySchema = z.object({
+  side: z.enum(['AP', 'AR']).default('AP'),
+  currency: currencySchema.default('USD'),
+});
+
+export const trialBalanceQuerySchema = z.object({
+  currency: currencySchema.optional(),
+  asOf: isoDateQuery,
+});
+
 export const agentDecisionQuerySchema = z.object({
   decision: z.enum(['APPROVE', 'REJECT']),
 });
+
+export type ReceivableListQuery = z.infer<typeof receivableListQuerySchema>;
+export type AccountingQuery = z.infer<typeof accountingQuerySchema>;
+export type JournalQuery = z.infer<typeof journalQuerySchema>;
+export type AgingQuery = z.infer<typeof agingQuerySchema>;
+export type TrialBalanceQuery = z.infer<typeof trialBalanceQuerySchema>;
 
 export const simulateQuerySchema = z.object({
   status: z.enum(['SUCCEEDED', 'FAILED', 'REFUNDED']).default('SUCCEEDED'),

@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Fingerprint, Loader2, ShieldCheck } from 'lucide-react';
+import { ChevronDown, ChevronRight, Fingerprint, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { Logo } from '@/components/logo';
+import { NearProtocolIcon } from '@/components/landing/logos';
 
 export default function LoginPage() {
   const {
@@ -37,15 +39,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-white text-ink">
       <div className="mx-auto w-full max-w-[460px] px-5 pb-16 pt-12 sm:pt-20">
-        <Link href="/" className="inline-flex items-center gap-2.5" aria-label="KEIZ home">
-          <span className="grid h-9 w-9 place-items-center rounded-[11px] bg-ink text-[14px] font-bold tracking-tight text-white">
-            K
-          </span>
-          <span className="text-[18px] font-semibold tracking-tight">KEIZ</span>
-        </Link>
+        <Logo large />
 
         <h1 className="mt-10 text-[28px] font-semibold leading-[1.15] tracking-[-0.025em] sm:text-[30px]">
-          Sign in or create an account
+          Sign in or create your workspace
         </h1>
         <p className="mt-2 text-[14px] leading-relaxed text-muted">
           Use a passkey for the easiest experience
@@ -63,8 +60,8 @@ export default function LoginPage() {
         {whyOpen ? (
           <div className="mt-3 rounded-xl bg-paper px-4 py-3 text-[12px] leading-relaxed text-muted">
             A passkey uses your device biometrics or screen lock. There is no seed phrase and no
-            browser extension. Your NEAR key is derived by an MPC network and signs a one-time,
-            domain-bound login message.
+            browser extension. Your NEAR key is derived by an MPC network and signs a one-time
+            message for this site.
           </div>
         ) : null}
 
@@ -109,7 +106,7 @@ export default function LoginPage() {
             <div className="my-6 flex items-center gap-3">
               <span className="h-px flex-1 bg-line" />
               <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
-                Web3 wallets
+                NEAR wallets
               </span>
               <span className="h-px flex-1 bg-line" />
             </div>
@@ -119,8 +116,12 @@ export default function LoginPage() {
               disabled={busy}
               className="group flex w-full items-center gap-4 rounded-2xl border border-line bg-white p-5 text-left transition hover:border-line-strong hover:shadow-[0_1px_2px_rgba(0,0,0,0.04)] disabled:cursor-wait disabled:opacity-70"
             >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-[15px] font-bold text-white">
-                {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : 'N'}
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white">
+                {busy ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <NearProtocolIcon className="h-5 w-5" />
+                )}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] font-semibold">NEAR Wallets</span>
@@ -157,7 +158,7 @@ export default function LoginPage() {
             .
           </p>
           <p className="mt-4 flex items-center gap-1.5 text-[10px] text-muted">
-            <ShieldCheck className="h-3.5 w-3.5" /> Secured by NEAR Auth · MPC signing
+            <NearProtocolIcon className="h-3.5 w-3.5" /> Secured by NEAR Auth · MPC signing
           </p>
         </div>
       </div>

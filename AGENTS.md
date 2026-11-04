@@ -24,7 +24,7 @@ pnpm --filter @keiz/api seed demo.near
 ## Layout
 
 - `apps/web` — Next 16 App Router, Tailwind 4. Dashboard is client-rendered; data comes from `/api/*`.
-- `apps/api` — Nest 12 + Mongoose 9. Feature folders: `auth`, `invoices`, `payments`, `agent`, `outlayer`, `chat`, `indexer`, `audit`.
+- `apps/api` — Nest 12 + Mongoose 9. Feature folders: `auth`, `invoices` (AP), `receivables` (AR + customers), `accounting`, `payments`, `agent`, `outlayer`, `chat`, `indexer`, `audit`.
 - `apps/api/src/chat` — Mastra agent, tools, memory and the SSE controller. Mastra owns conversations; there is no local thread schema.
 - `packages/shared` — the only place DTOs, Zod schemas, status enums and money helpers live.
 - `docs/architecture.md` — system context, request lifecycle, auth/payment/custody/chat sequences, state machines, data model, trust boundaries. Update the diagrams in the same change as the flow.
@@ -33,6 +33,13 @@ pnpm --filter @keiz/api seed demo.near
 
 ## Things that will bite you
 
+- **The ledger is append-only and must balance.** Journal entries are never updated or deleted; corrections are reversal entries. `AccountingService.post()` rejects unbalanced or zero-value entries, and `dedupeKey` has a unique partial index.
+- **Every system posting is idempotent.** The key is `invoice:<id>:APPROVED|PAID|VOID`, `receivable:<id>:ISSUED|VOID`, `receipt:<receiptId>:RECEIVED`, or `opening:<orgId>:<currency>`. Do not post without one.
+- **Posting is best-effort, not transactional.** Mongo is a single node. State changes commit first, the journal entry is attempted next, and `POST /accounting/rebuild` backfills missing entries. Never "fix" a missing posting by editing a journal entry.
+- **AP/AR recognition points:** bill approval (`InvoicesService.decide`), settlement (`markPaid`), invoice void (`void`), receivable issue, receipt, and receivable void. `DemoService` writes statuses directly, so it calls `rebuild` at the end.
+- **Do not aggregate ledger money with `$toDouble`.** Use `$toDecimal` (or `$toLong`) and keep the result as an integer string. The existing invoice summary's `$toDouble` predates the ledger; do not copy it.
+- **Receivable receipts use an optimistic lock on `paidAmount`.** The update filter includes the previous `paidAmount` so two concurrent receipts cannot overpay an invoice. Keep that filter.
+- **`AccountingModule` registers the `Invoice` and `Receivable` schemas directly** so `rebuild` can scan the subledgers without a module cycle. Do not import `InvoicesModule`/`ReceivablesModule` into it.
 - **1Click is mainnet-only.** No testnet exists. Keep `PAYMENTS_MODE=mock` for dev, tests and CI. `smoke.ts` must never hit the network.
 - **Never construct an `assetId`.** Resolve from `GET /v0/tokens` (cached 1h). The mock provider has its own token list.
 - **Money is an integer minor unit, stored as a string.** Use `parseUnits` / `formatUnits` from `@keiz/shared`. `formatMoney` expects minor units; `formatDollars` expects major units. Mixing them silently divides by 100 — this bug already shipped once.

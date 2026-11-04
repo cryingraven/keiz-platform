@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { shortAddress } from '@/lib/format';
 import { streamChat } from '@/lib/chat-stream';
 import { PageHeader } from '@/components/shell';
+import { NearAiLogo } from '@/components/landing/logos';
 import { Badge, Button, Card, Spinner, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import type { ChatStreamEvent } from '@keiz/shared';
@@ -255,12 +256,15 @@ export default function ChatPage() {
               <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-soft text-brand">
                 <Bot className="h-3.5 w-3.5" />
               </span>
-              <div>
+              <div className="min-w-0">
                 <p className="text-[12px] font-semibold">KEIZ assistant</p>
-                <p className="text-[10px] text-muted">{providerLabel}</p>
+                <p className="truncate text-[10px] text-muted">{providerLabel}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <span className="hidden sm:inline-flex">
+                <NearAiLogo />
+              </span>
               {streaming ? (
                 <Badge className="border-brand/20 bg-brand-soft text-brand-deep" dot>
                   streaming

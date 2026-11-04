@@ -1,6 +1,6 @@
 # KEIZ
 
-A B2B spend workspace: vendor invoices, multi-step approval, cross-chain settlement through **NEAR Intents**, an AI finance assistant on **NEAR AI**, and a policy-bound **agent wallet**. Login uses **NEP-413** signed messages.
+A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-entry ledger**, multi-step approval, cross-chain settlement through **NEAR Intents**, an AI finance assistant on **NEAR AI**, and a policy-bound **agent wallet**. Login uses **NEP-413** signed messages.
 
 ![KEIZ](https://img.shields.io/badge/NEAR-Intents-4f46e5) ![NEP-413](https://img.shields.io/badge/auth-NEP--413-0f9d76)
 
@@ -17,6 +17,7 @@ A B2B spend workspace: vendor invoices, multi-step approval, cross-chain settlem
 | Payments | NEAR Intents 1Click (with a deterministic mock provider) |
 | AI | Mastra agent + NEAR AI Cloud (`nearai/...`), local fallback |
 | Chain data | NEAR RPC + append-only Mongo event log |
+| Accounting | Per-org chart of accounts, immutable journal, AP/AR subledgers |
 | Agent custody | OutLayer (Intel TDX + NEAR MPC) — optional |
 
 ## Quick start
@@ -45,7 +46,9 @@ Open <http://localhost:3000>, sign in with a passkey or a NEAR wallet, and press
 ## What is implemented
 
 - **Passkey login (NEAR Auth)** — Auth0 passkey sign-in backed by MPC. The backend verifies the NEP-413 signature it receives, with a tight relayer that only forwards `sign` calls to the configured `fast-auth` contract. Wallet login remains available.
-- **Invoice lifecycle** — DRAFT → SUBMITTED → APPROVED / REJECTED → PAYMENT_PENDING → PAID, with an append-only approval trail. Totals are computed with integer minor units and 5-decimal-safe tax math.
+- **Invoice lifecycle (AP)** — DRAFT → SUBMITTED → APPROVED / REJECTED → PAYMENT_PENDING → PAID, with an append-only approval trail. Totals are computed with integer minor units and 5-decimal-safe tax math.
+- **Customer invoices (AR)** — customers, customer invoices (DRAFT → ISSUED → PARTIALLY_PAID → PAID, plus VOID) and manual receipts with an optional transaction hash. Overdue is computed from the due date, never stored.
+- **Double-entry accounting** — a per-org chart of accounts and an immutable, balanced journal. Approving a bill posts expense + input tax against AP; paying it clears AP against cash. Issuing a customer invoice posts AR against revenue + tax payable; a receipt posts cash against AR. Voiding reverses the original entry instead of editing it. Trial balance, P&L, AP/AR aging and the journal live under `/dashboard/accounting`.
 - **NEAR Intents settlement** — `GET /v0/tokens` → dry quote → committed quote (`dry:false`) → deposit → `POST /v0/deposit/submit` → status polling. Statuses are mapped to a local enum; raw provider strings never reach the UI.
 - **Vendor payouts** — vendors store a payout chain and address. The invoice total is paid as `EXACT_OUTPUT` in USDC on the vendor's chain.
 - **Agent wallet** — two providers:
@@ -57,6 +60,30 @@ Open <http://localhost:3000>, sign in with a passkey or a NEAR wallet, and press
 ## Demo without mainnet funds
 
 1Click has **no testnet**, so the default `PAYMENTS_MODE=mock` uses an in-process provider with the same quote/deposit/status contract. The invoice page exposes a **simulate settlement** shortcut. Set `PAYMENTS_MODE=intents` to use the real API — mainnet funds will move.
+
+## AP, AR and the ledger
+
+Every workspace gets the same chart of accounts on its first posting. Journal entries are
+immutable and must balance; corrections are reversal entries. All amounts stay integer
+minor-unit strings, and reports aggregate with `$toDecimal`, never `$toDouble`.
+
+| Event | Debit | Credit |
+|---|---|---|
+| Vendor bill approved | 5100 Operating expenses (subtotal), 1300 Input tax (tax) | 2000 Accounts payable (total) |
+| Vendor bill paid | 2000 Accounts payable | 1010 Cash & stablecoins |
+| Vendor bill voided | 2000 Accounts payable | 5100 Operating expenses, 1300 Input tax |
+| Customer invoice issued | 1100 Accounts receivable (total) | 4000 Revenue (subtotal), 2100 Tax payable (tax) |
+| Customer receipt | 1010 Cash & stablecoins | 1100 Accounts receivable |
+| Customer invoice voided | 4000 Revenue, 2100 Tax payable | 1100 Accounts receivable |
+
+System postings carry a deterministic `dedupeKey` (`invoice:<id>:PAID`, `receipt:<id>:RECEIVED`, …),
+so retries and pollers cannot double-post. Mongo is a single node with no multi-document
+transactions, so posting happens after the business state change and is best-effort;
+`POST /api/accounting/rebuild` backfills anything missing and is safe to run repeatedly.
+Manual journal entries and rebuilds are ADMIN/OWNER; recording a customer receipt is APPROVER+.
+
+The ledger is kept **per currency** (USD, EUR, SGD, IDR) with no FX translation, matching the
+existing no-FX limitation on payments.
 
 ## API surface
 
@@ -79,6 +106,23 @@ POST /api/payments/:id/refresh
 POST /api/payments/:id/cancel     ADMIN/OWNER, awaiting-deposit only
 POST /api/payments/:id/simulate   ADMIN/OWNER, mock + non-production only
 GET  /api/payments/:id/events
+
+GET/POST /api/customers
+GET  /api/receivables                 ?status= &customerId= &currency=
+GET  /api/receivables/summary
+GET  /api/receivables/:id
+POST /api/receivables
+POST /api/receivables/:id/issue
+POST /api/receivables/:id/receipts    APPROVER/ADMIN/OWNER
+POST /api/receivables/:id/void        ADMIN/OWNER
+
+GET  /api/accounting/accounts
+GET  /api/accounting/summary          ?currency= &from= &to=
+GET  /api/accounting/trial-balance    ?currency= &asOf=
+GET  /api/accounting/journal-entries  ?currency= &accountCode= &sourceType= &sourceId=
+POST /api/accounting/journal-entries  ADMIN/OWNER, balanced manual entry
+GET  /api/accounting/aging            ?side=AP|AR &currency=
+POST /api/accounting/rebuild          ADMIN/OWNER, idempotent backfill
 
 GET  /api/agent/wallet
 POST /api/agent/wallet
@@ -178,13 +222,13 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test                              # 56 unit tests
-pnpm --filter @keiz/api smoke          # 30 end-to-end checks, in-memory Mongo
+pnpm test                              # 67 unit tests
+pnpm --filter @keiz/api smoke          # 44 end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 ```
 
-The main suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. The custody suite drives registration, delegated policy, withdraw, polling and settlement against a mock OutLayer API. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
+The main suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. It also drives AP recognition and settlement, AR issue/partial/full receipt, void reversals, trial-balance balance, AP/AR aging, manual opening entries, idempotent rebuild and ledger tenant isolation. The custody suite drives registration, delegated policy, withdraw, polling and settlement against a mock OutLayer API. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
 
 ## NEAR agent skills
 
@@ -202,5 +246,7 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 - The payment poller is in-process and assumes a single API instance. Move to a queue/worker before scaling horizontally.
 - Mastra semantic recall is disabled (`semanticRecall: false`, `vector: false`) because standalone MongoDB has no Atlas Search. Message history works; vector search would need Atlas or another vector store.
 - Mastra opens a second Mongo client alongside Mongoose. It is closed on shutdown, but both must point at the same database name.
-- Only USD invoices are payable on-chain; there is no FX oracle for EUR/SGD/IDR yet.
+- Only USD invoices are payable on-chain; there is no FX oracle for EUR/SGD/IDR yet. The ledger therefore reports per currency and does not translate between them.
+- Customer receipts are recorded, not chain-verified. A `txHash` on a receipt is a reference for the books; only AP deposits are checked against NEAR RPC.
+- Mongo is a single node, so a state change and its journal posting are not atomic. Posting is idempotent and best-effort; `POST /api/accounting/rebuild` repairs gaps.
 - Native NEAR payments require wrapping to wNEAR in the same transaction (`near_deposit` + `ft_transfer`). The UI documents the `ft_transfer` path; the wrap helper is not built.

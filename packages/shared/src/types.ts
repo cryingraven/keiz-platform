@@ -12,6 +12,18 @@ export const INVOICE_STATUSES = [
 ] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+export const RECEIVABLE_STATUSES = [
+  'DRAFT',
+  'ISSUED',
+  'PARTIALLY_PAID',
+  'PAID',
+  'VOID',
+] as const;
+export type ReceivableStatus = (typeof RECEIVABLE_STATUSES)[number];
+
+export const RECEIPT_METHODS = ['BANK_TRANSFER', 'ONCHAIN', 'CASH', 'CARD', 'OTHER'] as const;
+export type ReceiptMethod = (typeof RECEIPT_METHODS)[number];
+
 export const PAYMENT_STATUSES = [
   'QUOTED',
   'AWAITING_DEPOSIT',

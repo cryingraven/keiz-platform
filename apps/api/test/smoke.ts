@@ -452,6 +452,26 @@ async function main() {
     );
     pass('chat thread is persisted in Mastra memory');
 
+    const booksResponse = await fetch(`${BASE}/chat/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: aliceCookie },
+      body: JSON.stringify({ message: 'books summary' }),
+    });
+    assert(booksResponse.ok, 'books chat stream opened');
+    const booksEvents = parseSse(await booksResponse.text());
+    const booksText = booksEvents
+      .filter((event) => event.event === 'text')
+      .map((event) => String(event.data.delta))
+      .join('');
+    assert(booksText.includes('Cash'), 'chat returned the ledger summary');
+    assert(
+      booksEvents.some(
+        (event) => event.event === 'tool' && event.data.phase === 'call' && event.data.name === 'booksSummary',
+      ),
+      'chat used the books tool',
+    );
+    pass('local chat reads the double-entry ledger');
+
     const carol = await tokenFor('carol.near');
     const carolCookie = `keiz_access=${carol.token}`;
     await req('/demo/seed', { method: 'POST', cookie: carolCookie });
@@ -459,7 +479,305 @@ async function main() {
       cookie: carolCookie,
     });
     assert(seededInvoices.some((row) => row.number === 'INV-1001'), 'demo data seeded');
-    pass('demo seed is idempotent and populates the workspace');
+    const carolReceivables = await req<Array<{ number: string }>>('/receivables', {
+      cookie: carolCookie,
+    });
+    assert(
+      carolReceivables.some((row) => row.number === 'AR-2002'),
+      'demo seed creates customer invoices',
+    );
+    const carolBooks = await req<{
+      trialBalance: { totals: { balanced: boolean; debit: string; credit: string } };
+      cash: string;
+    }>('/accounting/summary?currency=USD&from=2020-01-01T00:00:00.000Z', {
+      cookie: carolCookie,
+    });
+    assert(carolBooks.trialBalance.totals.balanced, 'demo ledger is balanced');
+    assert(carolBooks.cash.startsWith('2'), 'demo ledger has opening cash');
+    pass('demo seed is idempotent and populates AP, AR and a balanced ledger');
+
+    // --- double-entry ledger against a clean workspace ---
+    const bobVendor = await req<{ _id: string }>('/vendors', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        name: 'Bob Supplies',
+        email: 'billing@bobsupplies.near',
+        payoutChain: 'near',
+        payoutAddress: 'bobsupplies.near',
+      },
+    });
+
+    await req('/accounting/journal-entries', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        memo: 'Opening cash',
+        currency: 'USD',
+        lines: [
+          { accountCode: '1010', debit: '1000.00' },
+          { accountCode: '3000', credit: '1000.00' },
+        ],
+      },
+    });
+    const bobOpening = await req<{ totals: { balanced: boolean } }>(
+      '/accounting/trial-balance?currency=USD',
+      { cookie: bobCookie },
+    );
+    assert(bobOpening.totals.balanced, 'opening entry leaves the trial balance balanced');
+    pass('manual journal entry posts a balanced opening balance');
+
+    const bobInvoice = await req<{ _id: string }>('/invoices', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        vendorId: bobVendor._id,
+        number: 'INV-BOB-AP',
+        dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 1000,
+        lineItems: [{ description: 'Consulting', quantity: '1', unitPrice: '100.00' }],
+      },
+    });
+    await req(`/invoices/${bobInvoice._id}/submit`, { method: 'POST', cookie: bobCookie });
+    await req(`/invoices/${bobInvoice._id}/decision`, {
+      method: 'POST',
+      cookie: bobCookie,
+      body: { decision: 'APPROVE' },
+    });
+
+    const summaryUrl = `/accounting/summary?currency=USD&from=2020-01-01T00:00:00.000Z&to=${encodeURIComponent(
+      new Date().toISOString(),
+    )}`;
+    type Books = {
+      cash: string;
+      receivable: string;
+      payable: string;
+      inputTax: string;
+      taxPayable: string;
+      revenue: string;
+      expenses: string;
+      netIncome: string;
+      trialBalance: {
+        rows: Array<{ code: string; balance: string }>;
+        totals: { debit: string; credit: string; balanced: boolean };
+      };
+    };
+    const afterApprove = await req<Books>(summaryUrl, { cookie: bobCookie });
+    assert(afterApprove.expenses === '10000', 'expense recognised on approval');
+    assert(afterApprove.inputTax === '1000', 'input tax recognised on approval');
+    assert(afterApprove.payable === '11000', 'AP recognised on approval');
+    assert(
+      afterApprove.trialBalance.totals.debit === afterApprove.trialBalance.totals.credit &&
+        afterApprove.trialBalance.totals.balanced,
+      'trial balance stays balanced after AP recognition',
+    );
+    const apAging = await req<{ total: string; buckets: Array<{ key: string; amount: string }> }>(
+      '/accounting/aging?side=AP&currency=USD',
+      { cookie: bobCookie },
+    );
+    assert(apAging.total === '11000', 'AP aging includes the approved bill');
+    assert(
+      apAging.buckets.find((bucket) => bucket.key === 'current')?.amount === '11000',
+      'AP aging puts a future bill in the current bucket',
+    );
+    pass('approved vendor bill posts expense, input tax and AP (balanced)');
+
+    const bobPayment = await req<{ payment: { _id: string } }>('/payments', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: { invoiceId: bobInvoice._id, originAsset: '', slippageBps: 100, payer: 'USER' },
+    });
+    await req(`/payments/${bobPayment.payment._id}/deposit`, {
+      method: 'POST',
+      cookie: bobCookie,
+      body: { txHash: 'mock-tx-bob-ap' },
+    });
+    await req(`/payments/${bobPayment.payment._id}/simulate?status=SUCCEEDED`, {
+      method: 'POST',
+      cookie: bobCookie,
+    });
+    await req(`/payments/${bobPayment.payment._id}/refresh`, {
+      method: 'POST',
+      cookie: bobCookie,
+    });
+
+    const afterPayment = await req<Books>(summaryUrl, { cookie: bobCookie });
+    assert(afterPayment.payable === '0', 'AP cleared on settlement');
+    assert(afterPayment.cash === '89000', 'cash reduced by the settled bill');
+    assert(afterPayment.trialBalance.totals.balanced, 'trial balance stays balanced after payment');
+    pass('paid vendor bill clears AP against cash');
+
+    const customer = await req<{ _id: string }>('/customers', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: { name: 'Helios Labs', email: 'finance@helioslabs.io' },
+    });
+    const receivable = await req<{ _id: string; total: string; status: string }>('/receivables', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        customerId: customer._id,
+        number: 'AR-BOB-1',
+        dueDate: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 1000,
+        lineItems: [{ description: 'Platform access', quantity: '1', unitPrice: '500.00' }],
+      },
+    });
+    assert(receivable.total === '55000', 'receivable totals include tax');
+    assert(receivable.status === 'DRAFT', 'new receivable is a draft');
+    await req(`/receivables/${receivable._id}/issue`, { method: 'POST', cookie: bobCookie });
+
+    const afterIssue = await req<Books>(summaryUrl, { cookie: bobCookie });
+    assert(afterIssue.receivable === '55000', 'AR recognised on issue');
+    assert(afterIssue.revenue === '50000', 'revenue recognised on issue');
+    assert(afterIssue.taxPayable === '5000', 'tax payable recognised on issue');
+    assert(afterIssue.trialBalance.totals.balanced, 'trial balance stays balanced after AR issue');
+    pass('issued customer invoice posts AR, revenue and tax payable');
+
+    const partial = await req<{ status: string; paidAmount: string }>(
+      `/receivables/${receivable._id}/receipts`,
+      {
+        method: 'POST',
+        cookie: bobCookie,
+        body: { amount: '200.00', method: 'BANK_TRANSFER', reference: 'bank-1' },
+      },
+    );
+    assert(partial.status === 'PARTIALLY_PAID', 'partial receipt updates the status');
+    assert(partial.paidAmount === '20000', 'partial receipt accumulates paidAmount');
+    const afterPartial = await req<Books>(summaryUrl, { cookie: bobCookie });
+    assert(afterPartial.receivable === '35000', 'partial receipt reduces AR');
+    assert(afterPartial.cash === '109000', 'partial receipt increases cash');
+    pass('partial receipt reduces AR and increases cash');
+
+    await req(`/receivables/${receivable._id}/receipts`, {
+      method: 'POST',
+      cookie: bobCookie,
+      body: { amount: '400.00', method: 'BANK_TRANSFER' },
+      expect: 400,
+    });
+    pass('a receipt cannot exceed the outstanding amount');
+
+    const paidReceivable = await req<{ status: string }>(`/receivables/${receivable._id}/receipts`, {
+      method: 'POST',
+      cookie: bobCookie,
+      body: { amount: '350.00', method: 'ONCHAIN', txHash: 'mock-ar-receipt' },
+    });
+    assert(paidReceivable.status === 'PAID', 'final receipt marks the receivable paid');
+    const afterFull = await req<Books>(summaryUrl, { cookie: bobCookie });
+    assert(afterFull.receivable === '0', 'fully paid AR is cleared');
+    assert(afterFull.cash === '144000', 'cash includes all receipts');
+    assert(afterFull.trialBalance.totals.balanced, 'trial balance stays balanced after receipts');
+    await req(`/receivables/${receivable._id}/void`, {
+      method: 'POST',
+      cookie: bobCookie,
+      expect: 400,
+    });
+    pass('full receipt clears AR and a paid receivable cannot be voided');
+
+    const voidable = await req<{ _id: string }>('/receivables', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        customerId: customer._id,
+        number: 'AR-BOB-2',
+        dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Cancelled job', quantity: '1', unitPrice: '100.00' }],
+      },
+    });
+    await req(`/receivables/${voidable._id}/issue`, { method: 'POST', cookie: bobCookie });
+    await req(`/receivables/${voidable._id}/void`, { method: 'POST', cookie: bobCookie });
+    const afterVoid = await req<Books>(summaryUrl, { cookie: bobCookie });
+    assert(afterVoid.receivable === '0', 'voided AR invoice is reversed');
+    assert(afterVoid.revenue === '50000', 'void reversal removes the revenue');
+    assert(afterVoid.trialBalance.totals.balanced, 'trial balance stays balanced after a void');
+    pass('voiding an issued receivable reverses its journal entry');
+
+    const overdue = await req<{ _id: string }>('/receivables', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        customerId: customer._id,
+        number: 'AR-BOB-3',
+        dueDate: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Overdue retainer', quantity: '1', unitPrice: '100.00' }],
+      },
+    });
+    await req(`/receivables/${overdue._id}/issue`, { method: 'POST', cookie: bobCookie });
+    const arAging = await req<{ total: string; buckets: Array<{ key: string; amount: string }> }>(
+      '/accounting/aging?side=AR&currency=USD',
+      { cookie: bobCookie },
+    );
+    assert(arAging.total === '10000', 'AR aging includes the open receivable');
+    assert(
+      arAging.buckets.find((bucket) => bucket.key === '1_30')?.amount === '10000',
+      'AR aging puts a 10-day overdue invoice in 1-30',
+    );
+    pass('AR aging buckets overdue customer invoices');
+
+    const noopRebuild = await req<{ created: number; failed: number }>('/accounting/rebuild', {
+      method: 'POST',
+      cookie: bobCookie,
+    });
+    const noopRebuildAgain = await req<{ created: number; failed: number }>('/accounting/rebuild', {
+      method: 'POST',
+      cookie: bobCookie,
+    });
+    assert(noopRebuild.created === 0 && noopRebuild.failed === 0, 'live postings need no backfill');
+    assert(noopRebuildAgain.created === 0, 'rebuild is idempotent');
+    pass('ledger rebuild is idempotent');
+
+    const journal = await req<Array<{ sourceType: string; lines: unknown[] }>>(
+      '/accounting/journal-entries?currency=USD&limit=200',
+      { cookie: bobCookie },
+    );
+    assert(journal.some((entry) => entry.sourceType === 'invoice'), 'invoice postings are listed');
+    assert(journal.some((entry) => entry.sourceType === 'receipt'), 'receipt postings are listed');
+    pass('journal exposes both AP and AR postings');
+
+    await req(`/receivables/${overdue._id}`, { cookie: aliceCookie, expect: 404 });
+    pass('another org cannot read a receivable');
+
+    const bobMember = await users.addMember(bob.org!.id, 'bobmember.near', 'MEMBER');
+    const bobMemberCookie = `keiz_access=${await jwt.signAsync({
+      sub: bobMember.id,
+      accountId: 'bobmember.near',
+      orgId: bob.org!.id,
+      role: 'MEMBER',
+      type: 'access',
+      ver: 0,
+    })}`;
+    await req('/accounting/journal-entries', {
+      method: 'POST',
+      cookie: bobMemberCookie,
+      body: {
+        memo: 'Member entry',
+        currency: 'USD',
+        lines: [
+          { accountCode: '1010', debit: '1.00' },
+          { accountCode: '3000', credit: '1.00' },
+        ],
+      },
+      expect: 403,
+    });
+    await req('/accounting/rebuild', {
+      method: 'POST',
+      cookie: bobMemberCookie,
+      expect: 403,
+    });
+    await req(`/receivables/${overdue._id}/receipts`, {
+      method: 'POST',
+      cookie: bobMemberCookie,
+      body: { amount: '1.00', method: 'BANK_TRANSFER' },
+      expect: 403,
+    });
+    await req('/accounting/summary?currency=USD', { cookie: bobMemberCookie });
+    pass('RBAC: MEMBER reads the books but cannot post or record receipts');
 
     // Refresh-token reuse must revoke every session for that user.
     const eve = await tokenFor('eve.near');

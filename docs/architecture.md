@@ -26,7 +26,9 @@ flowchart LR
   subgraph API["NestJS 12 API"]
     Guards["JWT · Roles · Rate limit · Audit"]
     AuthMod["Auth"]
-    Ops["Invoices · Vendors"]
+    Ops["Invoices (AP) · Vendors"]
+    ARMod["Receivables (AR) · Customers"]
+    AccMod["Accounting · Journal"]
     PayMod["Payments"]
     AgentMod["Agent"]
     OutMod["OutLayer adapter"]
@@ -47,6 +49,8 @@ flowchart LR
   Proxy --> Guards
   Guards --> AuthMod
   Guards --> Ops
+  Guards --> ARMod
+  Guards --> AccMod
   Guards --> PayMod
   Guards --> AgentMod
   Guards --> ChatMod
@@ -58,6 +62,8 @@ flowchart LR
   AuthMod --> RPC
 
   Ops --> DB
+  ARMod --> DB
+  AccMod --> DB
   PayMod --> DB
   PayMod --> OneClick
   PayMod --> RPC
@@ -81,7 +87,7 @@ flowchart LR
 flowchart TB
   subgraph Web["apps/web"]
     Login["/login<br/>passkey + wallets"]
-    Dash["/dashboard<br/>overview · invoices · vendors"]
+    Dash["/dashboard<br/>overview · bills · receivables<br/>vendors · accounting"]
     PayUI["payments · agent · assistant"]
     Lib["lib/auth · lib/passkey<br/>lib/chat-stream · lib/api"]
   end
@@ -95,7 +101,9 @@ flowchart TB
 
   subgraph Api["apps/api"]
     Auth["auth"]
-    Inv["invoices · vendors"]
+    Inv["invoices (AP) · vendors"]
+    AR["receivables (AR) · customers"]
+    Books["accounting"]
     Payments["payments"]
     Agent["agent"]
     Outlayer["outlayer"]
@@ -274,6 +282,60 @@ stateDiagram-v2
 
 ---
 
+## 5.1 AP, AR and the ledger
+
+Bills and customer invoices are subledgers; the journal is the accounting source of truth.
+Mongo is a single node, so a status change and its journal entry cannot be atomic. The API
+commits the business state first, posts with a deterministic `dedupeKey`, and exposes an
+idempotent `rebuild` for any gap. Journal entries are immutable; a void posts a reversal.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor F as Finance
+  participant A as API
+  participant S as Subledger
+  participant L as Accounting
+  participant DB as MongoDB
+
+  F->>A: Approve vendor bill
+  A->>S: status APPROVED
+  A->>L: postApApproved
+  L->>DB: journal entry · invoice:id:APPROVED
+
+  F->>A: Settle vendor payment
+  A->>S: status PAID
+  A->>L: postApPaid
+  L->>DB: journal entry · invoice:id:PAID
+
+  F->>A: Issue customer invoice
+  A->>S: status ISSUED
+  A->>L: postArIssued
+  L->>DB: journal entry · receivable:id:ISSUED
+
+  F->>A: Record receipt
+  A->>S: receipt + paidAmount
+  A->>L: postArReceipt
+  L->>DB: journal entry · receipt:id:RECEIVED
+```
+
+| Event | Debit | Credit |
+|---|---|---|
+| Vendor bill approved | 5100 Operating expenses (subtotal), 1300 Input tax (tax) | 2000 Accounts payable (total) |
+| Vendor bill paid | 2000 Accounts payable | 1010 Cash & stablecoins |
+| Vendor bill voided | 2000 Accounts payable | 5100 Operating expenses, 1300 Input tax |
+| Customer invoice issued | 1100 Accounts receivable (total) | 4000 Revenue (subtotal), 2100 Tax payable (tax) |
+| Customer receipt | 1010 Cash & stablecoins | 1100 Accounts receivable |
+| Customer invoice voided | 4000 Revenue, 2100 Tax payable | 1100 Accounts receivable |
+| Manual journal | chosen | chosen (must balance) |
+| Opening balance | 1010 Cash & stablecoins | 3000 Retained earnings |
+
+Balances are computed with `$toDecimal` over integer minor-unit strings. Reports are kept
+per currency: there is no FX translation, matching the payment limitation. Trial balance,
+P&L, AP/AR aging and the journal are served by `accounting`.
+
+---
+
 ## 6. Agent custody (OutLayer)
 
 Custody wallets are TEE-held. KEIZ stores only an encrypted API key. The policy
@@ -386,6 +448,12 @@ erDiagram
   VENDOR ||--o{ INVOICE : bills
   INVOICE ||--o{ PAYMENT : paid_by
   PAYMENT ||--o{ PAYMENT_EVENT : emits
+  ORGANIZATION ||--o{ CUSTOMER : owns
+  CUSTOMER ||--o{ RECEIVABLE : billed
+  RECEIVABLE ||--o{ RECEIPT : collects
+  ORGANIZATION ||--o{ ACCOUNT : owns
+  ORGANIZATION ||--o{ JOURNAL_ENTRY : posts
+  JOURNAL_ENTRY ||--o{ JOURNAL_LINE : contains
   ORGANIZATION ||--|| AGENT_WALLET : owns
   AGENT_WALLET ||--o{ AGENT_ACTION : proposes
   INVOICE ||--o{ AGENT_ACTION : targets
@@ -423,6 +491,44 @@ erDiagram
     string provider
     string status
     string outlayerRequestId
+  }
+  CUSTOMER {
+    string orgId FK
+    string name
+    string email
+  }
+  RECEIVABLE {
+    string orgId FK
+    string customerId FK
+    string number
+    string status
+    string total
+    string paidAmount
+  }
+  RECEIPT {
+    string receiptId PK
+    string amount
+    string receivedAt
+  }
+  ACCOUNT {
+    string orgId FK
+    string code
+    string name
+    string type
+    string normalBalance
+  }
+  JOURNAL_ENTRY {
+    string orgId FK
+    date date
+    string sourceType
+    string sourceId
+    string dedupeKey
+    string currency
+  }
+  JOURNAL_LINE {
+    string accountCode
+    string debit
+    string credit
   }
   AGENT_WALLET {
     string orgId FK
@@ -511,8 +617,8 @@ flowchart LR
 
 | Suite | Covers |
 |---|---|
-| `pnpm test` | money math, NEP-413 vectors, agent policy, SSE mapping, OutLayer status map |
-| `pnpm --filter @keiz/api smoke` | auth scoping + refresh reuse, invoices, 1Click mock settlement, RBAC, duplicate quotes, audit, local chat |
+| `pnpm test` | money math, invoice totals, ledger posting rules, NEP-413 vectors, agent policy, SSE mapping, OutLayer status map |
+| `pnpm --filter @keiz/api smoke` | auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, trial balance, aging, rebuild, RBAC, duplicate quotes, audit, local chat |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
 | `pnpm --filter @keiz/api smoke:mastra` | Mastra stream chunks, request-scoped tools, memory, thread isolation |
 | `pnpm typecheck` / `pnpm build` | TypeScript and production bundles |

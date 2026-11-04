@@ -41,6 +41,15 @@
   * {
     border-color: var(--color-line);
   }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  details[open] .details-chevron {
+    transform: rotate(180deg);
+  }
+  details.faq-item[open] {
+    background: var(--color-paper);
+  }
 }
 
 @layer utilities {

@@ -1,5 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { AccountingService } from '../accounting/accounting.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -29,6 +30,7 @@ export interface ChatToolDeps {
   vendors: VendorsService;
   payments: PaymentsService;
   agent: AgentService;
+  accounting: AccountingService;
 }
 
 /**
@@ -113,6 +115,29 @@ export function createChatTools(deps: ChatToolDeps) {
     },
   });
 
+  const booksSummary = createTool({
+    id: 'books-summary',
+    description:
+      'Cash, accounts receivable, accounts payable, revenue, expenses and net income from the double-entry ledger for the current month. Use for books, cash or balance questions.',
+    inputSchema: z.object({}),
+    requestContextSchema,
+    execute: async (_input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      const summary = await deps.accounting.summary(orgId, {});
+      const format = (value: string) => formatUnits(value, summary.decimals);
+      return {
+        currency: summary.currency,
+        cash: format(summary.cash),
+        receivable: format(summary.receivable),
+        payable: format(summary.payable),
+        revenue: format(summary.revenue),
+        expenses: format(summary.expenses),
+        netIncome: format(summary.netIncome),
+        balanced: summary.trialBalance.totals.balanced,
+      };
+    },
+  });
+
   const listVendors = createTool({
     id: 'list-vendors',
     description: 'List active vendors with their payout chain and address.',
@@ -169,7 +194,7 @@ export function createChatTools(deps: ChatToolDeps) {
     },
   });
 
-  return { listInvoices, getInvoice, spendSummary, listVendors, proposePayment };
+  return { listInvoices, getInvoice, spendSummary, booksSummary, listVendors, proposePayment };
 }
 
 export type ChatTools = ReturnType<typeof createChatTools>;

@@ -44,6 +44,16 @@ interface Vendor {
   _id: string;
   name: string;
 }
+interface Books {
+  currency: string;
+  decimals: number;
+  cash: string;
+  receivable: string;
+  payable: string;
+  revenue: string;
+  expenses: string;
+  netIncome: string;
+}
 
 const OPEN_STATUSES = ['SUBMITTED', 'APPROVED', 'PAYMENT_PENDING'];
 
@@ -52,6 +62,9 @@ export default function OverviewPage() {
   const payments = useApi<Payment[]>('/payments', { pollMs: 5000 });
   const vendors = useApi<Vendor[]>('/vendors');
   const agent = useApi<AgentStats>('/agent/stats');
+  const books = useApi<Books>(
+    '/accounting/summary?currency=USD&from=2000-01-01T00:00:00.000Z',
+  );
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
 
@@ -79,7 +92,13 @@ export default function OverviewPage() {
     setSeedError(null);
     try {
       await api('/demo/seed', { method: 'POST' });
-      await Promise.all([invoices.reload(), vendors.reload(), payments.reload(), agent.reload()]);
+      await Promise.all([
+        invoices.reload(),
+        vendors.reload(),
+        payments.reload(),
+        agent.reload(),
+        books.reload(),
+      ]);
     } catch (err) {
       setSeedError(err instanceof Error ? err.message : 'Could not seed demo data');
     } finally {
@@ -101,7 +120,7 @@ export default function OverviewPage() {
             ) : null}
             <Link href="/dashboard/invoices">
               <Button size="md">
-                <Plus className="h-3.5 w-3.5" /> New invoice
+                <Plus className="h-3.5 w-3.5" /> New bill
               </Button>
             </Link>
           </>
@@ -124,7 +143,7 @@ export default function OverviewPage() {
         <Stat
           label="Paid to date"
           value={formatDollars(stats.paid)}
-          meta={`${invoices.data?.filter((row) => row.status === 'PAID').length ?? 0} settled invoices`}
+          meta={`${invoices.data?.filter((row) => row.status === 'PAID').length ?? 0} settled bills`}
           icon={<FileText className="h-4 w-4" />}
         />
         <Stat
@@ -149,10 +168,49 @@ export default function OverviewPage() {
         />
       </div>
 
+      <div className="mt-6 flex items-end justify-between">
+        <SectionTitle
+          title="Books"
+          hint="Cash, receivables and payables from the double-entry ledger"
+        />
+        <Link
+          href="/dashboard/accounting"
+          className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+        >
+          Open accounting <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat
+          label="Cash"
+          value={books.data ? formatMoney(books.data.cash, books.data.decimals, books.data.currency) : '—'}
+          meta="1010 · asset"
+          icon={<CircleDollarSign className="h-4 w-4" />}
+        />
+        <Stat
+          label="Receivables"
+          value={books.data ? formatMoney(books.data.receivable, books.data.decimals, books.data.currency) : '—'}
+          meta="Customer invoices outstanding"
+          icon={<FileText className="h-4 w-4" />}
+        />
+        <Stat
+          label="Payables"
+          value={books.data ? formatMoney(books.data.payable, books.data.decimals, books.data.currency) : '—'}
+          meta="Approved bills unpaid"
+          icon={<Clock className="h-4 w-4" />}
+        />
+        <Stat
+          label="Net income"
+          value={books.data ? formatMoney(books.data.netIncome, books.data.decimals, books.data.currency) : '—'}
+          meta={books.data ? `Revenue ${formatMoney(books.data.revenue, books.data.decimals, books.data.currency)}` : 'This month'}
+          icon={<Wallet className="h-4 w-4" />}
+        />
+      </div>
+
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <Card className="self-start overflow-hidden">
           <div className="flex items-center justify-between border-b border-line px-5 py-4">
-            <SectionTitle title="Recent invoices" hint="Newest first" />
+            <SectionTitle title="Recent bills" hint="Newest first" />
             <Link
               href="/dashboard/invoices"
               className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
@@ -162,13 +220,13 @@ export default function OverviewPage() {
           </div>
           {invoices.loading ? (
             <div className="flex items-center gap-2 px-5 py-8 text-sm text-muted">
-              <Spinner /> Loading invoices
+              <Spinner /> Loading bills
             </div>
           ) : demoEmpty ? (
             <EmptyState
               icon={<FileText className="h-5 w-5" />}
-              title="No invoices yet"
-              body="Load demo data to explore the approval and payment flow, or create your first invoice."
+              title="No bills yet"
+              body="Load demo data to explore the approval and payment flow, or create your first vendor bill."
               action={
                 <Button variant="secondary" loading={seeding} onClick={() => void seed()}>
                   Load demo data

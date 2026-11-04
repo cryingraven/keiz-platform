@@ -19,6 +19,11 @@ import { formatDollars, formatMoney, humanize, shortAddress } from '@/lib/format
 import { formatUnits } from '@keiz/shared';
 import { PageHeader } from '@/components/shell';
 import {
+  NearIntentsLogo,
+  NearProtocolIcon,
+  OutLayerLogo,
+} from '@/components/landing/logos';
+import {
   Badge,
   Button,
   Card,
@@ -183,13 +188,16 @@ export default function AgentPage() {
           {isCustody ? (
             <div className="grid gap-3 sm:grid-cols-3">
               <Card className="p-5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Native NEAR</p>
+                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted">
+                  <NearProtocolIcon className="h-3 w-3" /> Native NEAR
+                </p>
                 <p className="font-num mt-1 text-2xl font-semibold">{nativeNear}</p>
                 <p className="mt-0.5 text-[10px] text-muted">on the custody account</p>
               </Card>
               <Card className="p-5">
                 <p className="text-[10px] uppercase tracking-wider text-muted">Intents USDC</p>
                 <p className="font-num mt-1 text-2xl font-semibold">{intentsUsdc}</p>
+                <NearIntentsLogo className="mt-2 h-3.5 w-auto" />
                 <p className="mt-0.5 text-[10px] text-muted">available for gasless payouts</p>
               </Card>
               <Card className="p-5">
@@ -253,6 +261,11 @@ export default function AgentPage() {
                     {isCustody ? 'Custody' : wallet.data.policy.active ? 'Active' : 'Paused'}
                   </Badge>
                 </div>
+                {isCustody ? (
+                  <div className="mt-3">
+                    <OutLayerLogo />
+                  </div>
+                ) : null}
                 <div className="mt-3 space-y-2.5">
                   <div className="rounded-xl bg-paper px-3 py-2.5">
                     <p className="text-[10px] uppercase tracking-wider text-muted">Account</p>
