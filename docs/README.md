@@ -5,6 +5,7 @@ Start here:
 | Document | What it explains |
 |---|---|
 | [Architecture & diagrams](./architecture.md) | System context, module map, request lifecycle, auth/payment/agent/chat sequences, state machines, data model, trust boundaries |
+| [Integration & contracts](./integrations.md) | On-chain AR collection, passkey payment relayer, vault/policy contract, OutLayer policy writes, payout verification, queues |
 | [Security model](../README.md#security-model) | RBAC, deposit verification, quote idempotency, agent controls, sessions, hardening |
 | [Agent custody](../README.md#agent-custody-outlayer) | OutLayer wallets, policy handoff, funding, testnet/mainnet limits |
 | [Passkey login](../README.md#passkey-login-near-auth) | NEAR Auth, Auth0, the relayer, implicit accounts |

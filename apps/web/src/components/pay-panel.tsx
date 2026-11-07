@@ -14,6 +14,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -104,6 +105,8 @@ export function PayPanel({
       token.blockchain === 'near' &&
       ['USDC', 'USDT', 'WNEAR'].includes(token.symbol.toUpperCase()),
   );
+  const originDecimals =
+    (tokens.data ?? []).find((token) => token.assetId === active?.originAsset)?.decimals ?? 6;
 
   async function createQuote() {
     setCreating(true);
@@ -390,7 +393,8 @@ export function PayPanel({
               <p className="mt-2 text-[10px] text-muted">
                 Accepted deposit range:{' '}
                 <span className="font-num">
-                  {formatToken(active.minAmountIn)} – {formatToken(active.maxAmountIn)}
+                  {active.minAmountIn ? formatUnits(active.minAmountIn, originDecimals) : '—'} –{' '}
+                  {active.maxAmountIn ? formatUnits(active.maxAmountIn, originDecimals) : '—'}
                 </span>
               </p>
             ) : null}

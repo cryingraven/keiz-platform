@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ChevronRight, HandCoins, Plus, Search, UserPlus } from 'lucide-react';
+import { ChevronRight, Download, HandCoins, Plus, Search, UserPlus } from 'lucide-react';
+import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
+import { downloadCsv } from '@/lib/csv';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { CustomerForm, ReceivableForm } from '@/components/receivable-form';
-import { Button, Card, EmptyState, Input, Spinner, StatusPill } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Input, Spinner, StatusPill } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface Receivable {
@@ -77,6 +79,29 @@ export default function ReceivablesPage() {
         description="Customer invoices from issue to cash collected."
         actions={
           <>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                downloadCsv(
+                  'keiz-receivables.csv',
+                  rows.map((row) => ({
+                    number: row.number,
+                    customer: customerNames.get(row.customerId) ?? '',
+                    status: row.status,
+                    currency: row.currency,
+                    total: formatUnits(row.total, row.decimals),
+                    paid: formatUnits(row.paidAmount, row.decimals),
+                    outstanding: formatUnits(
+                      (BigInt(row.total) - BigInt(row.paidAmount)).toString(),
+                      row.decimals,
+                    ),
+                    dueDate: row.dueDate,
+                  })),
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
             <Button variant="secondary" onClick={() => setCustomerOpen(true)}>
               <UserPlus className="h-3.5 w-3.5" /> Add customer
             </Button>
@@ -168,6 +193,8 @@ export default function ReceivablesPage() {
           <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
             <Spinner /> Loading receivables
           </div>
+        ) : receivables.error ? (
+          <ErrorState message={receivables.error} onRetry={() => void receivables.reload()} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<HandCoins className="h-5 w-5" />}

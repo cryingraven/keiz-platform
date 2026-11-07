@@ -74,15 +74,8 @@ export class AuthService {
       throw new UnauthorizedException('Challenge domain mismatch');
     }
 
-    // Atomic single-use claim: two parallel requests cannot both succeed.
-    const claimed = await this.challenges.updateOne(
-      { _id: challenge._id, used: false },
-      { $set: { used: true } },
-    );
-    if (claimed.modifiedCount !== 1) {
-      throw new UnauthorizedException('Challenge already used');
-    }
-
+    // Verify first, then claim: an RPC blip should not burn the nonce and force
+    // the user to restart the whole sign-in flow.
     try {
       await this.near.verify({
         message: challenge.message,
@@ -94,6 +87,15 @@ export class AuthService {
       await this.near.assertFullAccessKey(input.accountId, input.publicKey, challenge.network);
     } catch (error) {
       throw new UnauthorizedException((error as Error).message);
+    }
+
+    // Atomic single-use claim: two parallel requests cannot both succeed.
+    const claimed = await this.challenges.updateOne(
+      { _id: challenge._id, used: false },
+      { $set: { used: true } },
+    );
+    if (claimed.modifiedCount !== 1) {
+      throw new UnauthorizedException('Challenge already used');
     }
 
     const { user, org, membership } = await this.users.bootstrap(input.accountId);
@@ -174,19 +176,42 @@ export class AuthService {
       if ((payload.ver ?? 0) !== (authUser.tokenVersion ?? 0)) {
         throw new Error('token version revoked');
       }
+      if (!payload.jti) throw new Error('refresh token has no jti');
 
-      if (!payload.jti || authUser.refreshJti !== payload.jti) {
+      // The immediately previous jti is accepted for a short grace window.
+      // Parallel tabs (or fan-out requests after a 401) race the rotation; the
+      // loser must not revoke the whole token family. It reuses the current jti.
+      const graceValid =
+        authUser.previousRefreshJti === payload.jti &&
+        authUser.refreshGraceUntil instanceof Date &&
+        authUser.refreshGraceUntil.getTime() > Date.now();
+
+      if (payload.jti !== authUser.refreshJti && !graceValid) {
         // A validly signed refresh token that is no longer current means reuse.
         await this.users.revokeAllSessions(payload.sub);
         throw new Error('refresh token reuse detected');
       }
 
-      const nextJti = randomUUID();
-      const rotated = await this.users.rotateRefresh(authUser.id, payload.jti, nextJti);
-      if (!rotated) {
-        await this.users.revokeAllSessions(payload.sub);
-        throw new Error('refresh rotation lost');
+      let activeJti = authUser.refreshJti;
+      if (payload.jti === authUser.refreshJti) {
+        const nextJti = randomUUID();
+        const rotated = await this.users.rotateRefresh(authUser.id, payload.jti, nextJti);
+        if (!rotated) {
+          // Another request won the rotation; fall back to the current jti if it
+          // is still our token's successor. Otherwise fail closed.
+          const fresh = await this.users.authState(payload.sub);
+          if (fresh && fresh.previousRefreshJti === payload.jti && fresh.refreshJti) {
+            activeJti = fresh.refreshJti;
+          } else {
+            await this.users.revokeAllSessions(payload.sub);
+            throw new Error('refresh rotation lost');
+          }
+        } else {
+          activeJti = nextJti;
+        }
       }
+
+      if (!activeJti) throw new Error('refresh token state missing');
 
       const { org, membership } = await this.users.profile(authUser.id);
       if (!org || !membership) throw new Error('session subject missing');
@@ -199,7 +224,7 @@ export class AuthService {
           role: membership.role,
         },
         authUser.tokenVersion ?? 0,
-        nextJti,
+        activeJti,
       );
     } catch {
       throw new UnauthorizedException('Refresh token is invalid');

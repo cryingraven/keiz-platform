@@ -27,12 +27,12 @@ export class AgentController {
   }
 
   @Roles('OWNER')
-  @Roles('OWNER')
   @Post('wallet/custody')
   createCustodyWallet(@CurrentUser() user: AuthUser) {
     return this.agent.createCustodyWallet(user.orgId);
   }
 
+  @Roles('OWNER')
   @Patch('wallet/policy')
   updatePolicy(
     @CurrentUser() user: AuthUser,

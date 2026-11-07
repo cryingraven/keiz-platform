@@ -1,6 +1,12 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
-import { CreateCustomerInput, createCustomerSchema } from '@keiz/shared';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  CreateCustomerInput,
+  createCustomerSchema,
+  updateCustomerSchema,
+  UpdateCustomerInput,
+} from '@keiz/shared';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
+import { Roles } from '../common/roles.decorator';
 import { ZodBody } from '../common/zod-body';
 import { ReceivablesService } from './receivables.service';
 
@@ -19,5 +25,21 @@ export class CustomersController {
     @Body(new ZodBody(createCustomerSchema)) body: CreateCustomerInput,
   ) {
     return this.receivables.createCustomer(user.orgId, body);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(new ZodBody(updateCustomerSchema)) body: UpdateCustomerInput,
+  ) {
+    return this.receivables.updateCustomer(user.orgId, id, body);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Delete(':id')
+  archive(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.receivables.archiveCustomer(user.orgId, id);
   }
 }

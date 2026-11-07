@@ -10,6 +10,7 @@ import { Model } from 'mongoose';
 import {
   CURRENCY_DECIMALS,
   CreateInvoiceInput,
+  UpdateInvoiceInput,
   computeInvoiceTotals,
   formatUnits,
 } from '@keiz/shared';
@@ -34,16 +35,27 @@ export class InvoicesService {
   }
 
   async summary(orgId: string) {
+    // Group by status AND currency, and keep money as a decimal string. Using
+    // $toDouble here silently loses precision and mixes currencies together.
     const rows = await this.invoices
-      .aggregate<{ _id: string; count: number; total: number }>([
+      .aggregate<{ _id: string; currency: string; count: number; total: string }>([
         { $match: { orgId } },
         {
           $group: {
-            _id: '$status',
+            _id: { status: '$status', currency: '$currency' },
             count: { $sum: 1 },
-            total: { $sum: { $toDouble: '$total' } },
+            total: { $sum: { $toDecimal: '$total' } },
           },
         },
+        {
+          $project: {
+            _id: '$_id.status',
+            currency: '$_id.currency',
+            count: 1,
+            total: { $toString: '$total' },
+          },
+        },
+        { $sort: { _id: 1, currency: 1 } },
       ])
       .exec();
     return rows;
@@ -75,6 +87,38 @@ export class InvoicesService {
       notes: input.notes,
       createdByUserId: userId,
     });
+    return invoice.toObject();
+  }
+
+  /** Draft-only edit. Totals are always recomputed, never taken from the client. */
+  async update(orgId: string, id: string, input: UpdateInvoiceInput) {
+    const invoice = await this.invoices.findOne({ _id: id, orgId });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status !== 'DRAFT') {
+      throw new BadRequestException(`Only a DRAFT bill can be edited (currently ${invoice.status})`);
+    }
+
+    const decimals = CURRENCY_DECIMALS[input.currency] ?? 2;
+    let totals: ReturnType<typeof computeInvoiceTotals>;
+    try {
+      totals = computeInvoiceTotals(input.lineItems, decimals, input.taxBps);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+
+    invoice.vendorId = input.vendorId;
+    invoice.number = input.number;
+    invoice.issueDate = input.issueDate ? new Date(input.issueDate) : invoice.issueDate;
+    invoice.dueDate = new Date(input.dueDate);
+    invoice.currency = input.currency;
+    invoice.decimals = decimals;
+    invoice.lineItems = totals.lines as never;
+    invoice.subtotal = totals.subtotal;
+    invoice.taxBps = input.taxBps;
+    invoice.taxAmount = totals.taxAmount;
+    invoice.total = totals.total;
+    invoice.notes = input.notes;
+    await invoice.save();
     return invoice.toObject();
   }
 

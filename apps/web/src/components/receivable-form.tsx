@@ -58,6 +58,17 @@ export function ReceivableForm({
     return { subtotal, tax, total: subtotal + tax };
   }, [lines, taxBps]);
 
+  const canSubmit =
+    Boolean(customerId) &&
+    Boolean(number.trim()) &&
+    lines.length > 0 &&
+    lines.every(
+      (line) =>
+        line.description.trim().length > 0 &&
+        Number(line.quantity) > 0 &&
+        Number(line.unitPrice) > 0,
+    );
+
   function updateLine(index: number, patch: Partial<LineItem>) {
     setLines((current) =>
       current.map((line, i) => (i === index ? { ...line, ...patch } : line)),
@@ -158,14 +169,17 @@ export function ReceivableForm({
             </Select>
           </div>
           <div>
-            <Label htmlFor="ar-tax">Tax (bps)</Label>
+            <Label htmlFor="ar-tax">Tax (%)</Label>
             <Input
               id="ar-tax"
               type="number"
+              step="0.01"
               min={0}
-              max={10000}
-              value={taxBps}
-              onChange={(e) => setTaxBps(e.target.value)}
+              max={100}
+              value={(Number(taxBps || 0) / 100).toString()}
+              onChange={(e) =>
+                setTaxBps(String(Math.round(Number(e.target.value || 0) * 100)))
+              }
             />
           </div>
         </div>
@@ -250,7 +264,7 @@ export function ReceivableForm({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={busy} onClick={() => void submit()}>
+          <Button loading={busy} disabled={!canSubmit} onClick={() => void submit()}>
             Create invoice
           </Button>
         </div>

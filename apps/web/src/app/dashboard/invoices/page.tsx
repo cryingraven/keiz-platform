@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ChevronRight, FileText, Plus, Search } from 'lucide-react';
+import { ChevronRight, Download, FileText, Plus, Search } from 'lucide-react';
+import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
+import { downloadCsv } from '@/lib/csv';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { InvoiceForm } from '@/components/invoice-form';
-import { Button, Card, EmptyState, Input, Spinner, StatusPill } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Input, Spinner, StatusPill } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface Invoice {
@@ -57,9 +59,29 @@ export default function InvoicesPage() {
         title="Bills (AP)"
         description="Vendor bills from draft to settlement."
         actions={
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="h-3.5 w-3.5" /> New bill
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                downloadCsv(
+                  'keiz-bills.csv',
+                  rows.map((invoice) => ({
+                    number: invoice.number,
+                    vendor: vendorNames.get(invoice.vendorId) ?? '',
+                    status: invoice.status,
+                    currency: invoice.currency,
+                    total: formatUnits(invoice.total, invoice.decimals),
+                    dueDate: invoice.dueDate,
+                  })),
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+            <Button onClick={() => setFormOpen(true)}>
+              <Plus className="h-3.5 w-3.5" /> New bill
+            </Button>
+          </>
         }
       />
 
@@ -105,6 +127,8 @@ export default function InvoicesPage() {
           <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
             <Spinner /> Loading invoices
           </div>
+        ) : invoices.error ? (
+          <ErrorState message={invoices.error} onRetry={() => void invoices.reload()} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<FileText className="h-5 w-5" />}

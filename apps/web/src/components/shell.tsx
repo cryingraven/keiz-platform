@@ -13,10 +13,14 @@ import {
   LayoutDashboard,
   Menu,
   Sparkles,
+  Users,
   Wallet,
   X,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useApi } from '@/lib/hooks';
+import { api } from '@/lib/api';
+import { isMainnet, networkLabel } from '@/lib/network';
 import { cn } from '@/lib/utils';
 import { Logo } from './logo';
 import { NearCredit } from './landing/logos';
@@ -28,6 +32,7 @@ const NAV = [
   { href: '/dashboard/invoices', label: 'Bills (AP)', icon: FileText },
   { href: '/dashboard/receivables', label: 'Receivables (AR)', icon: HandCoins },
   { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
+  { href: '/dashboard/team', label: 'Team', icon: Users },
   { href: '/dashboard/payments', label: 'Payments', icon: ArrowLeftRight },
   { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
   { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
@@ -39,6 +44,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const orgs = useApi<Array<{ id: string; name: string; slug: string; role: string }>>(
+    session?.user ? '/auth/orgs' : null,
+  );
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     if (!loading && !session?.user) router.replace('/login');
@@ -54,6 +63,48 @@ export function Shell({ children }: { children: ReactNode }) {
     );
   }
 
+  async function switchOrg(orgId: string) {
+    if (!orgId || orgId === session?.org?.id) return;
+    setSwitching(true);
+    try {
+      await api('/auth/switch-org', {
+        method: 'POST',
+        body: JSON.stringify({ orgId }),
+      });
+      window.location.reload();
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  const workspace = (
+    <>
+      <div className="flex items-center gap-2 text-[11px] text-white/50">
+        <Sparkles className="h-3.5 w-3.5" />
+        Workspace
+      </div>
+      {(orgs.data?.length ?? 0) > 1 ? (
+        <select
+          value={session.org?.id ?? ''}
+          disabled={switching}
+          onChange={(event) => void switchOrg(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.06] px-2 py-1.5 text-[12px] font-medium text-white outline-none"
+          aria-label="Switch workspace"
+        >
+          {(orgs.data ?? []).map((org) => (
+            <option key={org.id} value={org.id} className="text-ink">
+              {org.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <p className="mt-1 truncate text-[13px] font-medium text-white">{session.org?.name}</p>
+      )}
+      <p className="mt-0.5 truncate font-num text-[11px] text-white/40">
+        {session.user.accountId}
+      </p>
+    </>
+  );
   const nav = (
     <nav className="flex flex-col gap-1">
       {NAV.map((item) => {
@@ -91,14 +142,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="mt-8">{nav}</div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-          <div className="flex items-center gap-2 text-[11px] text-white/50">
-            <Sparkles className="h-3.5 w-3.5" />
-            Workspace
-          </div>
-          <p className="mt-1 truncate text-[13px] font-medium text-white">{session.org?.name}</p>
-          <p className="mt-0.5 font-num text-[11px] text-white/40">
-            {session.user.accountId}
-          </p>
+          {workspace}
           <div className="mt-3 border-t border-white/10 pt-2">
             <NearCredit dark />
           </div>
@@ -121,7 +165,18 @@ export function Shell({ children }: { children: ReactNode }) {
               )?.label ?? 'Workspace'}
             </span>
           </div>
-          <ConnectButton compact />
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                isMainnet ? 'bg-mint-soft text-mint' : 'bg-amber-soft text-amber',
+              )}
+              title={`NEAR ${networkLabel}`}
+            >
+              {networkLabel}
+            </span>
+            <ConnectButton compact />
+          </div>
         </header>
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
@@ -139,7 +194,10 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
             <div className="mt-8">{nav}</div>
             <div className="mt-auto border-t border-white/10 px-2 pt-4">
-              <NearCredit dark />
+              {workspace}
+              <div className="mt-3">
+                <NearCredit dark />
+              </div>
             </div>
           </div>
         </div>

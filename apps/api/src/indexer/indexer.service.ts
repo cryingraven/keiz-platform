@@ -45,6 +45,7 @@ export class IndexerService {
     let indexed = 0;
     for (const payment of pending) {
       const exists = await this.events.exists({
+        orgId: payment.orgId,
         txHash: payment.txHash,
         eventIndex: 0,
       });
@@ -104,7 +105,7 @@ export class IndexerService {
         : 'FAILURE';
 
     const doc = await this.events.findOneAndUpdate(
-      { txHash: payment.txHash, eventIndex: 0 },
+      { orgId: payment.orgId, txHash: payment.txHash, eventIndex: 0 },
       {
         $setOnInsert: {
           orgId: payment.orgId,

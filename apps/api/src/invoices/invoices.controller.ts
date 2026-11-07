@@ -1,5 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { createInvoiceSchema, CreateInvoiceInput, invoiceDecisionSchema } from '@keiz/shared';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  createInvoiceSchema,
+  CreateInvoiceInput,
+  invoiceDecisionSchema,
+  updateInvoiceSchema,
+  UpdateInvoiceInput,
+} from '@keiz/shared';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { ZodBody } from '../common/zod-body';
@@ -34,6 +40,15 @@ export class InvoicesController {
     @Body(new ZodBody(createInvoiceSchema)) body: CreateInvoiceInput,
   ) {
     return this.invoices.create(user.orgId, user.sub, body);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(new ZodBody(updateInvoiceSchema)) body: UpdateInvoiceInput,
+  ) {
+    return this.invoices.update(user.orgId, id, body);
   }
 
   @Post(':id/submit')

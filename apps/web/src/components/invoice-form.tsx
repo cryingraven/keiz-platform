@@ -16,6 +16,18 @@ interface LineItem {
   unitPrice: string;
 }
 
+export interface EditableInvoice {
+  _id: string;
+  vendorId: string;
+  number: string;
+  issueDate: string;
+  dueDate: string;
+  currency: string;
+  taxBps: number;
+  notes?: string;
+  lineItems: Array<{ description: string; quantity: string; unitPrice: string }>;
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -29,22 +41,39 @@ const emptyLine = (): LineItem => ({ description: '', quantity: '1', unitPrice: 
 export function InvoiceForm({
   open,
   vendors,
+  invoice,
   onClose,
   onCreated,
 }: {
   open: boolean;
   vendors: Vendor[];
+  invoice?: EditableInvoice | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [vendorId, setVendorId] = useState('');
-  const [number, setNumber] = useState(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
-  const [issueDate, setIssueDate] = useState(today());
-  const [dueDate, setDueDate] = useState(inDays(14));
-  const [currency, setCurrency] = useState('USD');
-  const [taxBps, setTaxBps] = useState('0');
-  const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  const isEdit = Boolean(invoice);
+  const [vendorId, setVendorId] = useState(invoice?.vendorId ?? '');
+  const [number, setNumber] = useState(
+    invoice?.number ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+  );
+  const [issueDate, setIssueDate] = useState(
+    invoice ? invoice.issueDate.slice(0, 10) : today(),
+  );
+  const [dueDate, setDueDate] = useState(
+    invoice ? invoice.dueDate.slice(0, 10) : inDays(14),
+  );
+  const [currency, setCurrency] = useState(invoice?.currency ?? 'USD');
+  const [taxBps, setTaxBps] = useState(String(invoice?.taxBps ?? 0));
+  const [notes, setNotes] = useState(invoice?.notes ?? '');
+  const [lines, setLines] = useState<LineItem[]>(
+    invoice?.lineItems?.length
+      ? invoice.lineItems.map((line) => ({
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+        }))
+      : [emptyLine()],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +86,17 @@ export function InvoiceForm({
     const tax = subtotal * (Number(taxBps || 0) / 10_000);
     return { subtotal, tax, total: subtotal + tax };
   }, [lines, taxBps]);
+
+  const canSubmit =
+    Boolean(vendorId) &&
+    Boolean(number.trim()) &&
+    lines.length > 0 &&
+    lines.every(
+      (line) =>
+        line.description.trim().length > 0 &&
+        Number(line.quantity) > 0 &&
+        Number(line.unitPrice) > 0,
+    );
 
   function updateLine(index: number, patch: Partial<LineItem>) {
     setLines((current) =>
@@ -72,8 +112,8 @@ export function InvoiceForm({
       if (lines.some((line) => !line.description || !line.unitPrice)) {
         throw new Error('Every line needs a description and unit price');
       }
-      await api('/invoices', {
-        method: 'POST',
+      await api(isEdit ? `/invoices/${invoice!._id}` : '/invoices', {
+        method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify({
           vendorId,
           number,
@@ -87,11 +127,13 @@ export function InvoiceForm({
       });
       onCreated();
       onClose();
-      setLines([emptyLine()]);
-      setNotes('');
-      setNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
+      if (!isEdit) {
+        setLines([emptyLine()]);
+        setNotes('');
+        setNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create invoice');
+      setError(err instanceof Error ? err.message : 'Could not save the bill');
     } finally {
       setBusy(false);
     }
@@ -101,7 +143,7 @@ export function InvoiceForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="New vendor bill"
+      title={isEdit ? 'Edit vendor bill' : 'New vendor bill'}
       description="Totals are computed in integer minor units on the server."
       wide
     >
@@ -145,14 +187,17 @@ export function InvoiceForm({
             </Select>
           </div>
           <div>
-            <Label htmlFor="tax">Tax (bps)</Label>
+            <Label htmlFor="tax">Tax (%)</Label>
             <Input
               id="tax"
               type="number"
+              step="0.01"
               min={0}
-              max={10000}
-              value={taxBps}
-              onChange={(e) => setTaxBps(e.target.value)}
+              max={100}
+              value={(Number(taxBps || 0) / 100).toString()}
+              onChange={(e) =>
+                setTaxBps(String(Math.round(Number(e.target.value || 0) * 100)))
+              }
             />
           </div>
         </div>
@@ -237,8 +282,8 @@ export function InvoiceForm({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={busy} onClick={() => void submit()}>
-            Create bill
+          <Button loading={busy} disabled={!canSubmit} onClick={() => void submit()}>
+            {isEdit ? 'Save changes' : 'Create bill'}
           </Button>
         </div>
       </div>

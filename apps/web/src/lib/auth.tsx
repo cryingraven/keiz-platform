@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { api, ApiError } from './api';
 import { base64ToBytes, bytesToBase64 } from './format';
+import { chainNetwork } from './network';
 import { passkeyEnabled, signInWithPasskey as passkeySignIn } from './passkey';
 
 export interface Session {
@@ -46,11 +47,23 @@ type WalletLike = {
     message: string;
     recipient: string;
     nonce: Uint8Array;
+    signerId?: string;
   }) => Promise<{ signature: string; publicKey: string }>;
   signAndSendTransactions: (payload: {
     transactions: unknown[];
   }) => Promise<Array<{ transaction?: { hash?: string } }>>;
 };
+
+function friendlyWalletError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (/reject|cancel|denied|closed|dismiss|abort/i.test(message)) {
+    return 'Wallet sign-in was cancelled.';
+  }
+  if (/not installed|not found|unavailable/i.test(message)) {
+    return 'That wallet is not available in this browser.';
+  }
+  return message || 'Wallet sign-in failed.';
+}
 
 export function NearAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -81,60 +94,47 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keiz:unauthorized', onUnauthorized);
   }, [refresh]);
 
-  useEffect(() => {
-    // Passkey-only mode must never load the wallet connector: importing it
-    // fetches the wallet manifest and can surface the wallet picker.
-    if (!walletLoginEnabled) return;
-    let cancelled = false;
-    connectorPromiseRef.current = (async () => {
-      try {
-        const { NearConnector } = await import('@hot-labs/near-connect');
-        const connector = new NearConnector({
-          network: (process.env.NEXT_PUBLIC_NEAR_NETWORK as 'mainnet' | 'testnet') ?? 'mainnet',
-          features: { signMessage: true },
-          footerBranding: null,
-        });
-        if (!cancelled) connectorRef.current = connector;
-        return connector;
-      } catch {
-        // Wallet connector is optional until the user tries to sign in.
-        return null;
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  /**
+   * Load near-connect lazily, on the first wallet action. Passkey-only mode and
+   * dashboard pages never import it.
+   */
+  const ensureConnector = useCallback(async () => {
+    if (connectorRef.current) return connectorRef.current;
+    if (!connectorPromiseRef.current) {
+      connectorPromiseRef.current = (async () => {
+        try {
+          const { NearConnector } = await import('@hot-labs/near-connect');
+          const connector = new NearConnector({
+            network: chainNetwork,
+            features: { signMessage: true },
+            footerBranding: null,
+          });
+          connectorRef.current = connector;
+          return connector;
+        } catch {
+          return null;
+        }
+      })();
+    }
+    return connectorPromiseRef.current;
   }, []);
 
-  const signIn = useCallback(async () => {
-    if (!walletLoginEnabled) {
-      setError('Wallet login is disabled. Use a passkey.');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const connector = connectorRef.current ?? (await connectorPromiseRef.current);
-      if (!connector) throw new Error('Wallet connector is unavailable');
-      const wallet = (await connector.connect()) as WalletLike;
-      walletRef.current = wallet;
-      const accounts = await wallet.getAccounts();
-      const accountId = accounts[0]?.accountId;
-      if (!accountId) throw new Error('No account returned by the wallet');
-
+  const completeSignIn = useCallback(
+    async (wallet: WalletLike, accountId: string) => {
       const challenge = await api<{
         nonce: string;
         message: string;
         recipient: string;
       }>('/auth/challenge', {
         method: 'POST',
-        body: JSON.stringify({ accountId }),
+        body: JSON.stringify({ accountId, network: chainNetwork }),
       });
 
       const signed = await wallet.signMessage({
         message: challenge.message,
         recipient: challenge.recipient,
         nonce: base64ToBytes(challenge.nonce),
+        signerId: accountId,
       });
 
       // Wallets disagree: some return base64 strings, others Uint8Array / key objects.
@@ -157,18 +157,32 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
         }),
       });
       setSession(nextSession);
+    },
+    [],
+  );
+
+  const signIn = useCallback(async () => {
+    if (!walletLoginEnabled) {
+      setError('Wallet login is disabled. Use a passkey.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const connector = await ensureConnector();
+      if (!connector) throw new Error('Wallet connector is unavailable');
+      const wallet = (await connector.connect()) as WalletLike;
+      walletRef.current = wallet;
+      const accounts = await wallet.getAccounts();
+      const accountId = accounts[0]?.accountId;
+      if (!accountId) throw new Error('No account returned by the wallet');
+      await completeSignIn(wallet, accountId);
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Sign in failed';
-      setError(message);
+      setError(err instanceof ApiError ? err.message : friendlyWalletError(err));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [completeSignIn, ensureConnector]);
 
   const signInWithPasskey = useCallback(async () => {
     setPasskeyBusy(true);
@@ -192,12 +206,12 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Wallet signing is disabled. Enable NEXT_PUBLIC_WALLET_LOGIN to use it.');
     }
     if (walletRef.current) return walletRef.current;
-    const connector = connectorRef.current ?? (await connectorPromiseRef.current);
+    const connector = await ensureConnector();
     if (!connector) throw new Error('Wallet connector is unavailable');
     const wallet = (await connector.connect()) as WalletLike;
     walletRef.current = wallet;
     return wallet;
-  }, []);
+  }, [ensureConnector]);
 
   /** Signs and sends through the connected wallet, connecting first if needed. */
   const sendTransactions = useCallback(

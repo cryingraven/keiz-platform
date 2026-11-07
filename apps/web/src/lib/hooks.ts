@@ -8,30 +8,35 @@ export function useApi<T>(path: string | null, options?: { pollMs?: number }) {
   const [loading, setLoading] = useState(Boolean(path));
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const generation = useRef(0);
 
   const reload = useCallback(async () => {
     if (!path) return;
+    const requestId = ++generation.current;
     try {
       const result = await api<T>(path);
-      if (mounted.current) {
+      if (mounted.current && requestId === generation.current) {
         setData(result);
         setError(null);
       }
     } catch (err) {
-      if (mounted.current) {
+      if (mounted.current && requestId === generation.current) {
         setError(err instanceof ApiError ? err.message : 'Could not load data');
       }
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mounted.current && requestId === generation.current) setLoading(false);
     }
   }, [path]);
 
   useEffect(() => {
     mounted.current = true;
+    // Invalidate any request still in flight for the previous path.
+    generation.current += 1;
     setLoading(true);
     void reload();
     return () => {
       mounted.current = false;
+      generation.current += 1;
     };
   }, [reload]);
 

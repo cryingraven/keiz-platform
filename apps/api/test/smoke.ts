@@ -770,6 +770,18 @@ async function main() {
       cookie: bobMemberCookie,
       expect: 403,
     });
+    await req('/agent/wallet/policy', {
+      method: 'PATCH',
+      cookie: bobMemberCookie,
+      body: {
+        perTxLimitUsd: '500',
+        dailyLimitUsd: '1500',
+        approvalThresholdUsd: '250',
+        allowedAssets: ['nep141:usdc.near'],
+        active: true,
+      },
+      expect: 403,
+    });
     await req(`/receivables/${overdue._id}/receipts`, {
       method: 'POST',
       cookie: bobMemberCookie,
@@ -779,7 +791,8 @@ async function main() {
     await req('/accounting/summary?currency=USD', { cookie: bobMemberCookie });
     pass('RBAC: MEMBER reads the books but cannot post or record receipts');
 
-    // Refresh-token reuse must revoke every session for that user.
+    // Refresh rotation has a short grace window so parallel tabs cannot log the
+    // whole family out. A genuinely stale token must still be rejected.
     const eve = await tokenFor('eve.near');
     const eveJti = randomUUID();
     await users.setRefreshJti(eve.user.id, eveJti);
@@ -797,16 +810,34 @@ async function main() {
       method: 'POST',
       cookie: `keiz_refresh=${eveTokens.refreshToken}`,
     });
+    // The previous jti used by a parallel tab is accepted inside the grace window.
     await req('/auth/refresh', {
       method: 'POST',
       cookie: `keiz_refresh=${eveTokens.refreshToken}`,
+    });
+
+    const staleJti = randomUUID();
+    const staleTokens = await auth.issueTokens(
+      {
+        sub: eve.user.id,
+        accountId: 'eve.near',
+        orgId: eve.org!.id,
+        role: 'OWNER',
+      },
+      0,
+      staleJti,
+    );
+    await users.setRefreshJti(eve.user.id, randomUUID());
+    await req('/auth/refresh', {
+      method: 'POST',
+      cookie: `keiz_refresh=${staleTokens.refreshToken}`,
       expect: 401,
     });
     await req('/invoices', {
-      cookie: `keiz_access=${eveTokens.accessToken}`,
+      cookie: `keiz_access=${staleTokens.accessToken}`,
       expect: 401,
     });
-    pass('refresh-token reuse revokes the whole session family');
+    pass('refresh rotation is grace-tolerant but revokes genuinely stale tokens');
 
 
     // --- authorization and input hardening ---
@@ -891,6 +922,88 @@ async function main() {
     });
     assert(selfDecision === 403, `creator cannot self-approve with another approver (got ${selfDecision})`);
     pass('segregation of duties blocks self-approval');
+
+    // Draft edit recomputes totals server-side.
+    const editable = await req<{ _id: string }>('/invoices', {
+      method: 'POST',
+      cookie: aliceCookie,
+      body: {
+        vendorId: vendor._id,
+        number: 'INV-EDIT-1',
+        dueDate: new Date(Date.now() + 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Draft line', quantity: '1', unitPrice: '10.00' }],
+      },
+    });
+    const edited = await req<{ total: string }>(`/invoices/${editable._id}`, {
+      method: 'PATCH',
+      cookie: aliceCookie,
+      body: {
+        vendorId: vendor._id,
+        number: 'INV-EDIT-1',
+        dueDate: new Date(Date.now() + 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Draft line', quantity: '2', unitPrice: '10.00' }],
+      },
+    });
+    assert(edited.total === '2000', `draft edit recomputes total (got ${edited.total})`);
+    await req(`/invoices/${editable._id}/submit`, { method: 'POST', cookie: aliceCookie });
+    const lockedEdit = await statusOf(`/invoices/${editable._id}`, {
+      method: 'PATCH',
+      cookie: aliceCookie,
+      body: {
+        vendorId: vendor._id,
+        number: 'INV-EDIT-1',
+        dueDate: new Date(Date.now() + 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Nope', quantity: '1', unitPrice: '1.00' }],
+      },
+    });
+    assert(lockedEdit === 400, `submitted bills cannot be edited (got ${lockedEdit})`);
+    pass('draft bills are editable and totals are recomputed');
+
+    // Team membership: add, change role, remove, and keep the last owner.
+    await req('/members', {
+      method: 'POST',
+      cookie: aliceCookie,
+      body: { accountId: 'teammate.near', role: 'APPROVER' },
+    });
+    const team = await req<Array<{ userId: string; accountId: string; role: string }>>(
+      '/members',
+      { cookie: aliceCookie },
+    );
+    const teammate = team.find((member) => member.accountId === 'teammate.near');
+    assert(teammate, 'member was added');
+    await req(`/members/${teammate.userId}`, {
+      method: 'PATCH',
+      cookie: aliceCookie,
+      body: { role: 'MEMBER' },
+    });
+    await req(`/members/${teammate.userId}`, { method: 'DELETE', cookie: aliceCookie });
+    const owner = team.find((member) => member.role === 'OWNER');
+    assert(owner, 'workspace has an owner');
+    const lastOwner = await statusOf(`/members/${owner.userId}`, {
+      method: 'PATCH',
+      cookie: aliceCookie,
+      body: { role: 'ADMIN' },
+    });
+    assert(lastOwner === 400, `last owner cannot be demoted (got ${lastOwner})`);
+    pass('members can be added, re-roled and removed; the last owner is protected');
+
+    // Workspace switching: an invited user can enter the inviting workspace.
+    await users.addMember(alice.org!.id, 'bob.near', 'APPROVER');
+    const bobOrgs = await users.listOrgs(bob.user.id);
+    assert(bobOrgs.length >= 2, 'bob now belongs to two workspaces');
+    await users.switchOrg(bob.user.id, alice.org!.id);
+    const bobProfile = await users.profile(bob.user.id);
+    assert(
+      bobProfile.org?.id === alice.org!.id,
+      'active workspace changed to the inviting org',
+    );
+    pass('invited members can switch into the shared workspace');
 
     const relayWrong = await statusOf('/auth/passkey/relay', {
       method: 'POST',

@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
+import type { Role } from '@keiz/shared';
 import { Organization, OrganizationDocument } from './organization.schema';
 import { Membership, MembershipDocument } from './membership.schema';
 import { User, UserDocument } from './user.schema';
@@ -14,14 +15,29 @@ export class UsersService {
     @InjectModel(Membership.name) private readonly memberships: Model<MembershipDocument>,
   ) {}
 
+  /** The workspace the user last selected, falling back to their first membership. */
+  private async currentMembership(user: UserDocument): Promise<MembershipDocument | null> {
+    if (user.activeOrgId) {
+      const active = await this.memberships.findOne({
+        userId: user.id,
+        orgId: user.activeOrgId,
+      });
+      if (active) return active;
+    }
+    return this.memberships.findOne({ userId: user.id });
+  }
+
   /** First login creates the user, their workspace and an OWNER membership atomically-ish. */
   async bootstrap(accountId: string) {
     const existing = await this.users.findOne({ accountId });
     if (existing) {
-      const membership = await this.memberships.findOne({ userId: existing.id });
+      const membership = await this.currentMembership(existing);
       if (membership) {
         const org = await this.orgs.findById(membership.orgId);
         if (org) {
+          if (existing.activeOrgId !== org.id) {
+            existing.activeOrgId = org.id;
+          }
           existing.lastLoginAt = new Date();
           await existing.save();
           return { user: existing, org, membership };
@@ -30,7 +46,7 @@ export class UsersService {
     }
 
     const user = existing ?? (await this.users.create({ accountId }));
-    let membership = await this.memberships.findOne({ userId: user.id });
+    let membership = await this.currentMembership(user);
     let org: OrganizationDocument | null = null;
 
     if (membership) {
@@ -48,6 +64,7 @@ export class UsersService {
       });
     }
 
+    user.activeOrgId = org.id;
     user.lastLoginAt = new Date();
     await user.save();
     return { user, org, membership };
@@ -62,15 +79,83 @@ export class UsersService {
     return { user, membership };
   }
 
-  /** Add or update a membership. Used by tests and future invite flows. */
-  async addMember(orgId: string, accountId: string, role: 'OWNER' | 'ADMIN' | 'APPROVER' | 'MEMBER') {
-    const { user } = await this.bootstrap(accountId);
-    await this.memberships.updateOne(
-      { orgId, userId: user.id },
-      { $set: { role } },
-      { upsert: true },
-    );
+  /** Find or create a user without creating a workspace for them. */
+  async ensureUser(accountId: string) {
+    const existing = await this.users.findOne({ accountId });
+    if (existing) return existing;
+    try {
+      return await this.users.create({ accountId });
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        const raced = await this.users.findOne({ accountId });
+        if (raced) return raced;
+      }
+      throw error;
+    }
+  }
+
+  async listMembers(orgId: string) {
+    const memberships = await this.memberships.find({ orgId }).sort({ createdAt: 1 }).lean();
+    const users = await this.users
+      .find({ _id: { $in: memberships.map((membership) => membership.userId) } })
+      .lean();
+    const byId = new Map(users.map((user) => [String(user._id), user]));
+    return memberships.map((membership) => {
+      const user = byId.get(membership.userId);
+      return {
+        userId: membership.userId,
+        accountId: user?.accountId ?? 'unknown',
+        displayName: user?.displayName ?? null,
+        role: membership.role,
+        joinedAt: (membership as { createdAt?: Date }).createdAt?.toISOString() ?? null,
+      };
+    });
+  }
+
+  /** Add or update a membership. The caller decides whether the role is allowed. */
+  async addMember(orgId: string, accountId: string, role: Role) {
+    const user = await this.ensureUser(accountId);
+    const existing = await this.memberships.findOne({ orgId, userId: user.id });
+    if (existing) {
+      if (existing.role === 'OWNER' && role !== 'OWNER') {
+        await this.assertNotLastOwner(orgId, user.id);
+      }
+      existing.role = role;
+      await existing.save();
+    } else {
+      await this.memberships.create({ orgId, userId: user.id, role });
+    }
     return user;
+  }
+
+  async updateMemberRole(orgId: string, userId: string, role: Role) {
+    const membership = await this.memberships.findOne({ orgId, userId });
+    if (!membership) throw new NotFoundException('Member not found');
+    if (membership.role === 'OWNER' && role !== 'OWNER') {
+      await this.assertNotLastOwner(orgId, userId);
+    }
+    membership.role = role;
+    await membership.save();
+    return membership.toObject();
+  }
+
+  async removeMember(orgId: string, userId: string) {
+    const membership = await this.memberships.findOne({ orgId, userId });
+    if (!membership) throw new NotFoundException('Member not found');
+    if (membership.role === 'OWNER') {
+      await this.assertNotLastOwner(orgId, userId);
+    }
+    await this.memberships.deleteOne({ _id: membership._id, orgId });
+    return { ok: true };
+  }
+
+  private async assertNotLastOwner(orgId: string, userId: string) {
+    const owners = await this.memberships.countDocuments({ orgId, role: 'OWNER' });
+    if (owners <= 1) {
+      throw new BadRequestException('A workspace must keep at least one owner');
+    }
+    // Keep the parameter meaningful for future audit/logging hooks.
+    void userId;
   }
 
   /** Used for separation-of-duties checks on invoice approval. */
@@ -82,20 +167,37 @@ export class UsersService {
     });
   }
 
-  /** Includes the otherwise-hidden refresh jti. */
+  /** Includes the otherwise-hidden refresh jti and its grace window. */
   async authState(userId: string) {
-    return this.users.findById(userId).select('+refreshJti');
+    return this.users
+      .findById(userId)
+      .select('+refreshJti +previousRefreshJti +refreshGraceUntil');
   }
 
   async setRefreshJti(userId: string, jti: string) {
-    await this.users.updateOne({ _id: userId }, { $set: { refreshJti: jti } });
+    await this.users.updateOne(
+      { _id: userId },
+      {
+        $set: { refreshJti: jti },
+        $unset: { previousRefreshJti: 1, refreshGraceUntil: 1 },
+      },
+    );
   }
 
   /** Atomic compare-and-swap so two tabs cannot both rotate the same token. */
   async rotateRefresh(userId: string, expectedJti: string, nextJti: string) {
+    // Keep the old jti valid for a moment. Parallel requests that raced us will
+    // present it; accepting it briefly avoids logging the whole workspace out.
+    const graceMs = 30_000;
     const result = await this.users.updateOne(
       { _id: userId, refreshJti: expectedJti },
-      { $set: { refreshJti: nextJti } },
+      {
+        $set: {
+          refreshJti: nextJti,
+          previousRefreshJti: expectedJti,
+          refreshGraceUntil: new Date(Date.now() + graceMs),
+        },
+      },
     );
     return result.modifiedCount === 1;
   }
@@ -103,18 +205,53 @@ export class UsersService {
   async revokeAllSessions(userId: string) {
     await this.users.updateOne(
       { _id: userId },
-      { $inc: { tokenVersion: 1 }, $unset: { refreshJti: 1 } },
+      {
+        $inc: { tokenVersion: 1 },
+        $unset: { refreshJti: 1, previousRefreshJti: 1, refreshGraceUntil: 1 },
+      },
     );
   }
 
   async clearRefreshJti(userId: string) {
-    await this.users.updateOne({ _id: userId }, { $unset: { refreshJti: 1 } });
+    await this.users.updateOne(
+      { _id: userId },
+      { $unset: { refreshJti: 1, previousRefreshJti: 1, refreshGraceUntil: 1 } },
+    );
   }
 
   async profile(userId: string) {
     const user = await this.users.findById(userId);
-    const membership = await this.memberships.findOne({ userId });
+    const membership = user ? await this.currentMembership(user) : null;
     const org = membership ? await this.orgs.findById(membership.orgId) : null;
     return { user, org, membership };
+  }
+
+  async listOrgs(userId: string) {
+    const memberships = await this.memberships.find({ userId }).lean();
+    const orgs = await this.orgs
+      .find({ _id: { $in: memberships.map((membership) => membership.orgId) } })
+      .lean();
+    const byId = new Map(orgs.map((org) => [String(org._id), org]));
+    return memberships.flatMap((membership) => {
+      const org = byId.get(membership.orgId);
+      if (!org) return [];
+      return [
+        {
+          id: String(org._id),
+          name: org.name,
+          slug: org.slug,
+          role: membership.role,
+        },
+      ];
+    });
+  }
+
+  async switchOrg(userId: string, orgId: string) {
+    const membership = await this.memberships.findOne({ userId, orgId });
+    if (!membership) throw new NotFoundException('Workspace not found');
+    const org = await this.orgs.findById(orgId);
+    if (!org) throw new NotFoundException('Workspace not found');
+    await this.users.updateOne({ _id: userId }, { $set: { activeOrgId: orgId } });
+    return { org, membership };
   }
 }

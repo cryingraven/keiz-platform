@@ -14,6 +14,10 @@ export class User {
   @Prop()
   avatarUrl?: string;
 
+  /** Workspace selected on the next sign-in. Null means "first membership". */
+  @Prop()
+  activeOrgId?: string;
+
   @Prop({ type: Date })
   lastLoginAt?: Date;
 
@@ -24,6 +28,16 @@ export class User {
   /** Current refresh-token id. Rotation replaces it; reuse triggers revocation. */
   @Prop({ select: false })
   refreshJti?: string;
+
+  /**
+   * The jti that was current immediately before this one. It is accepted for a
+   * short grace window so parallel tabs cannot race each other into a logout.
+   */
+  @Prop({ select: false })
+  previousRefreshJti?: string;
+
+  @Prop({ type: Date, select: false })
+  refreshGraceUntil?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

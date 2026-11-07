@@ -1,8 +1,15 @@
 import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { Throttle } from '@nestjs/throttler';
-import { loginChallengeSchema, loginVerifySchema, passkeyRelaySchema } from '@keiz/shared';
+import {
+  loginChallengeSchema,
+  loginVerifySchema,
+  passkeyRelaySchema,
+  switchOrgSchema,
+} from '@keiz/shared';
 import { ACCESS_COOKIE, REFRESH_COOKIE } from '../common/jwt-auth.guard';
+import { AuthUser, CurrentUser } from '../common/current-user.decorator';
 import { Public } from '../common/public.decorator';
 import { ZodBody } from '../common/zod-body';
 import { UsersService } from '../users/users.service';
@@ -93,6 +100,45 @@ export class AuthController {
     res.clearCookie(ACCESS_COOKIE, cookieOptions());
     res.clearCookie(REFRESH_COOKIE, cookieOptions());
     return { ok: true };
+  }
+
+  @Get('orgs')
+  orgs(@CurrentUser() user: AuthUser) {
+    return this.users.listOrgs(user.sub);
+  }
+
+  @Post('switch-org')
+  async switchOrg(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(switchOrgSchema)) body: { orgId: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { org, membership } = await this.users.switchOrg(user.sub, body.orgId);
+    const state = await this.users.authState(user.sub);
+    const jti = randomUUID();
+    await this.users.setRefreshJti(user.sub, jti);
+    const tokens = await this.auth.issueTokens(
+      {
+        sub: user.sub,
+        accountId: user.accountId,
+        orgId: org.id,
+        role: membership.role,
+      },
+      state?.tokenVersion ?? 0,
+      jti,
+    );
+    res.cookie(ACCESS_COOKIE, tokens.accessToken, {
+      ...cookieOptions(),
+      maxAge: 15 * 60 * 1000,
+    });
+    res.cookie(REFRESH_COOKIE, tokens.refreshToken, {
+      ...cookieOptions(),
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    return {
+      org: { id: org.id, name: org.name, slug: org.slug },
+      role: membership.role,
+    };
   }
 
   @Public()

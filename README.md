@@ -91,9 +91,13 @@ existing no-FX limitation on payments.
 POST /api/auth/challenge          create a NEP-413 challenge
 POST /api/auth/verify             verify signature, set session cookies
 GET  /api/auth/me                 session or null
+GET  /api/auth/orgs               workspaces this account belongs to
+POST /api/auth/switch-org         switch active workspace, reissue cookies
 
 GET/POST /api/vendors
+PATCH/DELETE /api/vendors/:id      ADMIN/OWNER (delete archives)
 GET/POST /api/invoices
+PATCH /api/invoices/:id            DRAFT only, totals recomputed
 POST /api/invoices/:id/submit
 POST /api/invoices/:id/decision
 POST /api/invoices/:id/void
@@ -108,6 +112,7 @@ POST /api/payments/:id/simulate   ADMIN/OWNER, mock + non-production only
 GET  /api/payments/:id/events
 
 GET/POST /api/customers
+PATCH/DELETE /api/customers/:id     ADMIN/OWNER (delete archives)
 GET  /api/receivables                 ?status= &customerId= &currency=
 GET  /api/receivables/summary
 GET  /api/receivables/:id
@@ -126,7 +131,9 @@ POST /api/accounting/rebuild          ADMIN/OWNER, idempotent backfill
 
 GET  /api/agent/wallet
 POST /api/agent/wallet
-PATCH /api/agent/wallet/policy
+POST /api/agent/wallet/custody      OWNER, upgrade a local wallet to OutLayer
+PATCH /api/agent/wallet/policy      OWNER
+GET  /api/agent/stats
 GET/POST /api/agent/actions
 POST /api/agent/actions/:id/decision
 POST /api/agent/actions/:id/execute
@@ -137,6 +144,10 @@ GET  /api/chat/threads/:id
 DELETE /api/chat/threads/:id
 
 GET  /api/indexer/events
+POST /api/indexer/backfill/:paymentId   ADMIN/OWNER
+GET  /api/members                  workspace team
+POST /api/members                  ADMIN/OWNER
+PATCH/DELETE /api/members/:userId  ADMIN/OWNER (last owner protected)
 GET  /api/audit                   ADMIN/OWNER
 POST /api/demo/seed               OWNER, non-production only
 GET  /api/health
@@ -175,7 +186,7 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 
 ## Passkey login (NEAR Auth)
 
-`/login` mirrors near.com's centered sign-in layout: a recommended **Sign in with passkey** card, plus a **NEAR Wallets** connector when `NEXT_PUBLIC_WALLET_LOGIN=true` (the default). Set it to `false` for passkey-only; the near-connect manifest is then never loaded.
+`/login` mirrors near.com's centered sign-in layout: a recommended **Sign in with passkey** card, plus a **NEAR Wallets** button when `NEXT_PUBLIC_WALLET_LOGIN=true` (the default). The button opens the near-connect selector, which supports HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and the rest of the manifest. Set the flag to `false` for passkey-only; the near-connect manifest is then never loaded. The connector is lazy: it loads on the first wallet action, never on dashboard pages. WalletConnect/Unity remain hidden unless a WalletConnect SignClient is configured.
 
 Passkeys use [NEAR Auth](https://docs.auth.near.org): Auth0 issues a JWT, the `fast-auth` contract verifies it, and an MPC network signs the NEP-413 message.
 
@@ -193,6 +204,8 @@ New NEAR Auth users are **implicit accounts** (hex of their public key) that do 
 
 Passkey login currently authenticates the user only. With wallet login disabled there is no wallet to sign invoice deposits: mock mode uses the admin simulation, mainnet mode keeps the verified transaction-hash fallback, and passkey-signed payments need a second relayer flow.
 
+`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives the wallet connector, passkey defaults and the dashboard badge. Passkey mainnet also requires a mainnet Auth0 client and the API's `NEAR_AUTH_NETWORK`, contract and relayer to be on mainnet; wallet login only depends on the frontend value.
+
 ## Environment
 
 See `.env.example`. The important ones:
@@ -207,9 +220,10 @@ See `.env.example`. The important ones:
 | `NEARAI_API_KEY` | Enables the Mastra + NEAR AI path; unset = local fallback |
 | `CHAT_PROVIDER` | `mastra` or `local`; `mastra` without a key still falls back |
 | `MONGODB_DB_NAME` | Database for both Mongoose and Mastra storage |
+| `NEXT_PUBLIC_CHAIN_NETWORK` | Frontend switch: `mainnet` or `testnet`; drives wallet login, passkey defaults and the dashboard badge |
 | `NEXT_PUBLIC_PASSKEY_ENABLED` | Show the passkey button |
 | `NEXT_PUBLIC_WALLET_LOGIN` | `true` by default; `false` hides the wallet connector and loads no near-connect code |
-| `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | `testnet` + `fast-auth.testnet` (defaults) |
+| `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | API-side passkey network, `testnet` + `fast-auth.testnet` (defaults) |
 | `NEAR_AUTH_RELAYER_ACCOUNT_ID` / `_PRIVATE_KEY` | Funded account that submits the `sign` call |
 | `AGENT_WALLET_MASTER_KEY` | 32-byte hex/base64 key for AES-256-GCM |
 | `OUTLAYER_ENABLED` | Enable OutLayer agent custody (new wallets become custody wallets) |
@@ -249,4 +263,5 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 - Only USD invoices are payable on-chain; there is no FX oracle for EUR/SGD/IDR yet. The ledger therefore reports per currency and does not translate between them.
 - Customer receipts are recorded, not chain-verified. A `txHash` on a receipt is a reference for the books; only AP deposits are checked against NEAR RPC.
 - Mongo is a single node, so a state change and its journal posting are not atomic. Posting is idempotent and best-effort; `POST /api/accounting/rebuild` repairs gaps.
-- Native NEAR payments require wrapping to wNEAR in the same transaction (`near_deposit` + `ft_transfer`). The UI documents the `ft_transfer` path; the wrap helper is not built.
+- Native NEAR payments require wrapping to wNEAR in the same transaction. The UI builds `near_deposit` + `ft_transfer` for wNEAR origin quotes; other origins must already be NEP-141 tokens.
+- On-chain AR collection is not implemented. Receipts are book entries with an optional reference hash; see [integrations.md](docs/integrations.md) for the receiver-contract design that would make them verifiable.

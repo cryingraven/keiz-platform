@@ -34,27 +34,38 @@ export class JwtAuthGuard implements CanActivate {
     const token = req.cookies?.[ACCESS_COOKIE] || bearer;
     if (!token) throw new UnauthorizedException('Sign in with your NEAR wallet');
 
+    let payload: {
+      sub?: string;
+      orgId?: string;
+      type?: string;
+      ver?: number;
+      [key: string]: unknown;
+    };
     try {
-      const payload = await this.jwt.verifyAsync(token, {
+      payload = await this.jwt.verifyAsync(token, {
         secret: this.config.getOrThrow<string>('JWT_SECRET'),
       });
       if (payload.type !== 'access') throw new Error('wrong token type');
-
-      // Load the membership fresh: a stale JWT must not keep a removed user or
-      // an old role alive for the lifetime of the token.
-      const { user, membership } = await this.users.sessionContext(payload.sub, payload.orgId);
-      if (!user || !membership) throw new Error('membership revoked');
-      if ((payload.ver ?? 0) !== (user.tokenVersion ?? 0)) throw new Error('token revoked');
-
-      req.user = {
-        sub: user.id,
-        accountId: user.accountId,
-        orgId: membership.orgId,
-        role: membership.role,
-      };
-      return true;
+      if (!payload.sub || !payload.orgId) throw new Error('incomplete token');
     } catch {
       throw new UnauthorizedException('Session expired');
     }
+
+    // Load the membership fresh: a stale JWT must not keep a removed user or
+    // an old role alive for the lifetime of the token. Database failures are
+    // NOT auth failures: let them surface as 5xx instead of logging everyone out.
+    const { user, membership } = await this.users.sessionContext(payload.sub, payload.orgId);
+    if (!user || !membership) throw new UnauthorizedException('Session expired');
+    if ((payload.ver ?? 0) !== (user.tokenVersion ?? 0)) {
+      throw new UnauthorizedException('Session expired');
+    }
+
+    req.user = {
+      sub: user.id,
+      accountId: user.accountId,
+      orgId: membership.orgId,
+      role: membership.role,
+    };
+    return true;
   }
 }

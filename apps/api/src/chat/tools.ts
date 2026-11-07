@@ -106,9 +106,10 @@ export function createChatTools(deps: ChatToolDeps) {
       return {
         byStatus: byStatus.map((row) => ({
           status: row._id,
+          currency: row.currency,
           count: row.count,
-          // aggregate returns minor units as a double
-          total: (row.total / 100).toFixed(2),
+          // aggregate returns a decimal string in minor units
+          total: formatUnits(row.total, 2),
         })),
         vendorCount: vendorRows.length,
       };

@@ -13,6 +13,7 @@ import {
   CreateCustomerInput,
   CreateReceivableInput,
   RecordReceiptInput,
+  UpdateCustomerInput,
   computeInvoiceTotals,
   parseUnits,
 } from '@keiz/shared';
@@ -45,6 +46,26 @@ export class ReceivablesService {
     const customer = await this.customers.findOne({ _id: id, orgId }).lean();
     if (!customer) throw new NotFoundException('Customer not found');
     return customer;
+  }
+
+  async updateCustomer(orgId: string, id: string, input: UpdateCustomerInput) {
+    const customer = await this.customers.findOneAndUpdate(
+      { _id: id, orgId },
+      { $set: input },
+      { returnDocument: 'after' },
+    );
+    if (!customer) throw new NotFoundException('Customer not found');
+    return customer.toObject();
+  }
+
+  async archiveCustomer(orgId: string, id: string) {
+    const customer = await this.customers.findOneAndUpdate(
+      { _id: id, orgId },
+      { $set: { status: 'ARCHIVED' } },
+      { returnDocument: 'after' },
+    );
+    if (!customer) throw new NotFoundException('Customer not found');
+    return customer.toObject();
   }
 
   list(orgId: string, query: { status?: string; customerId?: string; currency?: string }) {

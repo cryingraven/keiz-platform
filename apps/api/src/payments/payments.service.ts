@@ -220,7 +220,7 @@ export class PaymentsService {
         senderAccountId: accountId,
         depositAddress: payment.depositAddress,
         originAsset: payment.originAsset,
-        minAmount: payment.amountIn,
+        minAmount: payment.minAmountIn ?? payment.amountIn,
       });
       if (!verification.ok) {
         throw new BadRequestException(verification.reason ?? 'Deposit could not be verified');

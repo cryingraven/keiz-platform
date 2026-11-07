@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { CreateVendorInput } from '@keiz/shared';
+import { CreateVendorInput, UpdateVendorInput } from '@keiz/shared';
 import { Vendor, VendorDocument } from './vendor.schema';
 
 @Injectable()
@@ -24,5 +24,30 @@ export class VendorsService {
     const vendor = await this.vendors.findOne({ _id: id, orgId }).lean();
     if (!vendor) throw new NotFoundException('Vendor not found');
     return vendor;
+  }
+
+  async update(orgId: string, id: string, input: UpdateVendorInput) {
+    const vendor = await this.vendors.findOneAndUpdate(
+      { _id: id, orgId },
+      {
+        $set: {
+          ...input,
+          nearAccountId: input.nearAccountId || undefined,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    return vendor.toObject();
+  }
+
+  async archive(orgId: string, id: string) {
+    const vendor = await this.vendors.findOneAndUpdate(
+      { _id: id, orgId },
+      { $set: { status: 'ARCHIVED' } },
+      { returnDocument: 'after' },
+    );
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    return vendor.toObject();
   }
 }

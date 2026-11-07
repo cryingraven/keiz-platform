@@ -218,7 +218,7 @@ export default function ChatPage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-        <Card className="hidden h-fit overflow-hidden lg:block">
+        <Card className="h-fit overflow-hidden">
           <div className="border-b border-line px-3.5 py-3">
             <p className="text-[10px] uppercase tracking-wider text-muted">Threads</p>
           </div>
@@ -273,7 +273,11 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5 scroll-thin">
+          <div
+            className="flex-1 space-y-4 overflow-y-auto px-5 py-5 scroll-thin"
+            aria-live="polite"
+            aria-relevant="additions text"
+          >
             {messages.length === 0 ? (
               <div className="mx-auto max-w-md py-8 text-center">
                 <span className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-paper">

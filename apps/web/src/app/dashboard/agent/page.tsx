@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
+import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { formatDollars, formatMoney, humanize, shortAddress } from '@/lib/format';
 import { formatUnits } from '@keiz/shared';
@@ -28,6 +29,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorState,
   Input,
   Label,
   SectionTitle,
@@ -105,6 +107,9 @@ export default function AgentPage() {
   const actions = useApi<Action[]>('/agent/actions');
   const invoices = useApi<Invoice[]>('/invoices');
   const tokens = useApi<Token[]>('/payments/tokens');
+  const { session } = useAuth();
+  const canManagePolicy = session?.role === 'OWNER';
+  const canAdmin = ['OWNER', 'ADMIN'].includes(session?.role ?? '');
 
   const [creating, setCreating] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -152,7 +157,7 @@ export default function AgentPage() {
         title="Agent wallet"
         description="Policy-bound custody for the AI agent — a TEE-held key, spending rules, and human approvals."
         actions={
-          wallet.data ? null : (
+          wallet.data || !canAdmin ? null : (
             <Button loading={creating} onClick={() => void createWallet()}>
               <Plus className="h-3.5 w-3.5" /> Create agent wallet
             </Button>
@@ -170,6 +175,10 @@ export default function AgentPage() {
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner /> Loading wallet
         </div>
+      ) : wallet.error ? (
+        <Card>
+          <ErrorState message={wallet.error} onRetry={() => void wallet.reload()} />
+        </Card>
       ) : !wallet.data ? (
         <Card>
           <EmptyState
@@ -177,9 +186,11 @@ export default function AgentPage() {
             title="No agent wallet yet"
             body="KEIZ generates an ed25519 keypair, encrypts the secret with AES-256-GCM, and never returns it to the browser."
             action={
-              <Button loading={creating} onClick={() => void createWallet()}>
-                Create agent wallet
-              </Button>
+              canAdmin ? (
+                <Button loading={creating} onClick={() => void createWallet()}>
+                  Create agent wallet
+                </Button>
+              ) : undefined
             }
           />
         </Card>
@@ -333,7 +344,11 @@ export default function AgentPage() {
                         every query by default.
                       </span>
                     </div>
-                    {stats.data?.custodyAvailable ? (
+                    <p className="mt-2 text-[10px] leading-relaxed text-muted">
+                      Local mode cannot sign on-chain. Execution delegates settlement to the
+                      configured payment provider; enable OutLayer custody for TEE signing.
+                    </p>
+                    {stats.data?.custodyAvailable && canManagePolicy ? (
                       <Button
                         className="mt-3 w-full"
                         variant="secondary"
@@ -354,7 +369,7 @@ export default function AgentPage() {
                   handoffUrl={wallet.data.handoffUrl ?? null}
                   network={wallet.data.outlayerNetwork ?? stats.data?.network ?? 'testnet'}
                 />
-              ) : (
+              ) : canManagePolicy ? (
                 <PolicyForm
                   wallet={wallet.data}
                   tokens={tokens.data ?? []}
@@ -362,6 +377,17 @@ export default function AgentPage() {
                     await Promise.all([wallet.reload(), stats.reload()]);
                   }}
                 />
+              ) : (
+                <Card className="p-5">
+                  <SectionTitle title="Policy" hint="Owner-managed spending rules" />
+                  <p className="mt-3 text-[12px] leading-relaxed text-muted">
+                    Only the workspace owner can change agent limits. Current per-transaction limit:{' '}
+                    <span className="font-num text-ink">
+                      {formatDollars(wallet.data.policy.perTxLimitUsd)}
+                    </span>
+                    .
+                  </p>
+                </Card>
               )}
             </div>
 
@@ -690,6 +716,14 @@ function ActionRow({
   const [error, setError] = useState<string | null>(null);
 
   async function run(kind: 'approve' | 'reject' | 'execute') {
+    if (
+      kind === 'execute' &&
+      !window.confirm(
+        `Execute this $${action.amountUsd} payment?\n\nFunds leave the agent wallet immediately.`,
+      )
+    ) {
+      return;
+    }
     setBusy(kind);
     setError(null);
     try {

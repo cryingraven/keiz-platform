@@ -8,6 +8,7 @@ import {
   Check,
   CircleSlash,
   FileText,
+  Pencil,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { Button, Card, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { InvoiceForm } from '@/components/invoice-form';
 import { PayPanel } from '@/components/pay-panel';
 
 interface Invoice {
@@ -62,6 +64,7 @@ export default function InvoiceDetailPage() {
   const vendors = useApi<Vendor[]>('/vendors');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const { session } = useAuth();
   const role = session?.role ?? 'MEMBER';
   const canApprove = ['APPROVER', 'ADMIN', 'OWNER'].includes(role);
@@ -118,9 +121,11 @@ export default function InvoiceDetailPage() {
 
   const data = invoice.data;
   const canSubmit = data.status === 'DRAFT';
+  const canEdit = data.status === 'DRAFT';
   const canDecide = data.status === 'SUBMITTED' && canApprove;
   const canPay = data.status === 'APPROVED';
-  const canVoid = canAdmin && !['PAID', 'VOID'].includes(data.status);
+  const canVoid =
+    canAdmin && !['PAID', 'VOID', 'PAYMENT_PENDING'].includes(data.status);
 
   return (
     <div>
@@ -260,10 +265,19 @@ export default function InvoiceDetailPage() {
         </div>
 
         <div className="space-y-4">
-          {canSubmit || canDecide || canVoid ? (
+          {canSubmit || canDecide || canVoid || canEdit ? (
             <Card className="p-5">
               <SectionTitle title="Next action" hint="Role-checked server-side" />
               <div className="mt-3 space-y-2">
+                {canEdit ? (
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => setEditOpen(true)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit draft
+                  </Button>
+                ) : null}
                 {canSubmit ? (
                   <Button
                     className="w-full"
@@ -345,6 +359,14 @@ export default function InvoiceDetailPage() {
           )}
         </div>
       </div>
+
+      <InvoiceForm
+        open={editOpen}
+        vendors={vendors.data ?? []}
+        invoice={data}
+        onClose={() => setEditOpen(false)}
+        onCreated={() => void invoice.reload()}
+      />
     </div>
   );
 }

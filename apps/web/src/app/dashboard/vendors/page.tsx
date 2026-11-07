@@ -1,12 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { Building2, Mail, Plus, Wallet } from 'lucide-react';
+import { Archive, Building2, Mail, Pencil, Plus, Wallet } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
+import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { shortAddress } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
-import { Badge, Button, Card, EmptyState, Input, Label, Modal, Select, Spinner } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Input,
+  Label,
+  Modal,
+  Select,
+  Spinner,
+} from '@/components/ui';
 
 interface Vendor {
   _id: string;
@@ -21,7 +33,32 @@ interface Vendor {
 
 export default function VendorsPage() {
   const vendors = useApi<Vendor[]>('/vendors');
+  const { session } = useAuth();
+  const canAdmin = ['ADMIN', 'OWNER'].includes(session?.role ?? '');
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Vendor | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function openCreate() {
+    setEditing(null);
+    setOpen(true);
+  }
+
+  function openEdit(vendor: Vendor) {
+    setEditing(vendor);
+    setOpen(true);
+  }
+
+  async function archive(vendor: Vendor) {
+    if (!window.confirm(`Archive ${vendor.name}? Existing bills keep their history.`)) return;
+    setError(null);
+    try {
+      await api(`/vendors/${vendor._id}`, { method: 'DELETE' });
+      await vendors.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not archive the vendor');
+    }
+  }
 
   return (
     <div>
@@ -29,23 +66,37 @@ export default function VendorsPage() {
         title="Vendors"
         description="Who you pay, and where the money lands."
         actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add vendor
-          </Button>
+          canAdmin ? (
+            <Button onClick={openCreate}>
+              <Plus className="h-3.5 w-3.5" /> Add vendor
+            </Button>
+          ) : null
         }
       />
+
+      {error ? (
+        <p className="mb-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+          {error}
+        </p>
+      ) : null}
 
       {vendors.loading ? (
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner /> Loading vendors
         </div>
+      ) : vendors.error ? (
+        <Card>
+          <ErrorState message={vendors.error} onRetry={() => void vendors.reload()} />
+        </Card>
       ) : (vendors.data?.length ?? 0) === 0 ? (
         <Card>
           <EmptyState
             icon={<Building2 className="h-5 w-5" />}
             title="No vendors yet"
             body="Add a vendor with a payout chain and address. Intents routes the invoice total to exactly that destination."
-            action={<Button onClick={() => setOpen(true)}>Add vendor</Button>}
+            action={
+              canAdmin ? <Button onClick={openCreate}>Add vendor</Button> : undefined
+            }
           />
         </Card>
       ) : (
@@ -56,9 +107,31 @@ export default function VendorsPage() {
                 <div className="grid h-9 w-9 place-items-center rounded-xl bg-paper">
                   <Building2 className="h-4 w-4" />
                 </div>
-                <Badge className="border-line bg-paper capitalize text-muted">
-                  {vendor.payoutChain}
-                </Badge>
+                <div className="flex items-center gap-1">
+                  <Badge className="border-line bg-paper capitalize text-muted">
+                    {vendor.payoutChain}
+                  </Badge>
+                  {canAdmin ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(vendor)}
+                        className="rounded-lg p-1.5 text-muted transition hover:bg-paper hover:text-ink"
+                        aria-label={`Edit ${vendor.name}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void archive(vendor)}
+                        className="rounded-lg p-1.5 text-muted transition hover:bg-rose-soft hover:text-rose"
+                        aria-label={`Archive ${vendor.name}`}
+                      >
+                        <Archive className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
               <h3 className="mt-3 text-[15px] font-semibold tracking-tight">{vendor.name}</h3>
               <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
@@ -81,8 +154,13 @@ export default function VendorsPage() {
       )}
 
       <VendorForm
+        key={editing?._id ?? 'new'}
         open={open}
-        onClose={() => setOpen(false)}
+        vendor={editing}
+        onClose={() => {
+          setOpen(false);
+          setEditing(null);
+        }}
         onCreated={() => void vendors.reload()}
       />
     </div>
@@ -91,18 +169,21 @@ export default function VendorsPage() {
 
 function VendorForm({
   open,
+  vendor,
   onClose,
   onCreated,
 }: {
   open: boolean;
+  vendor?: Vendor | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [payoutChain, setPayoutChain] = useState('near');
-  const [payoutAddress, setPayoutAddress] = useState('');
-  const [nearAccountId, setNearAccountId] = useState('');
+  const isEdit = Boolean(vendor);
+  const [name, setName] = useState(vendor?.name ?? '');
+  const [email, setEmail] = useState(vendor?.email ?? '');
+  const [payoutChain, setPayoutChain] = useState(vendor?.payoutChain ?? 'near');
+  const [payoutAddress, setPayoutAddress] = useState(vendor?.payoutAddress ?? '');
+  const [nearAccountId, setNearAccountId] = useState(vendor?.nearAccountId ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,8 +191,8 @@ function VendorForm({
     setBusy(true);
     setError(null);
     try {
-      await api('/vendors', {
-        method: 'POST',
+      await api(isEdit ? `/vendors/${vendor!._id}` : '/vendors', {
+        method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify({
           name,
           email,
@@ -122,12 +203,8 @@ function VendorForm({
       });
       onCreated();
       onClose();
-      setName('');
-      setEmail('');
-      setPayoutAddress('');
-      setNearAccountId('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add vendor');
+      setError(err instanceof Error ? err.message : 'Could not save the vendor');
     } finally {
       setBusy(false);
     }
@@ -137,7 +214,7 @@ function VendorForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="Add vendor"
+      title={isEdit ? 'Edit vendor' : 'Add vendor'}
       description="The payout address is where 1Click delivers the invoice amount."
     >
       <div className="space-y-3">
@@ -165,7 +242,13 @@ function VendorForm({
               <option value="near">NEAR</option>
               <option value="eth">Ethereum</option>
               <option value="base">Base</option>
+              <option value="arb">Arbitrum</option>
+              <option value="bsc">BNB Chain</option>
+              <option value="polygon">Polygon</option>
               <option value="sol">Solana</option>
+              <option value="stellar">Stellar</option>
+              <option value="tron">Tron</option>
+              <option value="ton">TON</option>
             </Select>
           </div>
           <div>
@@ -197,7 +280,7 @@ function VendorForm({
             Cancel
           </Button>
           <Button loading={busy} disabled={!name || !email || !payoutAddress} onClick={() => void submit()}>
-            Add vendor
+            {isEdit ? 'Save changes' : 'Add vendor'}
           </Button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { invoiceNumber, payoutChain, positiveDecimal, validatePayoutAddress } from './validation';
-import { RECEIPT_METHODS, RECEIVABLE_STATUSES } from './types';
+import { RECEIPT_METHODS, RECEIVABLE_STATUSES, ROLES } from './types';
 
 export const NEAR_ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 
@@ -30,6 +30,10 @@ export const loginVerifySchema = z.object({
   signature: z.string().min(10).max(500),
   nonce: z.string().min(10).max(200),
   recipient: z.string().min(1).max(200),
+});
+
+export const switchOrgSchema = z.object({
+  orgId: z.string().min(1).max(64),
 });
 
 export const createVendorSchema = z
@@ -77,12 +81,28 @@ export const invoiceDecisionSchema = z.object({
   comment: z.string().max(1000).optional(),
 });
 
+/** Draft bills can be fully replaced; totals are recomputed server-side. */
+export const updateInvoiceSchema = createInvoiceSchema;
+
+/** Vendors and customers can be fully updated; archived records are hidden. */
+export const updateVendorSchema = createVendorSchema;
+
+export const memberRoleSchema = z.enum(ROLES);
+export const createMemberSchema = z.object({
+  accountId: nearAccountId,
+  role: memberRoleSchema.default('MEMBER'),
+});
+export const updateMemberSchema = z.object({ role: memberRoleSchema });
+
 export const createCustomerSchema = z.object({
   name: z.string().min(1).max(120),
   email: z.email(),
   taxId: z.string().max(60).optional(),
   billingAddress: z.string().max(300).optional(),
 });
+
+/** Customers can be fully updated; archived records are hidden from lists. */
+export const updateCustomerSchema = createCustomerSchema;
 
 export const createReceivableSchema = z.object({
   customerId: z.string().min(1),
@@ -168,8 +188,13 @@ export type LoginChallengeInput = z.infer<typeof loginChallengeSchema>;
 export type LoginVerifyInput = z.infer<typeof loginVerifySchema>;
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
+export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;
 export type InvoiceLineItemInput = z.infer<typeof invoiceLineItemSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;
+export type CreateMemberInput = z.infer<typeof createMemberSchema>;
+export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
 export type CreateReceivableInput = z.infer<typeof createReceivableSchema>;
 export type RecordReceiptInput = z.infer<typeof recordReceiptSchema>;
 export type ManualJournalInput = z.infer<typeof manualJournalSchema>;

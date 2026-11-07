@@ -42,10 +42,13 @@ export function formatToken(value?: string | number): string {
 
 export function formatDate(value: string | Date): string {
   const date = typeof value === 'string' ? new Date(value) : value;
+  // Business dates are sent as UTC midnight. Formatting in UTC avoids showing
+  // the previous day in negative-offset timezones.
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'UTC',
   }).format(date);
 }
 

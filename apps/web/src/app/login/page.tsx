@@ -128,7 +128,7 @@ export default function LoginPage() {
                 <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
                   {busy
                     ? 'Opening wallet selector…'
-                    : 'Meteor, HERE, Nightly, MyNearWallet and more.'}
+                    : 'HOT, Meteor, Nightly, MyNearWallet and more.'}
                 </span>
               </span>
               <ChevronRight className="h-4 w-4 shrink-0 text-muted transition group-hover:text-ink" />

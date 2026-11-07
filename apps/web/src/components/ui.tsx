@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { humanize, toneFor } from '@/lib/format';
 
@@ -134,16 +134,42 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
+    const panel = panelRef.current;
+    const focusable = panel?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    focusable?.[0]?.focus();
+
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
+      if (event.key !== 'Tab' || !panel) return;
+      const items = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousOverflow;
     };
   }, [open, onClose]);
 
@@ -152,6 +178,10 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:p-8">
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className={cn(
           'relative w-full rounded-[22px] border border-line bg-surface shadow-2xl',
           wide ? 'max-w-2xl' : 'max-w-lg',
@@ -159,7 +189,9 @@ export function Modal({
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
           <div>
-            <h2 className="text-base font-semibold">{title}</h2>
+            <h2 id={titleId} className="text-base font-semibold">
+              {title}
+            </h2>
             {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
           </div>
           <button
@@ -201,6 +233,36 @@ export function EmptyState({
 
 export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cn('h-4 w-4 animate-spin text-muted', className)} />;
+}
+
+/** A load failure must never be mistaken for an empty workspace. */
+export function ErrorState({
+  message,
+  onRetry,
+  title = 'Could not load this data',
+}: {
+  message?: string | null;
+  onRetry?: () => void;
+  title?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+      <div className="rounded-2xl bg-rose-soft p-3 text-rose">
+        <AlertTriangle className="h-5 w-5" />
+      </div>
+      <div>
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+          {message ?? 'The request failed. Check your connection and try again.'}
+        </p>
+      </div>
+      {onRetry ? (
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 export function SectionTitle({

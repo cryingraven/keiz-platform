@@ -340,11 +340,14 @@ export class ChatService {
       const summary = (await call('spendSummary', {}, () =>
         tools.spendSummary.execute!({}, context),
       )) as {
-        byStatus: Array<{ status: string; count: number; total: string }>;
+        byStatus: Array<{ status: string; currency: string; count: number; total: string }>;
         vendorCount: number;
       };
       const lines = summary.byStatus
-        .map((row) => `${row.status}: ${row.count} invoice(s), $${row.total}`)
+        .map(
+          (row) =>
+            `${row.status} (${row.currency}): ${row.count} invoice(s), ${row.total}`,
+        )
         .join('\n');
       return {
         events,

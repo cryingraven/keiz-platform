@@ -17,7 +17,7 @@ import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { formatDate, formatDollars, formatMoney, humanize, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
-import { Badge, Button, Card, EmptyState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 
 interface Invoice {
   _id: string;
@@ -62,20 +62,21 @@ export default function OverviewPage() {
   const payments = useApi<Payment[]>('/payments', { pollMs: 5000 });
   const vendors = useApi<Vendor[]>('/vendors');
   const agent = useApi<AgentStats>('/agent/stats');
-  const books = useApi<Books>(
-    '/accounting/summary?currency=USD&from=2000-01-01T00:00:00.000Z',
-  );
+  const books = useApi<Books>('/accounting/summary?currency=USD');
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
 
   const stats = useMemo(() => {
     const rows = invoices.data ?? [];
-    const open = rows.filter((row) => OPEN_STATUSES.includes(row.status));
+    // Totals are only meaningful per currency. The overview is USD-denominated;
+    // mixing EUR/SGD/IDR into a dollar figure is misleading.
+    const usd = rows.filter((row) => row.currency === 'USD');
+    const open = usd.filter((row) => OPEN_STATUSES.includes(row.status));
     const outstanding = open.reduce(
       (sum, row) => sum + Number(row.total) / 10 ** row.decimals,
       0,
     );
-    const paid = rows
+    const paid = usd
       .filter((row) => row.status === 'PAID')
       .reduce((sum, row) => sum + Number(row.total) / 10 ** row.decimals, 0);
     const awaiting = rows.filter((row) => row.status === 'SUBMITTED').length;
@@ -85,7 +86,7 @@ export default function OverviewPage() {
     return { outstanding, paid, awaiting, inFlight };
   }, [invoices.data, payments.data]);
 
-  const demoEmpty = !invoices.loading && (invoices.data?.length ?? 0) === 0;
+  const demoEmpty = !invoices.loading && !invoices.error && (invoices.data?.length ?? 0) === 0;
 
   async function seed() {
     setSeeding(true);
@@ -137,13 +138,13 @@ export default function OverviewPage() {
         <Stat
           label="Outstanding"
           value={formatDollars(stats.outstanding)}
-          meta={`${stats.awaiting} awaiting approval`}
+          meta={`USD · ${stats.awaiting} awaiting approval`}
           icon={<CircleDollarSign className="h-4 w-4" />}
         />
         <Stat
           label="Paid to date"
           value={formatDollars(stats.paid)}
-          meta={`${invoices.data?.filter((row) => row.status === 'PAID').length ?? 0} settled bills`}
+          meta={`USD · ${invoices.data?.filter((row) => row.status === 'PAID' && row.currency === 'USD').length ?? 0} settled bills`}
           icon={<FileText className="h-4 w-4" />}
         />
         <Stat
@@ -222,6 +223,8 @@ export default function OverviewPage() {
             <div className="flex items-center gap-2 px-5 py-8 text-sm text-muted">
               <Spinner /> Loading bills
             </div>
+          ) : invoices.error ? (
+            <ErrorState message={invoices.error} onRetry={() => void invoices.reload()} />
           ) : demoEmpty ? (
             <EmptyState
               icon={<FileText className="h-5 w-5" />}

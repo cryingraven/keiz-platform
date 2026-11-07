@@ -274,6 +274,26 @@ export class AgentService {
     return this.actions.find({ orgId }).sort({ createdAt: -1 }).limit(50).lean();
   }
 
+  private async assertNoLivePayment(
+    orgId: string,
+    invoiceId: string,
+    options?: { excludeActionId?: string },
+  ) {
+    const live = await this.paymentsModel.findOne({
+      orgId,
+      invoiceId,
+      status: { $in: ['AWAITING_DEPOSIT', 'PROCESSING'] },
+    });
+    if (!live) return;
+    if (options?.excludeActionId && String(live.agentActionId ?? '') === options.excludeActionId) {
+      return;
+    }
+    throw new ConflictException(
+      `An open payment (${String(live._id)}) already exists for this invoice. ` +
+        'Wait for it to settle, expire or be cancelled before trying again.',
+    );
+  }
+
   async propose(orgId: string, input: ProposeAgentPaymentInput) {
     const wallet = await this.wallets.findOne({ orgId });
     if (!wallet) throw new NotFoundException('Create an agent wallet first');
@@ -281,6 +301,9 @@ export class AgentService {
     if (!['APPROVED', 'PAYMENT_PENDING'].includes(invoice.status)) {
       throw new BadRequestException('Only approved invoices can be proposed for agent payment');
     }
+    // Never propose against an invoice that already has money in flight: the
+    // custody branch would otherwise create a second payment for the same bill.
+    await this.assertNoLivePayment(orgId, String(invoice._id));
 
     const amountUsd = formatUnits(invoice.total, invoice.decimals);
 
@@ -395,6 +418,10 @@ export class AgentService {
       if (!['APPROVED', 'PAYMENT_PENDING'].includes(invoice.status)) {
         throw new BadRequestException(`Invoice is ${invoice.status}; cannot execute`);
       }
+      // A different live quote means this action would double-pay the invoice.
+      await this.assertNoLivePayment(orgId, String(invoice._id), {
+        excludeActionId: String(action._id),
+      });
       if (invoice.status === 'PAYMENT_PENDING') {
         await this.invoices.resetForRetry(orgId, String(invoice._id));
       }
@@ -408,7 +435,10 @@ export class AgentService {
     } catch (error) {
       if (reservedCents > 0) await this.releaseDaily(orgId, reservedCents);
       if (action.status === 'EXECUTING') {
-        action.status = 'APPROVED';
+        // If an external side effect may already have happened, never put the
+        // action back in a state that invites a retry. Send it to review.
+        action.status =
+          action.outlayerRequestId || action.paymentId ? 'NEEDS_REVIEW' : 'APPROVED';
         await action.save();
       }
       throw error;

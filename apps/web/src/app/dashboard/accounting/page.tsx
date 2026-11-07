@@ -1,10 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { BookOpen, RefreshCw, Scale, Wallet } from 'lucide-react';
+import { Download, BookOpen, RefreshCw, Scale, Wallet } from 'lucide-react';
+import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { downloadCsv } from '@/lib/csv';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { Account, ManualJournalForm } from '@/components/manual-journal-form';
@@ -13,6 +15,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorState,
   SectionTitle,
   Select,
   Spinner,
@@ -100,7 +103,9 @@ export default function AccountingPage() {
       summaryPath: `/accounting/summary?currency=${currency}&from=${encodeURIComponent(
         from.toISOString(),
       )}&to=${encodeURIComponent(to.toISOString())}`,
-      journalPath: `/accounting/journal-entries?currency=${currency}&limit=50`,
+      journalPath: `/accounting/journal-entries?currency=${currency}&limit=50&from=${encodeURIComponent(
+        from.toISOString(),
+      )}&to=${encodeURIComponent(to.toISOString())}`,
     };
   }, [currency, range]);
 
@@ -149,6 +154,28 @@ export default function AccountingPage() {
         description="Double-entry books for every bill, customer invoice and receipt."
         actions={
           <>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                downloadCsv(
+                  'keiz-journal.csv',
+                  (journal.data ?? []).flatMap((entry) =>
+                    entry.lines.map((line) => ({
+                      date: entry.date.slice(0, 10),
+                      memo: entry.memo,
+                      event: entry.event,
+                      currency: entry.currency,
+                      accountCode: line.accountCode,
+                      accountName: line.accountName,
+                      debit: formatUnits(line.debit, entry.decimals),
+                      credit: formatUnits(line.credit, entry.decimals),
+                    })),
+                  ),
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
             {canAdmin ? (
               <Button
                 variant="secondary"
@@ -198,6 +225,10 @@ export default function AccountingPage() {
         <div className="flex items-center gap-2 text-sm text-muted">
           <Spinner /> Loading the books
         </div>
+      ) : summary.error ? (
+        <Card>
+          <ErrorState message={summary.error} onRetry={() => void summary.reload()} />
+        </Card>
       ) : !data ? (
         <Card>
           <EmptyState
@@ -328,8 +359,10 @@ export default function AccountingPage() {
             ) : (
               <div className="divide-y divide-line">
                 {journal.data?.map((entry) => {
+                  // A balanced entry has equal debit and credit totals; summing
+                  // both would display double the transaction value.
                   const amount = entry.lines.reduce(
-                    (total, line) => total + BigInt(line.debit) + BigInt(line.credit),
+                    (total, line) => total + BigInt(line.debit),
                     0n,
                   );
                   return (

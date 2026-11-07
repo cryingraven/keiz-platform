@@ -7,7 +7,7 @@ import { useApi } from '@/lib/hooks';
 import { formatDate, shortAddress, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { NearIntentsLogo } from '@/components/landing/logos';
-import { Badge, Card, EmptyState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { Badge, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 
 interface Payment {
   _id: string;
@@ -91,6 +91,8 @@ export default function PaymentsPage() {
           <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
             <Spinner /> Loading payments
           </div>
+        ) : payments.error ? (
+          <ErrorState message={payments.error} onRetry={() => void payments.reload()} />
         ) : (payments.data?.length ?? 0) === 0 ? (
           <EmptyState
             icon={<ArrowLeftRight className="h-5 w-5" />}

@@ -9,6 +9,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
+  // Respect X-Forwarded-For from the reverse proxy. Without this every audit
+  // row and every throttler bucket sees the proxy's IP, not the user's.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(cookieParser());
   app.use(helmet());
   app.enableCors({

@@ -25,16 +25,24 @@ export async function api<T>(
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // A proxy error page (502/504) is HTML, not JSON. Keep the status.
+      data = null;
+    }
+  }
 
   if (!response.ok) {
     // Access cookie expired mid-session: rotate once, then replay the request.
+    // The refresh is single-flight: several parallel 401s must share one call,
+    // otherwise the losers trip the server's token-reuse detector and log the
+    // whole workspace out.
     if (response.status === 401 && allowRefresh && !path.startsWith('/auth/')) {
-      const refreshed = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (refreshed.ok) return api<T>(path, init, false);
+      const refreshed = await refreshSession();
+      if (refreshed) return api<T>(path, init, false);
     }
     if (response.status === 401) {
       window.dispatchEvent(new Event('keiz:unauthorized'));
@@ -54,4 +62,22 @@ export async function api<T>(
   }
 
   return data as T;
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+/** One shared refresh request for every 401 that happens at the same time. */
+function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
 }

@@ -29,14 +29,13 @@ export class DemoService {
     if (process.env.NODE_ENV === 'production') {
       throw new NotFoundException('Not available');
     }
-    const existing = await this.vendors.countDocuments({ orgId });
-    if (existing > 0) {
-      return { seeded: false, reason: 'Workspace already has vendors' };
+    const invoiceCount = await this.invoices.countDocuments({ orgId });
+    if (invoiceCount > 0) {
+      return { seeded: false, reason: 'Workspace already has bills' };
     }
 
-    const vendors = await this.vendors.insertMany([
+    const vendorSpecs = [
       {
-        orgId,
         name: 'Nusantara Cloud',
         email: 'billing@nusantara.cloud',
         nearAccountId: 'nusantara.near',
@@ -44,28 +43,40 @@ export class DemoService {
         payoutAddress: 'nusantara.near',
       },
       {
-        orgId,
         name: 'Straits Logistics',
         email: 'ar@straitslogistics.sg',
         payoutChain: 'eth',
         payoutAddress: '0x9f8a1b7c4d2e6f0a3b5c8d1e4f7a0b2c5d8e1f4a',
       },
       {
-        orgId,
         name: 'Solana Studio',
         email: 'hello@solanastudio.io',
         payoutChain: 'sol',
         payoutAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
       },
       {
-        orgId,
         name: 'Batavia Design',
         email: 'invoice@bataviadesign.id',
         nearAccountId: 'batavia.near',
         payoutChain: 'near',
         payoutAddress: 'batavia.near',
       },
-    ]);
+    ];
+
+    // Upsert by name so an interrupted seed can be re-run without duplicating
+    // vendors. Bills are the completion marker, checked above.
+    const vendors: VendorDocument[] = [];
+    for (const spec of vendorSpecs) {
+      const vendor = await this.vendors.findOneAndUpdate(
+        { orgId, name: spec.name },
+        { $setOnInsert: { ...spec, orgId } },
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+      );
+      if (vendor) vendors.push(vendor);
+    }
+    if (vendors.length !== vendorSpecs.length) {
+      throw new Error('Could not create the demo vendors');
+    }
 
     const specs = [
       { vendor: 0, number: 'INV-1001', status: 'APPROVED', amount: '4200', desc: 'Cloud infrastructure - March', due: 12 },

@@ -2,6 +2,7 @@
 
 import { api } from './api';
 import { base64ToBytes, bytesToBase64, bytesToHex } from './format';
+import { chainNetwork } from './network';
 import type { Session } from './auth';
 
 /**
@@ -14,17 +15,17 @@ import type { Session } from './auth';
 
 const enabledFlag = process.env.NEXT_PUBLIC_PASSKEY_ENABLED === 'true';
 const clientId = process.env.NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID ?? '';
-const network = (process.env.NEXT_PUBLIC_NEAR_AUTH_NETWORK ?? 'testnet') as
+const network = (process.env.NEXT_PUBLIC_NEAR_AUTH_NETWORK || chainNetwork) as
   | 'mainnet'
   | 'testnet';
 const rpcUrl =
-  process.env.NEXT_PUBLIC_NEAR_AUTH_RPC_URL ??
+  process.env.NEXT_PUBLIC_NEAR_AUTH_RPC_URL ||
   (network === 'mainnet' ? 'https://rpc.mainnet.near.org' : 'https://rpc.testnet.near.org');
 const fastAuthContractId =
-  process.env.NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID ??
+  process.env.NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID ||
   (network === 'mainnet' ? 'fast-auth.near' : 'fast-auth.testnet');
 const mpcContractId =
-  process.env.NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID ??
+  process.env.NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID ||
   (network === 'mainnet' ? 'v1.signer' : 'v1.signer-prod.testnet');
 
 export const passkeyEnabled = enabledFlag && Boolean(clientId);
