@@ -168,7 +168,7 @@ async function main() {
     pass('custody withdraw executed and recorded as a payment');
 
     console.log('  ...  waiting for the custody poller');
-    await new Promise((resolve) => setTimeout(resolve, 12_000));
+    await new Promise((resolve) => setTimeout(resolve, 20_000));
 
     const paid = await req<{ status: string; paidAt?: string }>(`/invoices/${invoice._id}`, {
       cookie,

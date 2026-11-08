@@ -1,6 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fetchRpcWithRetry } from '../common/rpc-client';
 import { decodePublicKey, verifyNep413 } from './nep413';
+
+/** Transport/JSON failure talking to NEAR RPC (not an invalid signature). */
+export class NearRpcError extends Error {
+  constructor(message = 'NEAR RPC is unavailable') {
+    super(message);
+    this.name = 'NearRpcError';
+  }
+}
 
 export interface NearSignatureInput {
   message: string;
@@ -19,10 +28,10 @@ export class NearVerifyService {
   private rpcUrl(network: 'mainnet' | 'testnet'): string {
     if (network === 'testnet') {
       return (
-        this.config.get<string>('NEAR_AUTH_RPC_URL') ?? 'https://rpc.testnet.near.org'
+        this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org'
       );
     }
-    return this.config.get<string>('NEAR_RPC_URL') ?? 'https://free.rpc.fastnear.com';
+    return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }
 
   private async rpc(
@@ -30,16 +39,24 @@ export class NearVerifyService {
     method: string,
     params: Record<string, unknown>,
   ): Promise<{ result?: unknown; error?: { cause?: { name?: string }; message?: string } }> {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 'keiz-auth', method, params }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    return (await response.json()) as {
-      result?: unknown;
-      error?: { cause?: { name?: string }; message?: string };
-    };
+    try {
+      const response = await fetchRpcWithRetry(
+        url,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 'keiz-auth', method, params }),
+        },
+        { timeoutMs: 15_000 },
+      );
+      return (await response.json()) as {
+        result?: unknown;
+        error?: { cause?: { name?: string }; message?: string };
+      };
+    } catch (error) {
+      this.logger.warn(`NEAR RPC request failed (${method}): ${(error as Error).message}`);
+      throw new NearRpcError();
+    }
   }
 
   async verify(input: NearSignatureInput): Promise<void> {

@@ -24,6 +24,7 @@ import { InvoicesService } from '../invoices/invoices.service';
 import { VendorsService } from '../vendors/vendors.service';
 import { OutlayerService } from '../outlayer/outlayer.service';
 import { PaymentsService } from '../payments/payments.service';
+import { walletNetwork } from '../common/network';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
 import { AgentAction, AgentActionDocument } from './agent-action.schema';
 import { AgentDailySpend, AgentDailySpendDocument } from './agent-daily-spend.schema';
@@ -98,8 +99,14 @@ export class AgentService {
 
   private async createLocalWallet(orgId: string) {
     const keyPair = nacl.sign.keyPair();
-    const accountId =
-      this.config.get<string>('AGENT_ACCOUNT_ID') || `agent-${orgId.slice(-8)}`;
+    const configured = this.config.get<string>('AGENT_ACCOUNT_ID');
+    const network = walletNetwork(this.config);
+    if (network === 'mainnet' && configured?.endsWith('.testnet')) {
+      throw new BadRequestException(
+        'AGENT_ACCOUNT_ID is a testnet account but the app network is mainnet.',
+      );
+    }
+    const accountId = configured || `agent-${orgId.slice(-8)}`;
     const wallet = await this.wallets.create({
       orgId,
       accountId,
@@ -491,6 +498,20 @@ export class AgentService {
     );
     if (addressError) {
       throw new BadRequestException(`Vendor payout address is invalid: ${addressError}`);
+    }
+    if (
+      this.outlayer.networkName === 'testnet' &&
+      vendorRecord.payoutChain.toLowerCase() !== 'near'
+    ) {
+      // OutLayer testnet has no Intents solvers. Do not let the action retry
+      // forever against an endpoint that will only return 503.
+      action.status = 'BLOCKED';
+      action.reason =
+        'Cross-chain custody payouts are mainnet-only. Switch OutLayer to mainnet or pay this vendor on NEAR.';
+      await action.save();
+      throw new ServiceUnavailableException(
+        'OutLayer testnet cannot pay across chains. Use a NEAR vendor or mainnet custody.',
+      );
     }
 
     const usd = formatUnits(invoice.total, invoice.decimals);

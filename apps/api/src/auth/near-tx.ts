@@ -218,36 +218,52 @@ export class NearAuthRelayer {
       const keyPair = parseRelayerKey(this.config.privateKey!);
       const publicKey = `ed25519:${bs58.encode(Buffer.from(keyPair.publicKey))}`;
 
-      const accessKey = await this.rpc<{ nonce: number }>('query', {
-        request_type: 'view_access_key',
-        finality: 'final',
-        account_id: this.config.accountId,
-        public_key: publicKey,
-      });
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const accessKey = await this.rpc<{ nonce: number }>('query', {
+            request_type: 'view_access_key',
+            finality: 'final',
+            account_id: this.config.accountId,
+            public_key: publicKey,
+          });
 
-      const block = await this.rpc<{ header: { hash: string } }>('block', {
-        finality: 'final',
-      });
+          const block = await this.rpc<{ header: { hash: string } }>('block', {
+            finality: 'final',
+          });
 
-      const transaction = buildTransaction({
-        signerId: this.config.accountId!,
-        publicKey: Buffer.from(keyPair.publicKey),
-        nonce: BigInt(accessKey.nonce) + 1n,
-        receiverId: input.receiverId,
-        blockHash: Buffer.from(bs58.decode(block.header.hash)),
-        actions: [action],
-      });
+          const transaction = buildTransaction({
+            signerId: this.config.accountId!,
+            publicKey: Buffer.from(keyPair.publicKey),
+            // A tiny per-attempt offset avoids colliding with another instance
+            // that read the same access-key nonce. Retries re-read the nonce.
+            nonce: BigInt(accessKey.nonce) + 1n + BigInt(attempt),
+            receiverId: input.receiverId,
+            blockHash: Buffer.from(bs58.decode(block.header.hash)),
+            actions: [action],
+          });
 
-      const signed = signTransaction(transaction, keyPair.secretKey);
-      const outcome = await this.rpc<{
-        status?: { SuccessValue?: string; Failure?: unknown };
-        transaction_outcome?: { id?: string };
-      }>('send_tx', {
-        signed_tx_base64: signed.toString('base64'),
-        wait_until: 'FINAL',
-      });
+          const signed = signTransaction(transaction, keyPair.secretKey);
+          const outcome = await this.rpc<{
+            status?: { SuccessValue?: string; Failure?: unknown };
+            transaction_outcome?: { id?: string };
+          }>('send_tx', {
+            signed_tx_base64: signed.toString('base64'),
+            wait_until: 'FINAL',
+          });
 
-      return extractSuccessValue(outcome);
+          return extractSuccessValue(outcome);
+        } catch (error) {
+          lastError = error;
+          const message = error instanceof Error ? error.message : '';
+          const retryable = /nonce|expired|too far|invalid transaction/i.test(message);
+          if (!retryable || attempt === 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+        }
+      }
+      throw lastError instanceof Error
+        ? lastError
+        : new NearRelayError('Relayer transaction failed', 502);
     });
   }
 }

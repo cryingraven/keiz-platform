@@ -139,6 +139,17 @@ async function main() {
     assert(anonymous.user === null, 'anonymous session is null, not 401');
     pass('anonymous /auth/me returns an empty session');
 
+    const wrongNetwork = await statusOf('/auth/challenge', {
+      method: 'POST',
+      body: { accountId: 'alice.near', network: 'mainnet' },
+    });
+    assert(wrongNetwork === 400, `mainnet challenge rejected on testnet (got ${wrongNetwork})`);
+    await req('/auth/challenge', {
+      method: 'POST',
+      body: { accountId: 'alice.near', network: 'testnet' },
+    });
+    pass('challenges are bound to the deployment network');
+
     const alice = await tokenFor('alice.near');
     const aliceCookie = `keiz_access=${alice.token}`;
 

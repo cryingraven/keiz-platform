@@ -21,6 +21,11 @@ export interface Session {
   role: string | null;
 }
 
+export interface WalletAccount {
+  accountId: string;
+  publicKey?: string;
+}
+
 interface AuthContextValue {
   session: Session | null;
   loading: boolean;
@@ -35,6 +40,10 @@ interface AuthContextValue {
   refresh: () => Promise<void>;
   clearError: () => void;
   sendTransactions: (transactions: unknown[]) => Promise<Array<{ hash: string }>>;
+  preloadWallets: () => Promise<void>;
+  accounts: WalletAccount[];
+  chooseAccount: (accountId: string) => Promise<void>;
+  cancelAccountSelection: () => void;
 }
 
 const walletLoginEnabled = process.env.NEXT_PUBLIC_WALLET_LOGIN === 'true';
@@ -65,12 +74,38 @@ function friendlyWalletError(error: unknown): string {
   return message || 'Wallet sign-in failed.';
 }
 
+function hexToBytes(value: string): Uint8Array {
+  const pairs = value.match(/.{1,2}/g) ?? [];
+  return Uint8Array.from(pairs.map((pair) => Number.parseInt(pair, 16)));
+}
+
+/** Wallets return signatures as base64, base58, hex, Uint8Array or arrays. */
+function normalizeSignature(value: unknown): string {
+  if (typeof value === 'string') {
+    return /^[0-9a-f]{128}$/i.test(value) ? bytesToBase64(hexToBytes(value)) : value;
+  }
+  if (value instanceof Uint8Array) return bytesToBase64(value);
+  if (Array.isArray(value)) return bytesToBase64(Uint8Array.from(value as number[]));
+  if (value && typeof value === 'object' && 'data' in value) {
+    return normalizeSignature((value as { data: unknown }).data);
+  }
+  throw new Error('Wallet returned an unsupported signature format');
+}
+
+function normalizePublicKey(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const text = String(value ?? '');
+  if (text && text !== '[object Object]') return text;
+  throw new Error('Wallet returned an unsupported public key format');
+}
+
 export function NearAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<WalletAccount[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const connectorRef = useRef<any>(null);
   const connectorPromiseRef = useRef<Promise<any> | null>(null);
@@ -107,7 +142,11 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
           const connector = new NearConnector({
             network: chainNetwork,
             features: { signMessage: true },
+            autoConnect: false,
             footerBranding: null,
+          });
+          connector.on?.('wallet:signOut', () => {
+            walletRef.current = null;
           });
           connectorRef.current = connector;
           return connector;
@@ -137,14 +176,9 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
         signerId: accountId,
       });
 
-      // Wallets disagree: some return base64 strings, others Uint8Array / key objects.
-      const rawSignature = signed.signature as unknown;
-      const signature =
-        typeof rawSignature === 'string'
-          ? rawSignature
-          : bytesToBase64(new Uint8Array(rawSignature as ArrayLike<number>));
-      const publicKey =
-        typeof signed.publicKey === 'string' ? signed.publicKey : String(signed.publicKey);
+      // Wallets disagree: base64, base58, hex, Uint8Array or a { data } wrapper.
+      const signature = normalizeSignature(signed.signature);
+      const publicKey = normalizePublicKey(signed.publicKey);
 
       const nextSession = await api<Session>('/auth/verify', {
         method: 'POST',
@@ -157,6 +191,7 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
         }),
       });
       setSession(nextSession);
+      setAccounts([]);
     },
     [],
   );
@@ -168,21 +203,58 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
     }
     setBusy(true);
     setError(null);
+    setAccounts([]);
     try {
       const connector = await ensureConnector();
       if (!connector) throw new Error('Wallet connector is unavailable');
       const wallet = (await connector.connect()) as WalletLike;
       walletRef.current = wallet;
-      const accounts = await wallet.getAccounts();
-      const accountId = accounts[0]?.accountId;
-      if (!accountId) throw new Error('No account returned by the wallet');
-      await completeSignIn(wallet, accountId);
+      const walletAccounts = await wallet.getAccounts();
+      if (walletAccounts.length === 0) {
+        throw new Error('No account returned by the wallet');
+      }
+      if (walletAccounts.length > 1) {
+        // Let the user choose instead of silently using accounts[0].
+        setAccounts(walletAccounts);
+        return;
+      }
+      await completeSignIn(wallet, walletAccounts[0].accountId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : friendlyWalletError(err));
     } finally {
       setBusy(false);
     }
   }, [completeSignIn, ensureConnector]);
+
+  const chooseAccount = useCallback(
+    async (accountId: string) => {
+      const wallet = walletRef.current;
+      if (!wallet) {
+        setAccounts([]);
+        setError('The wallet connection was lost. Please choose a wallet again.');
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        await completeSignIn(wallet, accountId);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : friendlyWalletError(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [completeSignIn],
+  );
+
+  const cancelAccountSelection = useCallback(() => setAccounts([]), []);
+
+  const preloadWallets = useCallback(async () => {
+    if (!walletLoginEnabled) return;
+    // Warm the connector while the user is still on /login so connect() can
+    // open the selector inside the click gesture (popup blockers).
+    await ensureConnector();
+  }, [ensureConnector]);
 
   const signInWithPasskey = useCallback(async () => {
     setPasskeyBusy(true);
@@ -234,8 +306,14 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       /* wallet already detached */
     }
     walletRef.current = null;
-    await api('/auth/logout', { method: 'POST' });
-    setSession(null);
+    setAccounts([]);
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } catch {
+      // A failed API logout must not keep the local UI signed in.
+    } finally {
+      setSession(null);
+    }
   }, []);
 
   const value = useMemo(
@@ -253,6 +331,10 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       refresh,
       clearError: () => setError(null),
       sendTransactions,
+      preloadWallets,
+      accounts,
+      chooseAccount,
+      cancelAccountSelection,
     }),
     [
       session,
@@ -265,6 +347,10 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refresh,
       sendTransactions,
+      preloadWallets,
+      accounts,
+      chooseAccount,
+      cancelAccountSelection,
     ],
   );
 

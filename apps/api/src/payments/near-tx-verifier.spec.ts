@@ -23,6 +23,7 @@ function tx(overrides: {
   return {
     final_execution_status: overrides.finality ?? 'FINAL',
     transaction: {
+      signer_id: 'alice.near',
       receiver_id: overrides.receiver ?? 'usdc.near',
       actions: [
         {
@@ -70,6 +71,15 @@ describe('verifyDepositTransaction', () => {
 
   it('rejects a transfer on the wrong token contract', () => {
     expect(verifyDepositTransaction(tx({ receiver: 'wrap.near' }), claim).ok).toBe(false);
+  });
+
+  it('rejects a transaction signed by a different payer', () => {
+    const result = verifyDepositTransaction(tx({}), {
+      ...claim,
+      senderAccountId: 'mallory.near',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('claimed payer');
   });
 
   it('rejects a transaction with no ft_transfer', () => {

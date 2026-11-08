@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Interval } from '@nestjs/schedule';
+import { fetchRpcWithRetry } from '../common/rpc-client';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
 import { ChainEvent, ChainEventDocument } from './chain-event.schema';
 
@@ -18,7 +19,7 @@ export class IndexerService {
   ) {}
 
   private get rpcUrl(): string {
-    return this.config.get<string>('NEAR_RPC_URL') ?? 'https://free.rpc.fastnear.com';
+    return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }
 
   @Interval(30_000)
@@ -68,21 +69,24 @@ export class IndexerService {
 
   private async indexPayment(payment: PaymentDocument) {
     if (!payment.txHash) throw new Error('Payment has no tx hash');
-    const response = await fetch(this.rpcUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'keiz-indexer',
-        method: 'tx',
-        params: {
-          tx_hash: payment.txHash,
-          sender_account_id: payment.payerAccountId,
-          wait_until: 'FINAL',
-        },
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    const response = await fetchRpcWithRetry(
+      this.rpcUrl,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'keiz-indexer',
+          method: 'tx',
+          params: {
+            tx_hash: payment.txHash,
+            sender_account_id: payment.payerAccountId,
+            wait_until: 'FINAL',
+          },
+        }),
+      },
+      { timeoutMs: 15_000 },
+    );
     const json = (await response.json()) as {
       result?: {
         final_execution_status?: string;

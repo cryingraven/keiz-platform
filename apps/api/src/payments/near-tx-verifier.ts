@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fetchRpcWithRetry } from '../common/rpc-client';
 
 export interface DepositClaim {
   txHash: string;
@@ -12,6 +13,7 @@ export interface DepositClaim {
 export interface RpcTransactionResult {
   final_execution_status?: string;
   transaction?: {
+    signer_id?: string;
     receiver_id?: string;
     actions?: Array<Record<string, unknown>>;
   };
@@ -64,6 +66,18 @@ export function verifyDepositTransaction(
   }
   const tokenContract = claim.originAsset.slice('nep141:'.length);
 
+  // Fail closed: the transaction must be signed by the claimed payer and must
+  // call the quoted token contract. Never accept a bare FunctionCall shape.
+  if (!result.transaction.signer_id) {
+    return { ok: false, reason: 'Transaction signer is missing' };
+  }
+  if (result.transaction.signer_id !== claim.senderAccountId) {
+    return { ok: false, reason: 'Transaction was not signed by the claimed payer' };
+  }
+  if (result.transaction.receiver_id !== tokenContract) {
+    return { ok: false, reason: 'Transaction did not call the origin token contract' };
+  }
+
   const actions = result.transaction.actions ?? [];
   for (const action of actions) {
     const call = action.FunctionCall as
@@ -87,10 +101,6 @@ export function verifyDepositTransaction(
       return { ok: false, reason: 'Deposit amount is not an integer' };
     }
 
-    if (result.transaction.receiver_id && result.transaction.receiver_id !== tokenContract) {
-      return { ok: false, reason: 'Transaction did not call the origin token contract' };
-    }
-
     return { ok: true };
   }
 
@@ -107,25 +117,28 @@ export class NearTxVerifier {
   constructor(private readonly config: ConfigService) {}
 
   private get rpcUrl(): string {
-    return this.config.get<string>('NEAR_RPC_URL') ?? 'https://free.rpc.fastnear.com';
+    return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }
 
   async verify(claim: DepositClaim): Promise<VerificationResult> {
-    const response = await fetch(this.rpcUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'keiz-deposit-verify',
-        method: 'tx',
-        params: {
-          tx_hash: claim.txHash,
-          sender_account_id: claim.senderAccountId,
-          wait_until: 'FINAL',
-        },
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
+    const response = await fetchRpcWithRetry(
+      this.rpcUrl,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'keiz-deposit-verify',
+          method: 'tx',
+          params: {
+            tx_hash: claim.txHash,
+            sender_account_id: claim.senderAccountId,
+            wait_until: 'FINAL',
+          },
+        }),
+      },
+      { timeoutMs: 20_000 },
+    );
 
     const json = (await response.json()) as {
       result?: RpcTransactionResult;

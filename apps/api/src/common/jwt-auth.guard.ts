@@ -39,6 +39,7 @@ export class JwtAuthGuard implements CanActivate {
       orgId?: string;
       type?: string;
       ver?: number;
+      network?: string;
       [key: string]: unknown;
     };
     try {
@@ -58,6 +59,9 @@ export class JwtAuthGuard implements CanActivate {
     if (!user || !membership) throw new UnauthorizedException('Session expired');
     if ((payload.ver ?? 0) !== (user.tokenVersion ?? 0)) {
       throw new UnauthorizedException('Session expired');
+    }
+    if (user.network && payload.network && payload.network !== user.network) {
+      throw new UnauthorizedException('Session network mismatch');
     }
 
     req.user = {

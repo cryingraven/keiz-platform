@@ -186,9 +186,9 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 
 ## Passkey login (NEAR Auth)
 
-`/login` mirrors near.com's centered sign-in layout: a recommended **Sign in with passkey** card, plus a **NEAR Wallets** button when `NEXT_PUBLIC_WALLET_LOGIN=true` (the default). The button opens the near-connect selector, which supports HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and the rest of the manifest. Set the flag to `false` for passkey-only; the near-connect manifest is then never loaded. The connector is lazy: it loads on the first wallet action, never on dashboard pages. WalletConnect/Unity remain hidden unless a WalletConnect SignClient is configured.
+`/login` mirrors near.com's centered sign-in layout: a recommended **Sign in with passkey** card, plus a **NEAR Wallets** button when `NEXT_PUBLIC_WALLET_LOGIN=true` (the default). The button opens the near-connect selector, which supports HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and the rest of the manifest. Set the flag to `false` for passkey-only; the near-connect manifest is then never loaded. The connector is preloaded on `/login` so the selector opens inside the click gesture, but it is never imported on dashboard pages. WalletConnect/Unity remain hidden unless a WalletConnect SignClient is configured.
 
-Passkeys use [NEAR Auth](https://docs.auth.near.org): Auth0 issues a JWT, the `fast-auth` contract verifies it, and an MPC network signs the NEP-413 message.
+Passkeys use [NEAR Auth](https://docs.auth.near.org): Auth0 issues a JWT, the `fast-auth` contract verifies it, and an MPC network signs the NEP-413 message. The installed Browser SDK (`1.4.2`) predates `requestMessageSignature`, so `apps/web/src/lib/passkey.ts` implements the same `nep413` Auth0 approval and `SignatureRequest` locally; it must be kept in sync when the SDK is upgraded.
 
 Testnet is preconfigured in `.env.example` with the shared Auth0 client and contracts. Two things are required beyond that:
 
@@ -204,7 +204,7 @@ New NEAR Auth users are **implicit accounts** (hex of their public key) that do 
 
 Passkey login currently authenticates the user only. With wallet login disabled there is no wallet to sign invoice deposits: mock mode uses the admin simulation, mainnet mode keeps the verified transaction-hash fallback, and passkey-signed payments need a second relayer flow.
 
-`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives the wallet connector, passkey defaults and the dashboard badge. Passkey mainnet also requires a mainnet Auth0 client and the API's `NEAR_AUTH_NETWORK`, contract and relayer to be on mainnet; wallet login only depends on the frontend value.
+`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives the wallet connector, passkey defaults and the dashboard badge. The API's `CHAIN_NETWORK` must match it. Passkey mainnet also requires a mainnet Auth0 client and the API's `NEAR_AUTH_NETWORK`, contract and relayer to be on mainnet. Wallet login also depends on the API's RPC mapping for that network (`NEAR_RPC_URL` for mainnet, `NEAR_AUTH_RPC_URL` for testnet); the API now rejects challenges for a different network.
 
 ## Environment
 
@@ -221,6 +221,9 @@ See `.env.example`. The important ones:
 | `CHAT_PROVIDER` | `mastra` or `local`; `mastra` without a key still falls back |
 | `MONGODB_DB_NAME` | Database for both Mongoose and Mastra storage |
 | `NEXT_PUBLIC_CHAIN_NETWORK` | Frontend switch: `mainnet` or `testnet`; drives wallet login, passkey defaults and the dashboard badge |
+| `CHAIN_NETWORK` | Server source of truth; must match `NEXT_PUBLIC_CHAIN_NETWORK`. The API rejects challenges for a different network |
+| `NEAR_RPC_URL` | Mainnet wallet auth, deposit verification and indexer RPC |
+| `NEAR_AUTH_RPC_URL` | Testnet wallet auth and passkey relayer RPC |
 | `NEXT_PUBLIC_PASSKEY_ENABLED` | Show the passkey button |
 | `NEXT_PUBLIC_WALLET_LOGIN` | `true` by default; `false` hides the wallet connector and loads no near-connect code |
 | `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | API-side passkey network, `testnet` + `fast-auth.testnet` (defaults) |

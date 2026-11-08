@@ -117,6 +117,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@auth0/auth0-spa-js':
+        specifier: 2.30.0
+        version: 2.30.0
       '@fast-auth-near/browser-sdk':
         specifier: 1.4.2
         version: 1.4.2(@near-js/crypto@1.4.2)(@near-js/keystores@0.2.2)(@near-js/providers@1.0.3)(@near-js/signers@0.2.2)(@near-js/tokens@2.5.1)(@near-js/types@0.3.1)(@near-js/utils@1.1.0)(react-native@0.88.1(@babel/core@7.29.7)(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)

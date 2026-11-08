@@ -17,10 +17,14 @@ import { AuthService } from './auth.service';
 import { PasskeyService } from './passkey.service';
 
 function cookieOptions() {
+  const secure =
+    process.env.COOKIE_SECURE !== undefined
+      ? process.env.COOKIE_SECURE === 'true'
+      : process.env.NODE_ENV === 'production';
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    secure,
     path: '/',
   };
 }
@@ -123,6 +127,7 @@ export class AuthController {
         accountId: user.accountId,
         orgId: org.id,
         role: membership.role,
+        network: org.network ?? state?.network,
       },
       state?.tokenVersion ?? 0,
       jti,

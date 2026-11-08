@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import type { NearNetwork } from '../common/network';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -7,6 +8,10 @@ export type UserDocument = HydratedDocument<User>;
 export class User {
   @Prop({ required: true, unique: true, index: true })
   accountId: string;
+
+  /** Which chain this identity was created on. Guards cross-network logins. */
+  @Prop({ enum: ['mainnet', 'testnet'], index: true })
+  network?: NearNetwork;
 
   @Prop()
   displayName?: string;

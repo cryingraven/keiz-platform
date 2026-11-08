@@ -1,13 +1,19 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { LoginVerifyInput } from '@keiz/shared';
+import { NearNetwork, walletNetwork } from '../common/network';
 import { UsersService } from '../users/users.service';
 import { AuthChallenge, AuthChallengeDocument } from './auth-challenge.schema';
-import { NearVerifyService } from './near-verify.service';
+import { NearVerifyService, NearRpcError } from './near-verify.service';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
@@ -28,10 +34,20 @@ export class AuthService {
   ) {}
 
   private get domain(): string {
-    return this.config.get<string>('APP_DOMAIN') ?? 'localhost';
+    return this.config.get<string>('APP_DOMAIN') || 'localhost';
   }
 
-  async createChallenge(accountId: string, network: 'mainnet' | 'testnet' = 'mainnet') {
+  private get network(): NearNetwork {
+    return walletNetwork(this.config);
+  }
+
+  async createChallenge(accountId: string, network: NearNetwork) {
+    const expected = this.network;
+    if (network !== expected) {
+      throw new BadRequestException(
+        `This deployment only accepts NEAR ${expected} logins (received ${network}).`,
+      );
+    }
     const nonce = randomBytes(32);
     const recipient = this.domain;
     const message = [
@@ -56,6 +72,7 @@ export class AuthService {
       nonce: nonce.toString('base64'),
       message,
       recipient,
+      network,
       expiresAt: expiresAt.toISOString(),
     };
   }
@@ -73,6 +90,9 @@ export class AuthService {
     if (challenge.recipient !== input.recipient) {
       throw new UnauthorizedException('Challenge domain mismatch');
     }
+    if (challenge.network !== this.network) {
+      throw new UnauthorizedException('Challenge network does not match this deployment');
+    }
 
     // Verify first, then claim: an RPC blip should not burn the nonce and force
     // the user to restart the whole sign-in flow.
@@ -86,6 +106,11 @@ export class AuthService {
       });
       await this.near.assertFullAccessKey(input.accountId, input.publicKey, challenge.network);
     } catch (error) {
+      if (error instanceof NearRpcError) {
+        throw new ServiceUnavailableException(
+          'NEAR is temporarily unavailable. Please try signing in again.',
+        );
+      }
       throw new UnauthorizedException((error as Error).message);
     }
 
@@ -98,7 +123,10 @@ export class AuthService {
       throw new UnauthorizedException('Challenge already used');
     }
 
-    const { user, org, membership } = await this.users.bootstrap(input.accountId);
+    const { user, org, membership } = await this.users.bootstrap(
+      input.accountId,
+      challenge.network,
+    );
     const refreshJti = randomUUID();
     await this.users.setRefreshJti(user.id, refreshJti);
     const tokens = await this.issueTokens(
@@ -107,6 +135,7 @@ export class AuthService {
         accountId: user.accountId,
         orgId: org!.id,
         role: membership!.role,
+        network: challenge.network,
       },
       user.tokenVersion ?? 0,
       refreshJti,
@@ -121,18 +150,24 @@ export class AuthService {
   }
 
   async issueTokens(
-    payload: { sub: string; accountId: string; orgId: string; role: string },
+    payload: {
+      sub: string;
+      accountId: string;
+      orgId: string;
+      role: string;
+      network?: NearNetwork;
+    },
     tokenVersion: number,
     refreshJti: string,
   ): Promise<SessionTokens> {
     const secret = this.config.getOrThrow<string>('JWT_SECRET');
     const accessToken = await this.jwt.signAsync(
       { ...payload, type: 'access', ver: tokenVersion },
-      { secret, expiresIn: this.config.get('JWT_ACCESS_TTL') ?? '900s' },
+      { secret, expiresIn: this.config.get('JWT_ACCESS_TTL') || '900s' },
     );
     const refreshToken = await this.jwt.signAsync(
       { ...payload, type: 'refresh', ver: tokenVersion, jti: refreshJti },
-      { secret, expiresIn: this.config.get('JWT_REFRESH_TTL') ?? '7d' },
+      { secret, expiresIn: this.config.get('JWT_REFRESH_TTL') || '7d' },
     );
     return { accessToken, refreshToken };
   }
@@ -149,6 +184,9 @@ export class AuthService {
       const { user, org, membership } = await this.users.profile(payload.sub);
       if (!user || !org || !membership) return empty;
       if ((payload.ver ?? 0) !== (user.tokenVersion ?? 0)) return empty;
+      if (user.network && user.network !== this.network) return empty;
+      if (payload.network && payload.network !== this.network) return empty;
+      if (org.network && org.network !== this.network) return empty;
       return {
         user: {
           id: user.id,
@@ -175,6 +213,12 @@ export class AuthService {
       if (!authUser) throw new Error('session subject missing');
       if ((payload.ver ?? 0) !== (authUser.tokenVersion ?? 0)) {
         throw new Error('token version revoked');
+      }
+      if (authUser.network && authUser.network !== this.network) {
+        throw new Error('token network mismatch');
+      }
+      if (payload.network && payload.network !== this.network) {
+        throw new Error('token network mismatch');
       }
       if (!payload.jti) throw new Error('refresh token has no jti');
 
@@ -215,6 +259,9 @@ export class AuthService {
 
       const { org, membership } = await this.users.profile(authUser.id);
       if (!org || !membership) throw new Error('session subject missing');
+      if (org.network && org.network !== this.network) {
+        throw new Error('workspace network mismatch');
+      }
 
       return this.issueTokens(
         {
@@ -222,6 +269,7 @@ export class AuthService {
           accountId: authUser.accountId,
           orgId: org.id,
           role: membership.role,
+          network: this.network,
         },
         authUser.tokenVersion ?? 0,
         activeJti,

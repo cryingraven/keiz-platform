@@ -39,28 +39,33 @@ const fileEnv = {
 };
 const readEnv = (key: string): string | undefined => process.env[key] ?? fileEnv[key];
 
-const apiUrl = readEnv('API_URL') ?? 'http://localhost:3001';
+const apiUrl = readEnv('API_URL') || 'http://localhost:3001';
 const configuredNetwork =
-  readEnv('NEXT_PUBLIC_CHAIN_NETWORK') ?? readEnv('NEXT_PUBLIC_NEAR_NETWORK');
+  readEnv('CHAIN_NETWORK') ??
+  readEnv('NEXT_PUBLIC_CHAIN_NETWORK') ??
+  readEnv('NEXT_PUBLIC_NEAR_NETWORK');
 const chainNetwork = configuredNetwork === 'mainnet' ? 'mainnet' : 'testnet';
 
 const nextConfig: NextConfig = {
   // Explicitly inline public env. Turbopack computes NEXT_PUBLIC_* before
   // next.config runs, so values loaded from the repo root need to be declared.
   env: {
-    NEXT_PUBLIC_PASSKEY_ENABLED: readEnv('NEXT_PUBLIC_PASSKEY_ENABLED') ?? 'false',
-    NEXT_PUBLIC_WALLET_LOGIN: readEnv('NEXT_PUBLIC_WALLET_LOGIN') ?? 'false',
+    NEXT_PUBLIC_PASSKEY_ENABLED: readEnv('NEXT_PUBLIC_PASSKEY_ENABLED') || 'false',
+    NEXT_PUBLIC_WALLET_LOGIN: readEnv('NEXT_PUBLIC_WALLET_LOGIN') || 'false',
     // Passkey network-specific values are intentionally not defaulted here:
     // passkey.ts derives them from NEXT_PUBLIC_CHAIN_NETWORK unless explicitly
     // overridden (empty values fall through to the derived defaults).
-    NEXT_PUBLIC_NEAR_AUTH_NETWORK: readEnv('NEXT_PUBLIC_NEAR_AUTH_NETWORK') ?? '',
-    NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID') ?? '',
-    NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID') ?? '',
+    NEXT_PUBLIC_NEAR_AUTH_NETWORK: readEnv('NEXT_PUBLIC_NEAR_AUTH_NETWORK') || '',
+    NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID') || '',
+    NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID') || '',
     NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID:
-      readEnv('NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID') ?? '',
-    NEXT_PUBLIC_NEAR_AUTH_RPC_URL: readEnv('NEXT_PUBLIC_NEAR_AUTH_RPC_URL') ?? '',
+      readEnv('NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID') || '',
+    NEXT_PUBLIC_NEAR_AUTH_RPC_URL: readEnv('NEXT_PUBLIC_NEAR_AUTH_RPC_URL') || '',
+    NEXT_PUBLIC_NEAR_AUTH_DOMAIN: readEnv('NEXT_PUBLIC_NEAR_AUTH_DOMAIN') || '',
+    NEXT_PUBLIC_NEAR_AUTH_SIGNING_AUDIENCE:
+      readEnv('NEXT_PUBLIC_NEAR_AUTH_SIGNING_AUDIENCE') || '',
     NEXT_PUBLIC_CHAIN_NETWORK: chainNetwork,
-    NEXT_PUBLIC_NEAR_NETWORK: readEnv('NEXT_PUBLIC_NEAR_NETWORK') ?? chainNetwork,
+    NEXT_PUBLIC_NEAR_NETWORK: readEnv('NEXT_PUBLIC_NEAR_NETWORK') || chainNetwork,
   },
   // The API is proxied through Next so the httpOnly session cookie is same-origin.
   // Do not call the Nest port directly from the browser.

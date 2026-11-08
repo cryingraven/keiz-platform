@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OutlayerClient } from '@outlayer/sdk';
+import { outlayerNetwork } from '../common/network';
 
 export interface OutlayerRegistration {
   walletId: string;
@@ -66,7 +67,7 @@ export class OutlayerService {
 
   constructor(private readonly config: ConfigService) {
     this.enabled = config.get<string>('OUTLAYER_ENABLED') === 'true';
-    this.network = (config.get<string>('OUTLAYER_NETWORK') ?? 'testnet') as 'mainnet' | 'testnet';
+    this.network = outlayerNetwork(config);
     // The SDK's built-in hosts are stale (api.*.outlayer.fastnear.com). Always
     // pass an explicit base URL; the documented API hosts are below.
     this.baseUrl =
@@ -74,6 +75,13 @@ export class OutlayerService {
       (this.network === 'mainnet'
         ? 'https://api.outlayer.ai'
         : 'https://testnet-api.outlayer.ai');
+
+    if (this.enabled && this.network === 'testnet' && this.baseUrl === 'https://api.outlayer.ai') {
+      throw new Error('OUTLAYER_NETWORK=testnet but OUTLAYER_BASE_URL points at mainnet.');
+    }
+    if (this.enabled && this.network === 'mainnet' && this.baseUrl.includes('testnet')) {
+      throw new Error('OUTLAYER_NETWORK=mainnet but OUTLAYER_BASE_URL points at testnet.');
+    }
   }
 
   get isEnabled(): boolean {

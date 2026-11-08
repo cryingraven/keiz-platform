@@ -213,6 +213,15 @@ export class PaymentsService {
       return payment.toObject(); // idempotent retry
     }
 
+    const replay = await this.payments.exists({
+      orgId,
+      txHash,
+      _id: { $ne: payment._id },
+    });
+    if (replay) {
+      throw new ConflictException('This transaction hash is already attached to another payment');
+    }
+
     // Never trust a client-supplied hash: verify the transfer on NEAR first.
     if (payment.provider === 'intents') {
       const verification = await this.nearTx.verify({

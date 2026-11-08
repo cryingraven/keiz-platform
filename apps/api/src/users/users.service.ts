@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import type { Role } from '@keiz/shared';
+import { NearNetwork, walletNetwork } from '../common/network';
 import { Organization, OrganizationDocument } from './organization.schema';
 import { Membership, MembershipDocument } from './membership.schema';
 import { User, UserDocument } from './user.schema';
@@ -13,6 +15,7 @@ export class UsersService {
     @InjectModel(User.name) private readonly users: Model<UserDocument>,
     @InjectModel(Organization.name) private readonly orgs: Model<OrganizationDocument>,
     @InjectModel(Membership.name) private readonly memberships: Model<MembershipDocument>,
+    private readonly config: ConfigService,
   ) {}
 
   /** The workspace the user last selected, falling back to their first membership. */
@@ -28,13 +31,28 @@ export class UsersService {
   }
 
   /** First login creates the user, their workspace and an OWNER membership atomically-ish. */
-  async bootstrap(accountId: string) {
+  async bootstrap(accountId: string, network: NearNetwork = walletNetwork(this.config)) {
     const existing = await this.users.findOne({ accountId });
+    if (existing?.network && existing.network !== network) {
+      throw new BadRequestException(
+        `This account belongs to NEAR ${existing.network}, not ${network}.`,
+      );
+    }
     if (existing) {
       const membership = await this.currentMembership(existing);
       if (membership) {
         const org = await this.orgs.findById(membership.orgId);
         if (org) {
+          if (org.network && org.network !== network) {
+            throw new BadRequestException(
+              `This workspace belongs to NEAR ${org.network}, not ${network}.`,
+            );
+          }
+          if (!existing.network) existing.network = network;
+          if (!org.network) {
+            org.network = network;
+            await org.save();
+          }
           if (existing.activeOrgId !== org.id) {
             existing.activeOrgId = org.id;
           }
@@ -45,17 +63,27 @@ export class UsersService {
       }
     }
 
-    const user = existing ?? (await this.users.create({ accountId }));
+    const user =
+      existing ?? (await this.users.create({ accountId, network }));
+    if (!user.network) {
+      user.network = network;
+    }
     let membership = await this.currentMembership(user);
     let org: OrganizationDocument | null = null;
 
     if (membership) {
       org = await this.orgs.findById(membership.orgId);
+      if (org?.network && org.network !== network) {
+        throw new BadRequestException(
+          `This workspace belongs to NEAR ${org.network}, not ${network}.`,
+        );
+      }
     }
     if (!membership || !org) {
       org = await this.orgs.create({
         name: `${accountId.split('.')[0]} workspace`,
         slug: `${accountId.replace(/[^a-z0-9]+/g, '-')}-${randomBytes(3).toString('hex')}`,
+        network,
       });
       membership = await this.memberships.create({
         orgId: org.id,
@@ -80,11 +108,22 @@ export class UsersService {
   }
 
   /** Find or create a user without creating a workspace for them. */
-  async ensureUser(accountId: string) {
+  async ensureUser(accountId: string, network: NearNetwork = walletNetwork(this.config)) {
     const existing = await this.users.findOne({ accountId });
-    if (existing) return existing;
+    if (existing) {
+      if (existing.network && existing.network !== network) {
+        throw new BadRequestException(
+          `This account belongs to NEAR ${existing.network}, not ${network}.`,
+        );
+      }
+      if (!existing.network) {
+        existing.network = network;
+        await existing.save();
+      }
+      return existing;
+    }
     try {
-      return await this.users.create({ accountId });
+      return await this.users.create({ accountId, network });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
         const raced = await this.users.findOne({ accountId });
@@ -114,7 +153,19 @@ export class UsersService {
 
   /** Add or update a membership. The caller decides whether the role is allowed. */
   async addMember(orgId: string, accountId: string, role: Role) {
-    const user = await this.ensureUser(accountId);
+    const org = await this.orgs.findById(orgId);
+    if (!org) throw new NotFoundException('Workspace not found');
+    const network = org.network ?? walletNetwork(this.config);
+    if (!org.network) {
+      org.network = network;
+      await org.save();
+    }
+    const user = await this.ensureUser(accountId, network);
+    if (user.network && user.network !== network) {
+      throw new BadRequestException(
+        `This account belongs to NEAR ${user.network}, not ${network}.`,
+      );
+    }
     const existing = await this.memberships.findOne({ orgId, userId: user.id });
     if (existing) {
       if (existing.role === 'OWNER' && role !== 'OWNER') {
@@ -241,6 +292,7 @@ export class UsersService {
           name: org.name,
           slug: org.slug,
           role: membership.role,
+          network: org.network ?? null,
         },
       ];
     });
@@ -249,8 +301,14 @@ export class UsersService {
   async switchOrg(userId: string, orgId: string) {
     const membership = await this.memberships.findOne({ userId, orgId });
     if (!membership) throw new NotFoundException('Workspace not found');
-    const org = await this.orgs.findById(orgId);
-    if (!org) throw new NotFoundException('Workspace not found');
+    const [org, user] = await Promise.all([
+      this.orgs.findById(orgId),
+      this.users.findById(userId),
+    ]);
+    if (!org || !user) throw new NotFoundException('Workspace not found');
+    if (user.network && org.network && user.network !== org.network) {
+      throw new BadRequestException('This workspace belongs to a different NEAR network.');
+    }
     await this.users.updateOne({ _id: userId }, { $set: { activeOrgId: orgId } });
     return { org, membership };
   }

@@ -9,20 +9,58 @@ export class ApiError extends Error {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const external = init?.signal;
+  const onAbort = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', onAbort, { once: true });
+  }
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    external?.removeEventListener('abort', onAbort);
+  }
+}
+
 export async function api<T>(
   path: string,
   init?: RequestInit,
   allowRefresh = true,
 ): Promise<T> {
   const hasBody = init?.body !== undefined;
-  const response = await fetch(`/api${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      ...(hasBody ? { 'content-type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `/api${path}`,
+      {
+        credentials: 'include',
+        ...init,
+        headers: {
+          ...(hasBody ? { 'content-type': 'application/json' } : {}),
+          ...(init?.headers ?? {}),
+        },
+      },
+      REQUEST_TIMEOUT_MS,
+    );
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      throw new ApiError('The request timed out. Check your connection and try again.', 408);
+    }
+    throw new ApiError(
+      (error as Error)?.message || 'Could not reach the API.',
+      0,
+    );
+  }
 
   const text = await response.text();
   let data: unknown = null;
@@ -69,10 +107,11 @@ let refreshInFlight: Promise<boolean> | null = null;
 /** One shared refresh request for every 401 that happens at the same time. */
 function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-    })
+    refreshInFlight = fetchWithTimeout(
+      '/api/auth/refresh',
+      { method: 'POST', credentials: 'include' },
+      10_000,
+    )
       .then((response) => response.ok)
       .catch(() => false)
       .finally(() => {

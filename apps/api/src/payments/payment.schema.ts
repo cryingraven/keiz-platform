@@ -130,6 +130,11 @@ export class Payment {
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
 PaymentSchema.index({ orgId: 1, createdAt: -1 });
 PaymentSchema.index({ status: 1, deadline: 1 });
+// A deposit transaction may fund at most one payment in an org.
+PaymentSchema.index(
+  { orgId: 1, txHash: 1 },
+  { unique: true, partialFilterExpression: { txHash: { $exists: true } } },
+);
 PaymentSchema.index(
   { orgId: 1, idempotencyKey: 1 },
   { unique: true, partialFilterExpression: { idempotencyKey: { $exists: true } } },

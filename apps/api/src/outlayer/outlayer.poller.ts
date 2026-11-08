@@ -16,6 +16,12 @@ import { ConfigService } from '@nestjs/config';
 export class OutlayerPoller {
   private readonly logger = new Logger(OutlayerPoller.name);
   private running = false;
+  /**
+   * Free custody tiers are measured per operation, so a fixed 5s poll can burn
+   * a wallet's daily quota in under two hours. Poll aggressively right after a
+   * request, then back off hard. State is per-process and intentionally cheap.
+   */
+  private readonly pollState = new Map<string, { count: number; nextAt: number }>();
 
   constructor(
     @InjectModel(Payment.name) private readonly payments: Model<PaymentDocument>,
@@ -34,6 +40,28 @@ export class OutlayerPoller {
     );
   }
 
+  private isDue(paymentId: string): boolean {
+    const state = this.pollState.get(paymentId);
+    return !state || Date.now() >= state.nextAt;
+  }
+
+  private schedule(paymentId: string) {
+    const state = this.pollState.get(paymentId) ?? { count: 0, nextAt: 0 };
+    state.count += 1;
+    // Fast right after submission, then 30s, then 5m. This keeps quota use low
+    // while still settling a normal request within a few seconds.
+    const delay = state.count <= 3 ? 5_000 : state.count <= 6 ? 30_000 : 300_000;
+    state.nextAt = Date.now() + delay;
+    this.pollState.set(paymentId, state);
+  }
+
+  private coolDown(paymentId: string) {
+    this.pollState.set(paymentId, {
+      count: 10,
+      nextAt: Date.now() + 10 * 60_000,
+    });
+  }
+
   @Interval(5_000)
   async tick() {
     if (this.running || !this.outlayer.isEnabled) return;
@@ -44,10 +72,22 @@ export class OutlayerPoller {
         .limit(25);
 
       for (const payment of open) {
+        if (!this.isDue(payment.id)) continue;
         try {
           await this.refresh(payment);
+          if (['PROCESSING', 'AWAITING_DEPOSIT'].includes(payment.status)) {
+            this.schedule(payment.id);
+          } else {
+            this.pollState.delete(payment.id);
+          }
         } catch (error) {
-          this.logger.warn(`Custody poll failed for ${payment.id}: ${(error as Error).message}`);
+          const message = (error as Error).message;
+          if (/429|operation_limit|rate/i.test(message)) {
+            this.coolDown(payment.id);
+          } else {
+            this.schedule(payment.id);
+          }
+          this.logger.warn(`Custody poll failed for ${payment.id}: ${message}`);
         }
       }
     } finally {

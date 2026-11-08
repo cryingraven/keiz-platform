@@ -60,7 +60,9 @@ export function shortAddress(value?: string | null, size = 5): string {
 
 const EXPLORER_HOSTS = [
   'nearblocks.io',
+  'testnet.nearblocks.io',
   'explorer.near.org',
+  'explorer.testnet.near.org',
   'etherscan.io',
   'basescan.org',
   'arbiscan.io',

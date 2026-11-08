@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Fingerprint, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useApi } from '@/lib/hooks';
+import { chainNetwork } from '@/lib/network';
+import { preloadPasskey } from '@/lib/passkey';
 import { Logo } from '@/components/logo';
 import { NearProtocolIcon } from '@/components/landing/logos';
 
@@ -20,13 +23,30 @@ export default function LoginPage() {
     busy,
     error,
     clearError,
+    preloadWallets,
+    accounts,
+    chooseAccount,
+    cancelAccountSelection,
   } = useAuth();
   const router = useRouter();
+  const health = useApi<{ network?: string }>('/health');
   const [whyOpen, setWhyOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && session?.user) router.replace('/dashboard');
   }, [loading, session, router]);
+
+  useEffect(() => {
+    // Warm both clients while the user is still on /login. This keeps the
+    // wallet selector and Auth0 popup inside the original click gesture.
+    void preloadWallets();
+    void preloadPasskey().catch(() => {
+      // Passkey setup errors are surfaced when the user actually clicks.
+    });
+  }, [preloadWallets]);
+
+  const networkMismatch =
+    Boolean(health.data?.network) && health.data?.network !== chainNetwork;
 
   if (loading) {
     return (
@@ -48,6 +68,13 @@ export default function LoginPage() {
           Use a passkey for the easiest experience
           {walletLoginEnabled ? ', or connect a wallet' : ''}.
         </p>
+        {networkMismatch ? (
+          <div className="mt-3 rounded-xl border border-amber/20 bg-amber-soft px-4 py-3 text-[12px] leading-relaxed text-amber">
+            This page is configured for NEAR {chainNetwork}, but the API is on{' '}
+            {health.data?.network}. Wallet and passkey sign-in will be rejected until the
+            deployment networks are aligned.
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={() => setWhyOpen((value) => !value)}
@@ -70,7 +97,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => void signInWithPasskey()}
-              disabled={passkeyBusy}
+              disabled={passkeyBusy || busy}
               className="group w-full rounded-2xl border border-line bg-white p-5 text-left transition hover:border-line-strong hover:shadow-[0_1px_2px_rgba(0,0,0,0.04)] disabled:cursor-wait disabled:opacity-70"
             >
               <div className="flex items-start justify-between">
@@ -110,29 +137,64 @@ export default function LoginPage() {
               </span>
               <span className="h-px flex-1 bg-line" />
             </div>
-            <button
-              type="button"
-              onClick={() => void signIn()}
-              disabled={busy}
-              className="group flex w-full items-center gap-4 rounded-2xl border border-line bg-white p-5 text-left transition hover:border-line-strong hover:shadow-[0_1px_2px_rgba(0,0,0,0.04)] disabled:cursor-wait disabled:opacity-70"
-            >
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white">
-                {busy ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <NearProtocolIcon className="h-5 w-5" />
-                )}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-semibold">NEAR Wallets</span>
-                <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
-                  {busy
-                    ? 'Opening wallet selector…'
-                    : 'HOT, Meteor, Nightly, MyNearWallet and more.'}
+            {accounts.length > 1 ? (
+              <div className="rounded-2xl border border-line bg-white p-4">
+                <p className="text-[13px] font-semibold">Choose an account</p>
+                <p className="mt-0.5 text-[11px] text-muted">
+                  This wallet has more than one NEAR account. Pick the one to use for KEIZ.
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  {accounts.map((account) => (
+                    <button
+                      key={account.accountId}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void chooseAccount(account.accountId)}
+                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-paper px-3 py-2.5 text-left transition hover:border-line-strong disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <span className="font-num truncate text-[12px]">{account.accountId}</span>
+                      {busy ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-muted" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelAccountSelection}
+                  disabled={busy}
+                  className="mt-3 text-[11px] text-muted underline decoration-line-strong underline-offset-2 hover:text-ink disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void signIn()}
+                disabled={busy || passkeyBusy}
+                className="group flex w-full items-center gap-4 rounded-2xl border border-line bg-white p-5 text-left transition hover:border-line-strong hover:shadow-[0_1px_2px_rgba(0,0,0,0.04)] disabled:cursor-wait disabled:opacity-70"
+              >
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white">
+                  {busy ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <NearProtocolIcon className="h-5 w-5" />
+                  )}
                 </span>
-              </span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted transition group-hover:text-ink" />
-            </button>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-semibold">NEAR Wallets</span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
+                    {busy
+                      ? 'Opening wallet selector…'
+                      : 'HOT, Meteor, Nightly, MyNearWallet and more.'}
+                  </span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted transition group-hover:text-ink" />
+              </button>
+            )}
           </>
         ) : null}
 
