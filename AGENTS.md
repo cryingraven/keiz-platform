@@ -24,10 +24,13 @@ pnpm --filter @keiz/api seed demo.near
 ## Layout
 
 - `apps/web` — Next 16 App Router, Tailwind 4. Dashboard is client-rendered; data comes from `/api/*`.
-- `apps/api` — Nest 12 + Mongoose 9. Feature folders: `auth`, `invoices` (AP), `receivables` (AR + customers), `accounting`, `payments`, `agent`, `outlayer`, `chat`, `indexer`, `audit`.
+- `apps/api` — Nest 12 + Mongoose 9. Feature folders: `auth`, `users` (members/orgs), `vendors`, `invoices` (AP), `receivables` (AR + customers), `accounting`, `payments`, `agent`, `outlayer`, `chat`, `indexer`, `queues`, `audit`, `demo`.
 - `apps/api/src/chat` — Mastra agent, tools, memory and the SSE controller. Mastra owns conversations; there is no local thread schema.
+- `apps/api/src/worker.ts` — BullMQ worker entry point (`worker.module.ts`); runs the payment, OutLayer, indexer and NEAR Auth processors.
 - `packages/shared` — the only place DTOs, Zod schemas, status enums and money helpers live.
+- `contracts/` — `keiz-collect` (AR receiver), `keiz-vault` (AP treasury) and `deploy/` scripts. See `contracts/README.md`.
 - `docs/architecture.md` — system context, request lifecycle, auth/payment/custody/chat sequences, state machines, data model, trust boundaries. Update the diagrams in the same change as the flow.
+- `docs/api.md` — full route/role reference; `docs/data-model.md` — collections, fields and indexes.
 - `.agents/skills/` — NEAR skills (near-intents, near-ai-cloud, near-dapp, near-kit). Read the relevant one before changing that integration.
 - Every query is scoped by `orgId` from the JWT. Never read `orgId` from a body, query param, or model/tool output.
 
@@ -49,7 +52,7 @@ pnpm --filter @keiz/api seed demo.near
 - **The published NEAR Auth SDK predates `requestMessageSignature`.** `@fast-auth-near/browser-sdk@1.4.2` / `javascript-provider@1.4.1` do not expose it despite the docs. `apps/web/src/lib/near-auth.ts` feature-detects it and falls back to the `nep413` Auth0 authorization parameter. Remove the fallback and `@auth0/auth0-spa-js` when the npm release catches up.
 - **New NEAR Auth users are implicit accounts** (hex of the ed25519 public key) that may not exist on-chain. `NearVerifyService` accepts that only when `view_account` says `UNKNOWN_ACCOUNT` and `accountId === hex(publicKey)`. Do not relax this to "any RPC error".
 - **On-chain AR/AP contracts live in `contracts/`.** `keiz-collect` is the NEP-141 receiver; `keiz-vault` is the approval/policy treasury. Build with `PATH="$HOME/.cargo/bin:$PATH" pnpm contracts:build` (the Homebrew rustc has no wasm std). 1Click cross-chain AR uses `customRecipientMsg`; cross-chain AP transfers to a committed 1Click deposit address. 1Click is mainnet-only.
-- **AR receipts are indexed from the collect contract.** Each workspace stores its own `collection` config on `Organization` (Settings → AR collection). `IndexerService.syncCollectReceipts` iterates active orgs, reads each contract, converts the token amount to the receivable's decimals, rejects overpayments, and records `ONCHAIN` receipts keyed by `collect:<orgId>:<contractId>:<receiptId>`. Never reintroduce a global collect contract/org env.
+- **AR receipts are indexed from the collect contract.** Each workspace stores its own `collection` config on `Organization` (Settings → AR collection). `IndexerService.syncCollectReceipts` iterates active orgs, reads each contract, converts the token amount to the receivable's decimals, rejects overpayments, and records `ONCHAIN` receipts keyed by `collect:<orgId>:<contractId>:<receiptId>`. Never reintroduce a global collect contract/org env. `OrgCollectionService.validate` checks `get_org_id`, `get_treasury`, `is_token_allowed` and (when `KEIZ_COLLECT_CODE_HASH` is set) the deployed code hash before a workspace contract can be activated; in production the hash is mandatory.
 - **One live PaymentIntent per invoice.** `payment_intents` has a partial unique index on `(orgId, invoiceId)` for `OPEN`/`EXECUTING`. Every rail must reserve before moving funds; never bypass it when adding vault execution.
 - **Do not route treasury calls through the NEAR Auth relayer.** `/auth/near-auth/relay` is `fast-auth.sign` only and must stay that way; AP proposals/approvals are wallet-signed or use a separate transaction relayer with its own contract/method allowlist.
 - **One network source of truth.** `CHAIN_NETWORK` (falling back to `NEXT_PUBLIC_CHAIN_NETWORK`) is canonical. The API rejects a challenge for any other network and binds users/orgs to it. `auditNetworkConfig` fails startup on intents-on-testnet, NEAR Auth contract/RPC mismatches and OutLayer host mismatches. Do not add another network switch.
@@ -99,7 +102,7 @@ There is no impersonation endpoint in the app. This script is dev-only.
 
 ## Testing
 
-- `apps/api/test/smoke.ts` boots the real app against `mongodb-memory-server` and runs 48 checks: auth scoping + refresh reuse, totals, approval, tenant isolation, quote→deposit→settle, event log, agent policy + atomic daily cap, RBAC, duplicate quotes, address/amount validation, audit log, local chat streaming, demo seed, NEAR Auth relayer fencing. Run it before touching payment code.
+- `apps/api/test/smoke.ts` boots the real app against `mongodb-memory-server` and runs 48 checks: auth scoping + refresh reuse, totals, approval, tenant isolation, quote→deposit→settle, event log, agent policy + atomic daily cap, RBAC, duplicate quotes, address/amount validation, audit log, local chat streaming, demo seed, NEAR Auth relayer fencing, AP/AR recognition and settlement, receipts, trial balance, aging, rebuild, member management and org switching. Run it before touching payment code.
 - `apps/api/test/outlayer-smoke.ts` runs the custody flow against a mock OutLayer API: register, describe, token resolution, dry-run, withdraw, polling, invoice settlement.
 - `apps/api/test/mastra-smoke.ts` runs the real Mastra agent against a mock OpenAI-compatible server (`test/mock-openai.ts`), proving stream mapping, request-scoped tools, memory persistence and thread isolation without a NEAR AI key.
 - Unit tests are colocated `*.spec.ts` (57 API + 15 shared at the time of writing).

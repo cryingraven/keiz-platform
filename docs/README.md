@@ -5,7 +5,10 @@ Start here:
 | Document | What it explains |
 |---|---|
 | [Architecture & diagrams](./architecture.md) | System context, module map, request lifecycle, auth/payment/agent/chat sequences, state machines, data model, trust boundaries |
-| [Integration & contracts](./integrations.md) | On-chain AR collection, vault/policy contract, OutLayer policy writes, payout verification, queues |
+| [API reference](./api.md) | Every route with its role, request schema, and key status/error behavior |
+| [Data model](./data-model.md) | Collections, fields, indexes and invariants (including Mastra storage) |
+| [Integration & contracts](./integrations.md) | On-chain AR collection, vault/policy contract, OutLayer custody policy, payout verification, queues |
+| [Contract README](../contracts/README.md) | Contract ABIs, message formats, event schemas, deployment |
 | [Security model](../README.md#security-model) | RBAC, deposit verification, quote idempotency, agent controls, sessions, hardening |
 | [Agent custody](../README.md#agent-custody-outlayer) | OutLayer wallets, policy handoff, funding, testnet/mainnet limits |
 | [Login (NEAR Auth + wallet)](../README.md#login-near-auth--wallet) | Auth0/MPC NEP-413 signature, wallet NEP-413, relayer, full-access check |
@@ -16,9 +19,10 @@ Start here:
 - Diagrams are Mermaid and must render on GitHub (`flowchart`, `sequenceDiagram`,
   `stateDiagram-v2`, `erDiagram`).
 - Keep the flow names aligned with the code: `AWAITING_DEPOSIT`, `PROCESSING`,
-  `needs_review`, `PENDING_APPROVAL`, `EXECUTING`.
+  `NEEDS_REVIEW`, `PENDING_APPROVAL`, `EXECUTING`, `SETTLED`.
 - When a flow changes, update `architecture.md` in the same PR. The sequence
   diagrams are the fastest way to review a payment or auth change.
+- Routes and model changes should also update `api.md` and `data-model.md`.
 - Do not put secrets, real API keys, or account private keys in diagrams.
 
 ## Repo quick links
@@ -26,3 +30,4 @@ Start here:
 - Web: [`apps/web`](../apps/web)
 - API: [`apps/api`](../apps/api)
 - Shared contracts: [`packages/shared`](../packages/shared)
+- Rust contracts: [`contracts`](../contracts)

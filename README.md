@@ -4,7 +4,7 @@ A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-ent
 
 ![KEIZ](https://img.shields.io/badge/NEAR-Intents-4f46e5) ![NEP-413](https://img.shields.io/badge/auth-NEP--413-0f9d76)
 
-**Docs:** [Architecture & diagrams](docs/architecture.md) · [Docs index](docs/README.md) · [Agent instructions](AGENTS.md)
+**Docs:** [Architecture & diagrams](docs/architecture.md) · [API reference](docs/api.md) · [Data model](docs/data-model.md) · [Integrations & contracts](docs/integrations.md) · [Contract README](contracts/README.md) · [Docs index](docs/README.md) · [Agent instructions](AGENTS.md)
 
 ## Stack
 
@@ -56,10 +56,11 @@ Open <http://localhost:3000>, sign in with NEAR Auth or a NEAR wallet, and press
 - **Agent wallet** — two providers:
   - **OutLayer custody** (when `OUTLAYER_ENABLED=true`): the agent gets an OutLayer wallet, API key, NEAR implicit account and Intents balance. Keys live in an Intel TDX enclave; spending policy is encrypted on-chain and enforced before signing. KEIZ stores only the encrypted API key.
   - **Local** (fallback): generated ed25519 keypair, AES-256-GCM at rest, local USD caps. Useful for the offline/mock demo.
-- **AI assistant** — a Mastra agent with five tools over your own invoices, vendors and spend. It can create payment *proposals* but has no path to move funds. Streams tokens and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback that calls the same tools.
-- **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. See `contracts/README.md`.
+- **AI assistant** — a Mastra agent with six tools over your own invoices, vendors and spend (`list-invoices`, `get-invoice`, `spend-summary`, `books-summary`, `list-vendors`, `propose-payment`). It can create payment *proposals* but has no path to move funds. Streams tokens and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback that calls the same tools.
+- **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. The vault is operated separately from the app today. See `contracts/README.md`.
+- **Workspace operations** — team members and roles, org switching, vendor/customer edit + archive, draft-bill edit, and per-workspace AR collection settings that are validated against the deployed contract before activation.
 - **History indexing** — every payment transition is appended to `payment_events`; on-chain deposits are normalised into `chain_events` with a unique `(txHash, eventIndex)` index so re-polling cannot duplicate rows.
-- **PaymentIntent + PaymentAttempt** — one live payment obligation per invoice across `oneclick`, `outlayer`, and `vault`, with a reservation before execution to prevent cross-rail double payment.
+- **PaymentIntent + PaymentAttempt** — one live payment obligation per invoice, reserved before execution to prevent cross-rail double payment. `oneclick` and `outlayer` execute today; `vault` is a reserved rail until the AP vault is wired to invoice approval.
 - **Audit log** — every mutating request is recorded append-only and readable by ADMIN/OWNER at `/dashboard/audit` with actor, path, status and IP.
 
 ## Demo without mainnet funds
@@ -93,21 +94,27 @@ existing no-FX limitation on payments.
 ## API surface
 
 ```
-POST /api/auth/challenge          create a NEP-413 challenge
-POST /api/auth/verify             verify signature, set session cookies
-GET  /api/auth/me                 session or null
+POST /api/auth/challenge          public, create a NEP-413 challenge
+POST /api/auth/near-auth/relay    public, fast-auth.sign only (Auth0/MPC)
+POST /api/auth/verify             public, verify signature + set session cookies
+POST /api/auth/refresh            public, rotate the refresh token
+POST /api/auth/logout             public, clear cookies
+GET  /api/auth/me                 public, session or null
 GET  /api/auth/orgs               workspaces this account belongs to
 POST /api/auth/switch-org         switch active workspace, reissue cookies
 
 GET/POST /api/vendors
-PATCH/DELETE /api/vendors/:id      ADMIN/OWNER (delete archives)
+GET/PATCH/DELETE /api/vendors/:id   PATCH/DELETE ADMIN/OWNER (delete archives)
+
 GET/POST /api/invoices
-PATCH /api/invoices/:id            DRAFT only, totals recomputed
+GET  /api/invoices/summary
+PATCH /api/invoices/:id             DRAFT only, totals recomputed
 POST /api/invoices/:id/submit
-POST /api/invoices/:id/decision
-POST /api/invoices/:id/void
+POST /api/invoices/:id/decision     APPROVER/ADMIN/OWNER
+POST /api/invoices/:id/void         ADMIN/OWNER
 
 GET  /api/payments                ?invoiceId= filter
+GET  /api/payments/open
 GET  /api/payments/tokens
 POST /api/payments                commit a quote
 POST /api/payments/:id/deposit
@@ -116,15 +123,21 @@ POST /api/payments/:id/cancel     ADMIN/OWNER, awaiting-deposit only
 POST /api/payments/:id/simulate   ADMIN/OWNER, mock + non-production only
 GET  /api/payments/:id/events
 
-GET/POST /api/customers
+GET/POST /api/customers            GET supports ?includeArchived=true&q=...
 PATCH/DELETE /api/customers/:id     ADMIN/OWNER (delete archives)
+POST /api/customers/:id/restore     ADMIN/OWNER
+
 GET  /api/receivables                 ?status= &customerId= &currency=
 GET  /api/receivables/summary
 GET  /api/receivables/:id
 POST /api/receivables
+POST /api/receivables/:id/collection-quote  1Click quote to the workspace collect contract
 POST /api/receivables/:id/issue
 POST /api/receivables/:id/receipts    APPROVER/ADMIN/OWNER
 POST /api/receivables/:id/void        ADMIN/OWNER
+
+GET  /api/orgs/current/collection     AR collection config
+PATCH /api/orgs/current/collection    ADMIN/OWNER, validates org/treasury/token/code hash
 
 GET  /api/accounting/accounts
 GET  /api/accounting/summary          ?currency= &from= &to=
@@ -137,7 +150,7 @@ POST /api/accounting/rebuild          ADMIN/OWNER, idempotent backfill
 GET  /api/agent/wallet
 POST /api/agent/wallet
 POST /api/agent/wallet/custody      OWNER, upgrade a local wallet to OutLayer
-PATCH /api/agent/wallet/policy      OWNER
+PATCH /api/agent/wallet/policy      OWNER, local wallets only (custody is read-only)
 GET  /api/agent/stats
 GET/POST /api/agent/actions
 POST /api/agent/actions/:id/decision
@@ -150,13 +163,17 @@ DELETE /api/chat/threads/:id
 
 GET  /api/indexer/events
 POST /api/indexer/backfill/:paymentId   ADMIN/OWNER
+POST /api/indexer/collect               ADMIN/OWNER, sync active collect contracts
 GET  /api/members                  workspace team
 POST /api/members                  ADMIN/OWNER
 PATCH/DELETE /api/members/:userId  ADMIN/OWNER (last owner protected)
 GET  /api/audit                   ADMIN/OWNER
 POST /api/demo/seed               OWNER, non-production only
-GET  /api/health
+GET  /api/health                  public
 ```
+
+The full route table with request schemas and status codes is in
+[`docs/api.md`](docs/api.md).
 
 ## Security model
 
@@ -258,7 +275,7 @@ CONFIRM_MAINNET=YES ./contracts/deploy/mainnet.sh
 
 See `contracts/README.md` for required accounts, token ids, and policy limits.
 
-The main suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. It also drives AP recognition and settlement, AR issue/partial/full receipt, void reversals, trial-balance balance, AP/AR aging, manual opening entries, idempotent rebuild and ledger tenant isolation. The custody suite drives registration, delegated policy, withdraw, polling and settlement against a mock OutLayer API. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
+The main suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. It also drives AP recognition and settlement, AR issue/partial/full receipt, void reversals, trial-balance balance, AP/AR aging, manual opening entries, idempotent rebuild and ledger tenant isolation, plus member add/role/remove with last-owner protection and switching into a shared workspace. The custody suite drives registration, delegated policy, withdraw, polling and settlement against a mock OutLayer API. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
 
 ## NEAR agent skills
 

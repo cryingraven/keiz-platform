@@ -26,14 +26,17 @@ flowchart LR
   subgraph API["NestJS 12 API"]
     Guards["JWT · Roles · Rate limit · Audit"]
     AuthMod["Auth"]
+    UsersMod["Users · Members · Orgs"]
     Ops["Invoices (AP) · Vendors"]
     ARMod["Receivables (AR) · Customers"]
     AccMod["Accounting · Journal"]
-    PayMod["Payments"]
+    PayMod["Payments · Intents"]
     AgentMod["Agent"]
     OutMod["OutLayer adapter"]
     ChatMod["Chat + Mastra"]
     Idx["Indexer"]
+    AuditMod["Audit"]
+    QueueMod["Queue producer"]
   end
 
   DB[("MongoDB")]
@@ -48,6 +51,7 @@ flowchart LR
   WalletUI --> Proxy
   Proxy --> Guards
   Guards --> AuthMod
+  Guards --> UsersMod
   Guards --> Ops
   Guards --> ARMod
   Guards --> AccMod
@@ -55,18 +59,21 @@ flowchart LR
   Guards --> AgentMod
   Guards --> ChatMod
   Guards --> Idx
+  Guards --> AuditMod
 
   AuthMod --> Auth0
   AuthMod --> Relayer
   Relayer --> Auth0
   AuthMod --> RPC
 
+  UsersMod --> DB
   Ops --> DB
   ARMod --> DB
   AccMod --> DB
   PayMod --> DB
   PayMod --> OneClick
   PayMod --> RPC
+  AuditMod --> DB
 
   AgentMod --> DB
   AgentMod --> OutMod
@@ -77,6 +84,11 @@ flowchart LR
 
   Idx --> RPC
   Idx --> DB
+
+  PayMod -.-> QueueMod
+  OutMod -.-> QueueMod
+  Idx -.-> QueueMod
+  AuthMod -.-> QueueMod
 ```
 
 ---
@@ -87,9 +99,9 @@ flowchart LR
 flowchart TB
   subgraph Web["apps/web"]
     Login["/login<br/>NEAR Auth + wallets"]
-    Dash["/dashboard<br/>overview · bills · receivables<br/>vendors · accounting"]
-    PayUI["payments · agent · assistant"]
-    Lib["lib/auth · lib/near-auth<br/>lib/chat-stream · lib/api"]
+    Dash["/dashboard<br/>overview · bills · receivables<br/>customers · vendors · team"]
+    Ops["payments · accounting · agent<br/>audit · settings · assistant"]
+    Lib["lib/auth · lib/near-auth<br/>lib/chat-stream · lib/api · lib/csv"]
   end
 
   subgraph Shared["packages/shared"]
@@ -101,21 +113,47 @@ flowchart TB
 
   subgraph Api["apps/api"]
     Auth["auth"]
+    Users["users · members · orgs"]
     Inv["invoices (AP) · vendors"]
     AR["receivables (AR) · customers"]
     Books["accounting"]
-    Payments["payments"]
+    Payments["payments · intents"]
     Agent["agent"]
     Outlayer["outlayer"]
     Chat["chat"]
     Indexer["indexer"]
+    Queues["queues (producer)"]
     Audit["audit"]
     Demo["demo"]
   end
 
+  subgraph Worker["apps/api worker"]
+    Jobs["payments · outlayer<br/>indexer · near-auth"]
+  end
+
   Web --> Shared
   Api --> Shared
+  Queues --> Jobs
 ```
+
+Web routes (App Router, client-rendered):
+
+| Route | Purpose |
+|---|---|
+| `/` | Landing page. |
+| `/login` | The only sign-in entry: NEAR Auth card + NEAR wallet selector. |
+| `/dashboard` | Overview. |
+| `/dashboard/invoices`, `/dashboard/invoices/[id]` | AP bills and detail (approve, quote, pay). |
+| `/dashboard/receivables`, `/dashboard/receivables/[id]` | AR invoices, receipts and collection quote. |
+| `/dashboard/customers`, `/dashboard/vendors` | Counterparties. |
+| `/dashboard/team` | Members and roles. |
+| `/dashboard/payments` | Payment history and open quotes. |
+| `/dashboard/accounting` | Journal, trial balance, aging, manual entry. |
+| `/dashboard/agent` | Agent wallet, policy, actions and custody handoff. |
+| `/dashboard/audit` | Append-only audit log (ADMIN/OWNER). |
+| `/dashboard/settings` | AR collection contract config and workspace settings. |
+| `/dashboard/chat` | Full-page assistant (also available as a drawer). |
+| `/privacy`, `/terms` | Legal pages. |
 
 ---
 
@@ -216,9 +254,11 @@ receivable reference. 1Click can deliver cross-chain AR by sending
 
 `contracts/keiz-vault` is the AP treasury. It checks policy at proposal and again
 at execution, requires M-of-N approval, and can pay either a vendor directly or
-a committed 1Click deposit address for cross-chain payouts. The API coordinates
-the 1Click quote/status; the contract only moves NEP-141 tokens. The NEAR Auth
-relayer remains restricted to `fast-auth.sign` and is not used for treasury calls.
+a committed 1Click deposit address for cross-chain payouts. The intended split is
+that the API coordinates the 1Click quote/status while the contract only moves
+NEP-141 tokens; that wiring is not implemented yet, so the vault is operated
+separately. The NEAR Auth relayer remains restricted to `fast-auth.sign` and is
+not used for treasury calls.
 
 ### 4.4 Payment intents and rails
 
@@ -227,6 +267,20 @@ the chosen rail (`oneclick`, `outlayer`, `vault`) and is unique for
 `OPEN`/`EXECUTING` states. `PaymentAttempt` records each rail execution. A rail
 must reserve an intent before moving funds; terminal payment status updates the
 intent and attempts atomically. This is the cross-rail double-payment guard.
+
+`oneclick` and `outlayer` are executed today. `vault` is **reserved**: the enum value and
+indexes exist, but `InvoicesService`/`PaymentsService` have no vault execution path yet. Do
+not treat a `vault` intent as a live payment until that wiring lands.
+
+```mermaid
+stateDiagram-v2
+  [*] --> OPEN: reserve
+  OPEN --> EXECUTING: rail claims
+  OPEN --> CANCELLED: quote cancelled
+  EXECUTING --> SETTLED: rail reports success
+  EXECUTING --> FAILED: rail reports failure
+  EXECUTING --> CANCELLED: abandoned
+```
 
 ## 5. Invoice and 1Click settlement
 
@@ -287,17 +341,20 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  [*] --> QUOTED: quote preview
-  QUOTED --> AWAITING_DEPOSIT: commit
+  [*] --> AWAITING_DEPOSIT: 1Click quote committed
   AWAITING_DEPOSIT --> PROCESSING: verified deposit
-  AWAITING_DEPOSIT --> EXPIRED: deadline
+  AWAITING_DEPOSIT --> EXPIRED: deadline or cancel
+  [*] --> PROCESSING: custody withdraw accepted
   PROCESSING --> SUCCEEDED
   PROCESSING --> FAILED
   PROCESSING --> REFUNDED
   PROCESSING --> UNDERPAID
   PROCESSING --> NEEDS_REVIEW
-  [*] --> PROCESSING: custody withdraw
 ```
+
+`QUOTED` belongs to `PaymentIntent`, not `Payment`: the committed quote is persisted directly
+as `AWAITING_DEPOSIT`. A 1Click `SUCCESS` without a destination transaction hash is stored as
+`NEEDS_REVIEW`, not `SUCCEEDED`.
 
 ---
 
@@ -394,7 +451,7 @@ sequenceDiagram
   OL-->>A: request_id or pending_approval
   A->>DB: Payment provider=outlayer PROCESSING
 
-  loop poll every 5s
+  loop queued poll: 2s, then 5s / 30s / 5m backoff
     A->>OL: GET /wallet/v1/requests/:id
     OL-->>A: processing or success or failed
   end
@@ -405,15 +462,16 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-  [*] --> PENDING_APPROVAL: policy threshold
-  [*] --> APPROVED: custody proposal
+  [*] --> PENDING_APPROVAL: local policy threshold
+  [*] --> APPROVED: custody proposal or auto-approved
   PENDING_APPROVAL --> APPROVED: human approval
   PENDING_APPROVAL --> REJECTED
   APPROVED --> EXECUTING: atomic claim
-  EXECUTING --> EXECUTED
-  EXECUTING --> BLOCKED: local pre-check
-  EXECUTING --> FAILED
-  EXECUTED --> NEEDS_REVIEW: custody needs review
+  EXECUTING --> EXECUTED: rail/request succeeded
+  EXECUTING --> BLOCKED: local policy or daily cap
+  EXECUTING --> FAILED: rail reports failed/refunded
+  EXECUTING --> NEEDS_REVIEW: side effect may have happened
+  EXECUTING --> APPROVED: error before any side effect
 ```
 
 ---
@@ -467,6 +525,9 @@ erDiagram
   VENDOR ||--o{ INVOICE : bills
   INVOICE ||--o{ PAYMENT : paid_by
   PAYMENT ||--o{ PAYMENT_EVENT : emits
+  INVOICE ||--o{ PAYMENT_INTENT : reserves
+  PAYMENT_INTENT ||--o{ PAYMENT_ATTEMPT : attempts
+  PAYMENT_INTENT ||--o| PAYMENT : links
   ORGANIZATION ||--o{ CUSTOMER : owns
   CUSTOMER ||--o{ RECEIVABLE : billed
   RECEIVABLE ||--o{ RECEIPT : collects
@@ -475,26 +536,38 @@ erDiagram
   JOURNAL_ENTRY ||--o{ JOURNAL_LINE : contains
   ORGANIZATION ||--|| AGENT_WALLET : owns
   AGENT_WALLET ||--o{ AGENT_ACTION : proposes
+  ORGANIZATION ||--o{ AGENT_DAILY_SPEND : caps
   INVOICE ||--o{ AGENT_ACTION : targets
   AGENT_ACTION ||--o| PAYMENT : creates
   ORGANIZATION ||--o{ CHAIN_EVENT : indexes
+  ORGANIZATION ||--o{ INDEXER_CURSOR : advances
   ORGANIZATION ||--o{ AUDIT_EVENT : records
+  USER ||--o{ AUTH_CHALLENGE : requests
 
   ORGANIZATION {
     string id PK
     string name
     string slug
+    string network
+    object collection
   }
   MEMBERSHIP {
     string orgId FK
     string userId FK
     string role
   }
+  USER {
+    string accountId PK
+    string network
+    string activeOrgId
+    int tokenVersion
+  }
   VENDOR {
     string orgId FK
     string name
     string payoutChain
     string payoutAddress
+    string status
   }
   INVOICE {
     string orgId FK
@@ -509,12 +582,30 @@ erDiagram
     string invoiceId FK
     string provider
     string status
+    string rawStatus
+    string depositAddress
     string outlayerRequestId
+    string agentActionId
+  }
+  PAYMENT_INTENT {
+    string orgId FK
+    string invoiceId FK
+    string rail
+    string status
+    string paymentId
+  }
+  PAYMENT_ATTEMPT {
+    string intentId FK
+    string orgId FK
+    string rail
+    string status
+    string providerRequestId
   }
   CUSTOMER {
     string orgId FK
     string name
     string email
+    string status
   }
   RECEIVABLE {
     string orgId FK
@@ -527,6 +618,8 @@ erDiagram
   RECEIPT {
     string receiptId PK
     string amount
+    string method
+    string chainEventId
     string receivedAt
   }
   ACCOUNT {
@@ -554,17 +647,65 @@ erDiagram
     string provider
     string accountId
     string outlayerWalletId
+    object policy
   }
   AGENT_ACTION {
     string orgId FK
     string invoiceId FK
     string status
     string amountUsd
+    string paymentIntentId
+    string outlayerRequestId
+  }
+  AGENT_DAILY_SPEND {
+    string orgId FK
+    string day
+    int spentCents
+  }
+  CHAIN_EVENT {
+    string orgId FK
+    string txHash
+    int eventIndex
+    string kind
+  }
+  INDEXER_CURSOR {
+    string key PK
+    int value
+  }
+  AUTH_CHALLENGE {
+    string nonce PK
+    string accountId
+    date expiresAt
+    bool used
+  }
+  AUDIT_EVENT {
+    string orgId FK
+    string actorUserId
+    string method
+    string path
+    int status
   }
 ```
 
 Money is stored as an integer string in the asset's smallest unit plus a
 `decimals` field. Never use `Number` on a monetary value.
+
+Key indexes and invariants:
+
+- `payment_intents` is unique on `(orgId, invoiceId)` for `OPEN`/`EXECUTING` — one live
+  obligation per invoice across all rails.
+- `payments` is unique on `(orgId, invoiceId)` for `AWAITING_DEPOSIT`/`PROCESSING`,
+  and on `(orgId, txHash)` and `(orgId, idempotencyKey)` when present.
+- `invoices` and `receivables` are unique on `(orgId, number)`.
+- `receivables.receipts.chainEventId` is a unique sparse index, so re-indexing a collect
+  receipt cannot duplicate a row.
+- `journal_entries` is unique on `(orgId, dedupeKey)` when `dedupeKey` exists; manual entries
+  omit it. Journal rows are immutable.
+- `agent_daily_spend` is unique on `(orgId, day)` and updated with a conditional `$inc`.
+- `agent_wallets` is unique per org; `memberships` is unique on `(orgId, userId)`.
+- `auth_challenges` has a TTL index on `expiresAt`.
+
+See [Data model reference](./data-model.md) for every collection and field.
 
 ---
 
@@ -625,6 +766,10 @@ flowchart LR
 
 - Two long-running processes plus a worker: Next, Nest, and the BullMQ worker.
 - Pollers/queue processors (`payments`, `outlayer`, `indexer`, `near-auth`) run in the worker; Redis is required (`REDIS_URL`). The API only produces jobs. Tests set `QUEUES_ENABLED=false`.
+- Queue cadence: payment polls run per payment (4s default) plus a sweep every
+  `PAYMENT_SWEEP_INTERVAL_MS` (30s); OutLayer polls start at 2s with 5s/30s/5m backoff plus a
+  5m sweeper; the indexer syncs every `INDEXER_INTERVAL_MS` (30s); the NEAR Auth relay queue
+  runs with concurrency 1. `POST /api/indexer/collect` triggers an immediate collect sync.
 - Mongo is required for app state and Mastra memory. Use the same database name
   for both clients.
 - `pnpm dev` runs Turbo; `pnpm build` builds shared → api → web. Stop dev before
@@ -636,14 +781,19 @@ flowchart LR
 
 | Suite | Covers |
 |---|---|
-| `pnpm test` | money math, invoice totals, ledger posting rules, NEP-413 vectors, agent policy, SSE mapping, OutLayer status map |
-| `pnpm --filter @keiz/api smoke` | auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, trial balance, aging, rebuild, RBAC, duplicate quotes, audit, local chat |
+| `pnpm test` | 72 unit tests: money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, OutLayer status map |
+| `pnpm --filter @keiz/api smoke` | 48 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat, NEAR Auth relayer fencing |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
 | `pnpm --filter @keiz/api smoke:mastra` | Mastra stream chunks, request-scoped tools, memory, thread isolation |
+| `pnpm contracts:test` | collect message parsing and vault policy validation |
 | `pnpm typecheck` / `pnpm build` | TypeScript and production bundles |
 
 ## 12. Related docs
 
+- [API reference](./api.md)
+- [Data model](./data-model.md)
+- [Integrations & contracts](./integrations.md)
+- [Contract README](../contracts/README.md)
 - [Security model](../README.md#security-model)
 - [Agent custody](../README.md#agent-custody-outlayer)
 - [Login (NEAR Auth + wallet)](../README.md#login-near-auth--wallet)
