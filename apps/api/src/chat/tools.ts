@@ -98,7 +98,7 @@ async function invoiceNumbers(
   orgId: string,
   invoices: InvoicesService,
 ): Promise<Map<string, string>> {
-  const rows = (await invoices.list(orgId)) as InvoiceLike[];
+  const rows = (await invoices.list(orgId, {})) as InvoiceLike[];
   return new Map(rows.map((invoice) => [String(invoice._id), invoice.number]));
 }
 
@@ -132,7 +132,7 @@ export function createChatTools(deps: ChatToolDeps) {
     execute: async ({ status, limit }, context) => {
       const orgId = requireOrg(context as ToolContext);
       const [rows, names] = await Promise.all([
-        deps.invoices.list(orgId, status) as Promise<InvoiceLike[]>,
+        deps.invoices.list(orgId, { status }) as Promise<InvoiceLike[]>,
         invoiceVendorNames(orgId, deps.vendors),
       ]);
       const sliced = rows.slice(0, limit ?? 20);
@@ -148,14 +148,14 @@ export function createChatTools(deps: ChatToolDeps) {
     requestContextSchema,
     execute: async ({ number }, context) => {
       const orgId = requireOrg(context as ToolContext);
-      const rows = (await deps.invoices.list(orgId)) as InvoiceLike[];
+      const rows = (await deps.invoices.list(orgId, {})) as InvoiceLike[];
       const invoice = rows.find((row) => row.number.toLowerCase() === number.toLowerCase());
       if (!invoice) return { error: `Invoice ${number} not found` };
       const [vendor, payments, numbers] = await Promise.all([
         deps.vendors.findOne(orgId, invoice.vendorId).catch(() => null) as Promise<
           VendorLike | null
         >,
-        deps.payments.list(orgId, String(invoice._id)) as Promise<PaymentRowLike[]>,
+        deps.payments.list(orgId, { invoiceId: String(invoice._id) }) as Promise<PaymentRowLike[]>,
         invoiceNumbers(orgId, deps.invoices),
       ]);
       return invoiceCard(invoice, vendor?.name, payments, numbers);
@@ -224,7 +224,7 @@ export function createChatTools(deps: ChatToolDeps) {
       );
       if (!vendor) return { error: `Vendor ${query} not found` };
       const [bills, names] = await Promise.all([
-        deps.invoices.list(orgId) as Promise<InvoiceLike[]>,
+        deps.invoices.list(orgId, {}) as Promise<InvoiceLike[]>,
         invoiceVendorNames(orgId, deps.vendors),
       ]);
       return vendorCard(
@@ -322,7 +322,7 @@ export function createChatTools(deps: ChatToolDeps) {
     execute: async ({ invoiceId, status }, context) => {
       const orgId = requireOrg(context as ToolContext);
       const [rows, numbers] = await Promise.all([
-        deps.payments.list(orgId, invoiceId) as Promise<PaymentRowLike[]>,
+        deps.payments.list(orgId, { invoiceId }) as Promise<PaymentRowLike[]>,
         invoiceNumbers(orgId, deps.invoices),
       ]);
       const filtered = status ? rows.filter((row) => row.status === status) : rows;
@@ -395,7 +395,7 @@ export function createChatTools(deps: ChatToolDeps) {
     beforeApproval: requirePlan,
     execute: async ({ invoiceNumber, reason }, context) => {
       const orgId = requireOrg(context as ToolContext);
-      const rows = (await deps.invoices.list(orgId)) as InvoiceLike[];
+      const rows = (await deps.invoices.list(orgId, {})) as InvoiceLike[];
       const invoice = rows.find(
         (row) => row.number.toLowerCase() === invoiceNumber.toLowerCase(),
       );

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeftRight,
+  BarChart3,
   BookOpen,
   Building2,
   Contact,
@@ -39,6 +40,7 @@ const NAV = [
   { href: '/dashboard/team', label: 'Team', icon: Users },
   { href: '/dashboard/payments', label: 'Payments', icon: ArrowLeftRight },
   { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
+  { href: '/dashboard/reporting', label: 'Reporting', icon: BarChart3 },
   { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
   { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },

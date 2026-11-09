@@ -842,6 +842,50 @@ async function main() {
     assert(journal.some((entry) => entry.sourceType === 'receipt'), 'receipt postings are listed');
     pass('journal exposes both AP and AR postings');
 
+    const emptyFrom = encodeURIComponent('2000-01-01T00:00:00.000Z');
+    const emptyTo = encodeURIComponent('2000-01-02T23:59:59.999Z');
+    const filteredBills = await req<unknown[]>(`/invoices?from=${emptyFrom}&to=${emptyTo}`, {
+      cookie: bobCookie,
+    });
+    const filteredReceivables = await req<unknown[]>(
+      `/receivables?from=${emptyFrom}&to=${emptyTo}&dateField=dueDate`,
+      { cookie: bobCookie },
+    );
+    assert(filteredBills.length === 0, 'AP list filters by date');
+    assert(filteredReceivables.length === 0, 'AR list filters by date');
+    pass('AP and AR lists honor the date filter');
+
+    const reportFrom = '2020-01-01T00:00:00.000Z';
+    const reportTo = new Date(Date.now() + 86_400_000).toISOString();
+    const reportQuery = `currency=USD&from=${encodeURIComponent(reportFrom)}&to=${encodeURIComponent(reportTo)}`;
+    const report = await req<{
+      cashFlow: { inflow: string; outflow: string; sources: unknown[] };
+      profitAndLoss: { netIncome: string };
+      balanceSheet: { balanced: boolean; totalAssets: string };
+    }>(`/accounting/reports?${reportQuery}`, { cookie: bobCookie });
+    assert(report.balanceSheet.balanced, 'report balance sheet balances');
+    assert(BigInt(report.balanceSheet.totalAssets) > 0n, 'report includes posted assets');
+    assert(BigInt(report.cashFlow.inflow) > 0n, 'report includes cash receipts');
+    assert(report.cashFlow.sources.length > 0, 'report breaks cash flow down by source');
+    pass('reporting returns cash flow, P&L and a balanced balance sheet');
+
+    for (const format of ['pdf', 'xlsx'] as const) {
+      const response = await fetch(
+        `${BASE}/accounting/reports/export?${reportQuery}&format=${format}`,
+        { headers: { cookie: bobCookie } },
+      );
+      const bytes = await response.arrayBuffer();
+      assert(response.status === 200, `${format} export returns 200`);
+      assert(bytes.byteLength > 1_000, `${format} export contains a document`);
+      assert(
+        (response.headers.get('content-type') ?? '').includes(
+          format === 'pdf' ? 'application/pdf' : 'spreadsheetml',
+        ),
+        `${format} export content type is correct`,
+      );
+    }
+    pass('reporting exports PDF and Excel');
+
     await req(`/receivables/${overdue._id}`, { cookie: aliceCookie, expect: 404 });
     pass('another org cannot read a receivable');
 

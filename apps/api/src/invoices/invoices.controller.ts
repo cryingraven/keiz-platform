@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import {
   createInvoiceSchema,
   CreateInvoiceInput,
+  InvoiceListQuery,
   invoiceDecisionSchema,
   updateInvoiceSchema,
   UpdateInvoiceInput,
@@ -19,9 +20,9 @@ export class InvoicesController {
   @Get()
   list(
     @CurrentUser() user: AuthUser,
-    @Query(new ZodBody(invoiceListQuerySchema)) query: { status?: string; vendorId?: string },
+    @Query(new ZodBody(invoiceListQuerySchema)) query: InvoiceListQuery,
   ) {
-    return this.invoices.list(user.orgId, query.status, query.vendorId);
+    return this.invoices.list(user.orgId, query);
   }
 
   @Get('summary')

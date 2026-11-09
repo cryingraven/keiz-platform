@@ -78,7 +78,7 @@ with reuse detection).
 
 | Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
-| GET | `/` | Member | `?status=&vendorId=` | Org-scoped list. |
+| GET | `/` | Member | `?status=&vendorId=&from=&to=&dateField=` | Org-scoped list. `dateField` is `issueDate` (default), `dueDate` or `createdAt`. |
 | GET | `/summary` | Member | — | Counts/totals for the dashboard. |
 | GET | `/:id` | Member | — | One bill with approvals. |
 | POST | `/` | Member | `{ vendorId, number, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT; totals recomputed server-side. |
@@ -91,7 +91,7 @@ with reuse detection).
 
 | Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
-| GET | `/` | Member | `?invoiceId=` | Payment history. |
+| GET | `/` | Member | `?invoiceId=&from=&to=` | Payment history. |
 | GET | `/open` | Member | — | `AWAITING_DEPOSIT`/`PROCESSING` payments. |
 | GET | `/tokens` | Member | — | Cached 1Click token list (or mock list). |
 | GET | `/:id` | Member | — | One payment. |
@@ -117,8 +117,8 @@ with reuse detection).
 
 | Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
-| GET | `/` | Member | `?status=&customerId=&currency=` | |
-| GET | `/summary` | Member | `?currency=` | Outstanding/overdue totals. |
+| GET | `/` | Member | `?status=&customerId=&currency=&from=&to=&dateField=` | `dateField` is `issueDate` (default), `dueDate` or `createdAt`. |
+| GET | `/summary` | Member | `?currency=&from=&to=&dateField=` | Outstanding/overdue totals; honors the same date filter. |
 | GET | `/:id` | Member | — | One receivable with receipts. |
 | POST | `/` | Member | `{ customerId, number, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT. |
 | POST | `/:id/collection-quote` | Member | `{ originAsset, refundTo }` | 1Click quote to the workspace collect contract with `customRecipientMsg`. |
@@ -136,6 +136,8 @@ with reuse detection).
 | GET | `/journal-entries` | Member | `?currency=&accountCode=&sourceType=&sourceId=&limit=` | Immutable journal. |
 | POST | `/journal-entries` | Admin | `{ date?, memo, currency?, lines[] }` | Manual balanced entry. |
 | GET | `/aging` | Member | `?side=AP\|AR&currency=` | |
+| GET | `/reports` | Member | `?currency=&from=&to=` | Cash flow, P&L and balance sheet for a period. |
+| GET | `/reports/export` | Member | `?currency=&from=&to=&format=pdf\|xlsx` | Downloads the report as PDF or Excel. |
 | POST | `/rebuild` | Admin | — | Idempotent backfill of missing system postings. |
 
 ## Agent wallet — `/api/agent`

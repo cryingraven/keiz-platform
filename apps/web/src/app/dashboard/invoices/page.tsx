@@ -6,8 +6,10 @@ import { ChevronRight, Download, FileText, Plus, Search } from 'lucide-react';
 import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
 import { downloadCsv } from '@/lib/csv';
+import { DateFilterValue, EMPTY_DATE_FILTER, dateFilterQuery } from '@/lib/period';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import { DateRangeFilter } from '@/components/date-range-filter';
 import { InvoiceForm } from '@/components/invoice-form';
 import { Button, Card, EmptyState, ErrorState, Input, Spinner, StatusPill } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -30,7 +32,9 @@ interface Vendor {
 const FILTERS = ['ALL', 'SUBMITTED', 'APPROVED', 'PAYMENT_PENDING', 'PAID', 'DRAFT'] as const;
 
 export default function InvoicesPage() {
-  const invoices = useApi<Invoice[]>('/invoices');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(EMPTY_DATE_FILTER);
+  const listPath = useMemo(() => `/invoices${dateFilterQuery(dateFilter)}`, [dateFilter]);
+  const invoices = useApi<Invoice[]>(listPath);
   const vendors = useApi<Vendor[]>('/vendors');
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('ALL');
   const [query, setQuery] = useState('');
@@ -120,6 +124,15 @@ export default function InvoicesPage() {
             className="pl-9"
           />
         </div>
+      </div>
+
+      <div className="mb-4">
+        <DateRangeFilter
+          value={dateFilter}
+          onChange={setDateFilter}
+          issueLabel="Bill date"
+          includeCreatedAt
+        />
       </div>
 
       <Card className="overflow-hidden">

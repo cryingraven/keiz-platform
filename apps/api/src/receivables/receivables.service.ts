@@ -12,12 +12,14 @@ import {
   CURRENCY_DECIMALS,
   CreateCustomerInput,
   CreateReceivableInput,
+  ReceivableListQuery,
   RecordReceiptInput,
   UpdateCustomerInput,
   computeInvoiceTotals,
   parseUnits,
 } from '@keiz/shared';
 import { AccountingService } from '../accounting/accounting.service';
+import { dateRange } from '../common/date-range';
 import { Customer, CustomerDocument } from './customer.schema';
 import { Receivable, ReceivableDocument } from './receivable.schema';
 
@@ -84,18 +86,24 @@ export class ReceivablesService {
     return customer.toObject();
   }
 
-  list(orgId: string, query: { status?: string; customerId?: string; currency?: string }) {
+  list(orgId: string, query: ReceivableListQuery) {
     const filter: Record<string, unknown> = { orgId };
     if (query.status) filter.status = query.status;
     if (query.customerId) filter.customerId = query.customerId;
     if (query.currency) filter.currency = query.currency;
+    const range = dateRange(query, query.dateField ?? 'issueDate');
+    if (range) Object.assign(filter, range);
     return this.receivables.find(filter).sort({ dueDate: 1, createdAt: -1 }).lean();
   }
 
-  async summary(orgId: string, currency = 'USD') {
+  async summary(orgId: string, query: ReceivableListQuery = {}) {
+    const currency = query.currency ?? 'USD';
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const openStatuses = ['ISSUED', 'PARTIALLY_PAID'];
+    const match: Record<string, unknown> = { orgId, currency };
+    const range = dateRange(query, query.dateField ?? 'issueDate');
+    if (range) Object.assign(match, range);
     const [row] = await this.receivables
       .aggregate<{
         totalCount: number;
@@ -105,7 +113,7 @@ export class ReceivablesService {
         outstanding: string;
         overdue: string;
       }>([
-        { $match: { orgId, currency } },
+        { $match: match },
         {
           $group: {
             _id: null,

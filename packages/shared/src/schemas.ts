@@ -284,29 +284,48 @@ export type AgentPolicyInput = z.infer<typeof agentPolicySchema>;
 export type ProposeAgentPaymentInput = z.infer<typeof proposeAgentPaymentSchema>;
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
+const isoDateQuery = z.iso.datetime().optional();
+const listDateField = z.enum(['issueDate', 'dueDate', 'createdAt']).optional();
+
 export const invoiceListQuerySchema = z.object({
   status: z
     .enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'PAYMENT_PENDING', 'PAID', 'VOID'])
     .optional(),
   vendorId: z.string().min(1).max(64).optional(),
+  from: isoDateQuery,
+  to: isoDateQuery,
+  dateField: listDateField,
 });
 
 export const paymentListQuerySchema = z.object({
   invoiceId: z.string().min(1).max(64).optional(),
+  from: isoDateQuery,
+  to: isoDateQuery,
 });
 
 export const receivableListQuerySchema = z.object({
   status: z.enum(RECEIVABLE_STATUSES).optional(),
   customerId: z.string().min(1).max(64).optional(),
   currency: currencySchema.optional(),
+  from: isoDateQuery,
+  to: isoDateQuery,
+  dateField: listDateField,
 });
-
-const isoDateQuery = z.iso.datetime().optional();
 
 export const accountingQuerySchema = z.object({
   currency: currencySchema.optional(),
   from: isoDateQuery,
   to: isoDateQuery,
+});
+
+export const reportQuerySchema = z.object({
+  currency: currencySchema.optional(),
+  from: isoDateQuery,
+  to: isoDateQuery,
+});
+
+export const reportExportQuerySchema = reportQuerySchema.extend({
+  format: z.enum(['pdf', 'xlsx']),
 });
 
 export const journalQuerySchema = accountingQuerySchema.extend({
@@ -331,10 +350,14 @@ export const agentDecisionQuerySchema = z.object({
 });
 
 export type ReceivableListQuery = z.infer<typeof receivableListQuerySchema>;
+export type InvoiceListQuery = z.infer<typeof invoiceListQuerySchema>;
+export type PaymentListQuery = z.infer<typeof paymentListQuerySchema>;
 export type AccountingQuery = z.infer<typeof accountingQuerySchema>;
 export type JournalQuery = z.infer<typeof journalQuerySchema>;
 export type AgingQuery = z.infer<typeof agingQuerySchema>;
 export type TrialBalanceQuery = z.infer<typeof trialBalanceQuerySchema>;
+export type ReportQuery = z.infer<typeof reportQuerySchema>;
+export type ReportExportQuery = z.infer<typeof reportExportQuerySchema>;
 
 export const simulateQuerySchema = z.object({
   status: z.enum(['SUCCEEDED', 'FAILED', 'REFUNDED']).default('SUCCEEDED'),

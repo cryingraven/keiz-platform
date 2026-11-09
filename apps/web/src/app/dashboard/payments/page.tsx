@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowLeftRight, Boxes, ChevronRight } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
+import { DateFilterValue, EMPTY_DATE_FILTER, dateFilterQuery } from '@/lib/period';
 import { formatDate, shortAddress, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import { DateRangeFilter } from '@/components/date-range-filter';
 import { NearIntentsLogo } from '@/components/landing/logos';
 import { Badge, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 
@@ -38,7 +40,9 @@ interface ChainEvent {
 }
 
 export default function PaymentsPage() {
-  const payments = useApi<Payment[]>('/payments', { pollMs: 4000 });
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(EMPTY_DATE_FILTER);
+  const dateQuery = useMemo(() => dateFilterQuery(dateFilter, false), [dateFilter]);
+  const payments = useApi<Payment[]>(`/payments${dateQuery}`, { pollMs: 4000 });
   const invoices = useApi<Invoice[]>('/invoices');
   const events = useApi<ChainEvent[]>('/indexer/events');
 
@@ -79,7 +83,11 @@ export default function PaymentsPage() {
         />
       </div>
 
-      <Card className="mt-5 overflow-hidden">
+      <div className="mt-5">
+        <DateRangeFilter value={dateFilter} onChange={setDateFilter} showDateField={false} />
+      </div>
+
+      <Card className="mt-4 overflow-hidden">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <SectionTitle title="Payment ledger" hint="Newest first" />
           <Badge className="border-line bg-paper text-muted" dot>

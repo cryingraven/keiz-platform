@@ -138,7 +138,7 @@ Web routes (App Router, client-rendered):
 | Route | Purpose |
 |---|---|
 | `/` | Landing page. |
-| `/login` | The only sign-in entry: passkey account/sign-in + the full compatible NEAR wallet list + recovery key. |
+| `/login` | The only sign-in entry: passkey account/sign-in plus the NEAR wallet selector. |
 | `/dashboard` | Overview. |
 | `/dashboard/invoices`, `/dashboard/invoices/[id]` | AP bills and detail (approve, quote, pay). |
 | `/dashboard/receivables`, `/dashboard/receivables/[id]` | AR invoices, receipts and collection quote. |
@@ -147,6 +147,7 @@ Web routes (App Router, client-rendered):
 | `/dashboard/team` | Members and roles. |
 | `/dashboard/payments`, `/dashboard/payments/[id]` | Payment history, open quotes and payment timeline. |
 | `/dashboard/accounting` | Journal, trial balance, aging, manual entry. |
+| `/dashboard/reporting` | Cash flow, profit & loss, balance sheet, PDF/Excel export. |
 | `/dashboard/agent` | Agent wallet, policy, actions and custody handoff. |
 | `/dashboard/audit` | Append-only audit log (ADMIN/OWNER). |
 | `/dashboard/settings` | AR collection contract config and workspace settings. |
@@ -405,7 +406,8 @@ sequenceDiagram
 
 Balances are computed with `$toDecimal` over integer minor-unit strings. Reports are kept
 per currency: there is no FX translation, matching the payment limitation. Trial balance,
-P&L, AP/AR aging and the journal are served by `accounting`.
+aging, cash flow, P&L, balance sheet and the journal are served by `accounting`; the
+reporting endpoints re-use the same immutable journal and render PDF/Excel exports.
 
 ---
 

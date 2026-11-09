@@ -6,6 +6,9 @@ import { Account, AccountSchema } from './account.schema';
 import { AccountingController } from './accounting.controller';
 import { AccountingService } from './accounting.service';
 import { JournalEntry, JournalEntrySchema } from './journal-entry.schema';
+import { ReportingController } from './reporting.controller';
+import { ReportingExportService } from './reporting-export.service';
+import { ReportingService } from './reporting.service';
 
 @Module({
   imports: [
@@ -18,8 +21,8 @@ import { JournalEntry, JournalEntrySchema } from './journal-entry.schema';
       { name: Receivable.name, schema: ReceivableSchema },
     ]),
   ],
-  controllers: [AccountingController],
-  providers: [AccountingService],
+  controllers: [AccountingController, ReportingController],
+  providers: [AccountingService, ReportingService, ReportingExportService],
   exports: [AccountingService],
 })
 export class AccountingModule {}

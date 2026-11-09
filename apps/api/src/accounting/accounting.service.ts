@@ -626,7 +626,8 @@ export class AccountingService {
     };
   }
 
-  private async aggregateRaw(
+  /** Internal: raw debit/credit totals per account for a date window. */
+  async aggregateRaw(
     orgId: string,
     currency: string,
     from?: Date,

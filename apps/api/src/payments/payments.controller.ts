@@ -3,6 +3,7 @@ import {
   confirmDepositSchema,
   createPaymentSchema,
   CreatePaymentInput,
+  PaymentListQuery,
   paymentListQuerySchema,
   simulateQuerySchema,
 } from '@keiz/shared';
@@ -18,9 +19,9 @@ export class PaymentsController {
   @Get()
   list(
     @CurrentUser() user: AuthUser,
-    @Query(new ZodBody(paymentListQuerySchema)) query: { invoiceId?: string },
+    @Query(new ZodBody(paymentListQuerySchema)) query: PaymentListQuery,
   ) {
-    return this.payments.list(user.orgId, query.invoiceId);
+    return this.payments.list(user.orgId, query);
   }
 
   @Get('open')

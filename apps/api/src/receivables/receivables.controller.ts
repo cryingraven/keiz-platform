@@ -36,7 +36,7 @@ export class ReceivablesController {
     @CurrentUser() user: AuthUser,
     @Query(new ZodBody(receivableListQuerySchema)) query: ReceivableListQuery,
   ) {
-    return this.receivables.summary(user.orgId, query.currency ?? 'USD');
+    return this.receivables.summary(user.orgId, query);
   }
 
   @Get(':id')

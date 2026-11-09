@@ -8,8 +8,10 @@ import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
+import { DateFilterValue, EMPTY_DATE_FILTER, dateFilterQuery, today } from '@/lib/period';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import { DateRangeFilter } from '@/components/date-range-filter';
 import { Account, ManualJournalForm } from '@/components/manual-journal-form';
 import {
   Badge,
@@ -74,23 +76,11 @@ interface Aging {
   total: string;
 }
 
-type Range = 'month' | 'quarter' | 'year' | 'all';
-
-function rangeStart(range: Range): Date {
-  const now = new Date();
-  if (range === 'month') return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  if (range === 'quarter') {
-    return new Date(Date.UTC(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) * 3, 1));
-  }
-  if (range === 'year') return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
-  return new Date('2000-01-01T00:00:00Z');
-}
-
 export default function AccountingPage() {
   const searchParams = useSearchParams();
   const highlightedEntry = searchParams.get('entry');
   const [currency, setCurrency] = useState('USD');
-  const [range, setRange] = useState<Range>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(EMPTY_DATE_FILTER);
   const [manualOpen, setManualOpen] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -99,18 +89,19 @@ export default function AccountingPage() {
   const canAdmin = ['ADMIN', 'OWNER'].includes(session?.role ?? 'MEMBER');
 
   const { summaryPath, journalPath } = useMemo(() => {
-    const from = rangeStart(range);
-    const to = new Date();
-    to.setUTCHours(23, 59, 59, 999);
+    // Accounting's default is all time. The API defaults to the current month
+    // when no from/to is supplied, so make the all-time case explicit.
+    const effective =
+      dateFilter.preset === 'all'
+        ? { ...dateFilter, from: '2000-01-01', to: today() }
+        : dateFilter;
+    const range = dateFilterQuery(effective, false);
+    const suffix = range ? `&${range.slice(1)}` : '';
     return {
-      summaryPath: `/accounting/summary?currency=${currency}&from=${encodeURIComponent(
-        from.toISOString(),
-      )}&to=${encodeURIComponent(to.toISOString())}`,
-      journalPath: `/accounting/journal-entries?currency=${currency}&limit=50&from=${encodeURIComponent(
-        from.toISOString(),
-      )}&to=${encodeURIComponent(to.toISOString())}`,
+      summaryPath: `/accounting/summary?currency=${currency}${suffix}`,
+      journalPath: `/accounting/journal-entries?currency=${currency}&limit=50${suffix}`,
     };
-  }, [currency, range]);
+  }, [currency, dateFilter]);
 
   const summary = useApi<Summary>(summaryPath);
   const journal = useApi<JournalEntry[]>(journalPath);
@@ -209,12 +200,7 @@ export default function AccountingPage() {
       ) : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Select value={range} onChange={(event) => setRange(event.target.value as Range)}>
-          <option value="month">This month</option>
-          <option value="quarter">This quarter</option>
-          <option value="year">This year</option>
-          <option value="all">All time</option>
-        </Select>
+        <DateRangeFilter value={dateFilter} onChange={setDateFilter} showDateField={false} />
         <Select value={currency} onChange={(event) => setCurrency(event.target.value)}>
           {(data?.availableCurrencies ?? ['USD']).map((item) => (
             <option key={item} value={item}>

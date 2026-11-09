@@ -10,11 +10,13 @@ import { Model } from 'mongoose';
 import {
   CURRENCY_DECIMALS,
   CreateInvoiceInput,
+  InvoiceListQuery,
   UpdateInvoiceInput,
   computeInvoiceTotals,
   formatUnits,
 } from '@keiz/shared';
 import { AccountingService } from '../accounting/accounting.service';
+import { dateRange } from '../common/date-range';
 import { UsersService } from '../users/users.service';
 import { Invoice, InvoiceDocument } from './invoice.schema';
 
@@ -28,10 +30,12 @@ export class InvoicesService {
     private readonly accounting: AccountingService,
   ) {}
 
-  async list(orgId: string, status?: string, vendorId?: string) {
+  async list(orgId: string, query: InvoiceListQuery) {
     const filter: Record<string, unknown> = { orgId };
-    if (status) filter.status = status;
-    if (vendorId) filter.vendorId = vendorId;
+    if (query.status) filter.status = query.status;
+    if (query.vendorId) filter.vendorId = query.vendorId;
+    const range = dateRange(query, query.dateField ?? 'issueDate');
+    if (range) Object.assign(filter, range);
     return this.invoices.find(filter).sort({ createdAt: -1 }).lean();
   }
 

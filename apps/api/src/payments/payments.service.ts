@@ -10,12 +10,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   CreatePaymentInput,
+  PaymentListQuery,
   TERMINAL_PAYMENT_STATUSES,
   USD_STABLE_SYMBOLS,
   formatUnits,
   parseUnits,
   validatePayoutAddress,
 } from '@keiz/shared';
+import { dateRange } from '../common/date-range';
 import { InvoicesService } from '../invoices/invoices.service';
 import { VendorsService } from '../vendors/vendors.service';
 import { PaymentEvent, PaymentEventDocument } from './payment-event.schema';
@@ -45,9 +47,11 @@ export class PaymentsService {
     return this.providerFactory.get();
   }
 
-  list(orgId: string, invoiceId?: string) {
+  list(orgId: string, query: PaymentListQuery) {
     const filter: Record<string, unknown> = { orgId };
-    if (invoiceId) filter.invoiceId = invoiceId;
+    if (query.invoiceId) filter.invoiceId = query.invoiceId;
+    const range = dateRange(query, 'createdAt');
+    if (range) Object.assign(filter, range);
     return this.payments.find(filter).sort({ createdAt: -1 }).lean();
   }
 

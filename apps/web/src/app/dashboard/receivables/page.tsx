@@ -6,8 +6,10 @@ import { ChevronRight, Download, HandCoins, Plus, Search, UserPlus } from 'lucid
 import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
 import { downloadCsv } from '@/lib/csv';
+import { DateFilterValue, EMPTY_DATE_FILTER, dateFilterQuery } from '@/lib/period';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import { DateRangeFilter } from '@/components/date-range-filter';
 import { CustomerForm, ReceivableForm } from '@/components/receivable-form';
 import { Button, Card, EmptyState, ErrorState, Input, Spinner, StatusPill } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -45,9 +47,11 @@ function isOverdue(row: Receivable): boolean {
 }
 
 export default function ReceivablesPage() {
-  const receivables = useApi<Receivable[]>('/receivables');
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(EMPTY_DATE_FILTER);
+  const dateQuery = useMemo(() => dateFilterQuery(dateFilter), [dateFilter]);
+  const receivables = useApi<Receivable[]>(`/receivables${dateQuery}`);
   const customers = useApi<Customer[]>('/customers');
-  const summary = useApi<Summary>('/receivables/summary');
+  const summary = useApi<Summary>(`/receivables/summary${dateQuery}`);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('ALL');
   const [query, setQuery] = useState('');
   const [formOpen, setFormOpen] = useState(false);
@@ -186,6 +190,10 @@ export default function ReceivablesPage() {
             className="pl-9"
           />
         </div>
+      </div>
+
+      <div className="mb-4">
+        <DateRangeFilter value={dateFilter} onChange={setDateFilter} issueLabel="Invoice date" />
       </div>
 
       <Card className="overflow-hidden">
