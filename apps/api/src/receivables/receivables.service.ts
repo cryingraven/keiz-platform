@@ -93,37 +93,92 @@ export class ReceivablesService {
   }
 
   async summary(orgId: string, currency = 'USD') {
-    const rows = await this.receivables.find({ orgId, currency }).lean();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-
-    let outstanding = 0n;
-    let overdue = 0n;
-    let collected = 0n;
-    let billed = 0n;
-    let openCount = 0;
-
-    for (const row of rows) {
-      if (row.status === 'DRAFT' || row.status === 'VOID') continue;
-      billed += BigInt(row.total);
-      collected += BigInt(row.paidAmount);
-      if (row.status === 'ISSUED' || row.status === 'PARTIALLY_PAID') {
-        const remaining = BigInt(row.total) - BigInt(row.paidAmount);
-        outstanding += remaining;
-        openCount += 1;
-        if (row.dueDate.getTime() < today.getTime()) overdue += remaining;
-      }
-    }
+    const openStatuses = ['ISSUED', 'PARTIALLY_PAID'];
+    const [row] = await this.receivables
+      .aggregate<{
+        totalCount: number;
+        openCount: number;
+        billed: string;
+        collected: string;
+        outstanding: string;
+        overdue: string;
+      }>([
+        { $match: { orgId, currency } },
+        {
+          $group: {
+            _id: null,
+            totalCount: { $sum: 1 },
+            openCount: {
+              $sum: { $cond: [{ $in: ['$status', openStatuses] }, 1, 0] },
+            },
+            billed: {
+              $sum: {
+                $cond: [
+                  { $in: ['$status', ['DRAFT', 'VOID']] },
+                  { $toDecimal: 0 },
+                  { $toDecimal: '$total' },
+                ],
+              },
+            },
+            collected: {
+              $sum: {
+                $cond: [
+                  { $in: ['$status', ['DRAFT', 'VOID']] },
+                  { $toDecimal: 0 },
+                  { $toDecimal: '$paidAmount' },
+                ],
+              },
+            },
+            outstanding: {
+              $sum: {
+                $cond: [
+                  { $in: ['$status', openStatuses] },
+                  { $subtract: [{ $toDecimal: '$total' }, { $toDecimal: '$paidAmount' }] },
+                  { $toDecimal: 0 },
+                ],
+              },
+            },
+            overdue: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $in: ['$status', openStatuses] },
+                      { $lt: ['$dueDate', today] },
+                    ],
+                  },
+                  { $subtract: [{ $toDecimal: '$total' }, { $toDecimal: '$paidAmount' }] },
+                  { $toDecimal: 0 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalCount: 1,
+            openCount: 1,
+            billed: { $toString: '$billed' },
+            collected: { $toString: '$collected' },
+            outstanding: { $toString: '$outstanding' },
+            overdue: { $toString: '$overdue' },
+          },
+        },
+      ])
+      .exec();
 
     return {
       currency,
       decimals: CURRENCY_DECIMALS[currency] ?? 2,
-      billed: billed.toString(),
-      collected: collected.toString(),
-      outstanding: outstanding.toString(),
-      overdue: overdue.toString(),
-      openCount,
-      totalCount: rows.length,
+      billed: row?.billed ?? '0',
+      collected: row?.collected ?? '0',
+      outstanding: row?.outstanding ?? '0',
+      overdue: row?.overdue ?? '0',
+      openCount: row?.openCount ?? 0,
+      totalCount: row?.totalCount ?? 0,
     };
   }
 

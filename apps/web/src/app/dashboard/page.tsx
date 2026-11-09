@@ -59,7 +59,7 @@ const OPEN_STATUSES = ['SUBMITTED', 'APPROVED', 'PAYMENT_PENDING'];
 
 export default function OverviewPage() {
   const invoices = useApi<Invoice[]>('/invoices');
-  const payments = useApi<Payment[]>('/payments', { pollMs: 5000 });
+  const payments = useApi<Payment[]>('/payments/open', { pollMs: 5000 });
   const vendors = useApi<Vendor[]>('/vendors');
   const agent = useApi<AgentStats>('/agent/stats');
   const books = useApi<Books>('/accounting/summary?currency=USD');

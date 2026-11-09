@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Payment, PaymentSchema } from '../payments/payment.schema';
 import { ReceivablesModule } from '../receivables/receivables.module';
 import { ChainEvent, ChainEventSchema } from './chain-event.schema';
+import { IndexerCursor, IndexerCursorSchema } from './indexer-cursor.schema';
 import { IndexerController } from './indexer.controller';
 import { IndexerService } from './indexer.service';
 
@@ -12,6 +13,7 @@ import { IndexerService } from './indexer.service';
     MongooseModule.forFeature([
       { name: ChainEvent.name, schema: ChainEventSchema },
       { name: Payment.name, schema: PaymentSchema },
+      { name: IndexerCursor.name, schema: IndexerCursorSchema },
     ]),
   ],
   controllers: [IndexerController],

@@ -49,6 +49,13 @@ export class PaymentsService {
     return this.payments.find(filter).sort({ createdAt: -1 }).lean();
   }
 
+  listOpen(orgId: string) {
+    return this.payments
+      .find({ orgId, status: { $in: ['AWAITING_DEPOSIT', 'PROCESSING'] } })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
   async findOne(orgId: string, id: string) {
     const payment = await this.payments.findOne({ _id: id, orgId }).lean();
     if (!payment) throw new NotFoundException('Payment not found');
@@ -358,22 +365,30 @@ export class PaymentsService {
       status === 'NEEDS_REVIEW' && result.status === 'SUCCEEDED'
         ? 'DESTINATION_UNVERIFIED'
         : result.rawStatus;
-    payment.status = status;
-    payment.rawStatus = rawStatus;
+    const set: Record<string, unknown> = { status, rawStatus };
     if (destinationTxHashes.length > 0) {
-      payment.destinationTxHashes = destinationTxHashes.map((tx) => ({
+      set.destinationTxHashes = destinationTxHashes.map((tx) => ({
         hash: tx.hash,
         explorerUrl: tx.explorerUrl,
       }));
     }
     if (result.swapDetails?.originTxHashes) {
-      payment.originTxHashes = result.swapDetails.originTxHashes.map((tx) => ({
+      set.originTxHashes = result.swapDetails.originTxHashes.map((tx) => ({
         hash: tx.hash,
         explorerUrl: tx.explorerUrl,
       }));
     }
-    if (result.swapDetails?.refundReason) payment.refundReason = result.swapDetails.refundReason;
-    await payment.save();
+    if (result.swapDetails?.refundReason) set.refundReason = result.swapDetails.refundReason;
+
+    // Claim the transition atomically. A second worker polling the same payment
+    // must not write a duplicate event or advance the invoice twice.
+    const updated = await this.payments.findOneAndUpdate(
+      { _id: payment._id, status: before },
+      { $set: set },
+      { returnDocument: 'after' },
+    );
+    if (!updated) return;
+    Object.assign(payment, updated.toObject());
 
     await this.events.create({
       orgId: payment.orgId,

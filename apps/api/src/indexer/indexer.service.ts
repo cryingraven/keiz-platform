@@ -7,6 +7,7 @@ import { fetchRpcWithRetry } from '../common/rpc-client';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
 import { ReceivablesService } from '../receivables/receivables.service';
 import { ChainEvent, ChainEventDocument } from './chain-event.schema';
+import { IndexerCursor, IndexerCursorDocument } from './indexer-cursor.schema';
 
 interface CollectReceipt {
   id: number;
@@ -26,6 +27,7 @@ export class IndexerService {
   constructor(
     @InjectModel(ChainEvent.name) private readonly events: Model<ChainEventDocument>,
     @InjectModel(Payment.name) private readonly payments: Model<PaymentDocument>,
+    @InjectModel(IndexerCursor.name) private readonly cursors: Model<IndexerCursorDocument>,
     private readonly receivables: ReceivablesService,
     private readonly config: ConfigService,
   ) {}
@@ -88,10 +90,13 @@ export class IndexerService {
       await this.viewContract<number>(contractId, 'get_receipt_count', {}),
     );
     if (!Number.isFinite(count) || count <= 0) return 0;
-    const from = Math.max(0, count - limit);
+    const cursorKey = `collect:${contractId}`;
+    const cursor = await this.cursors.findOne({ key: cursorKey }).lean();
+    const from = cursor ? cursor.value + 1 : 0;
+    if (from >= count) return 0;
     const receipts = await this.viewContract<CollectReceipt[]>(contractId, 'get_receipts', {
       from_index: from,
-      limit,
+      limit: Math.min(limit, count - from),
     });
 
     let indexed = 0;
@@ -151,6 +156,17 @@ export class IndexerService {
           reason: (error as Error).message,
         });
       }
+    }
+    const lastId = (receipts ?? []).reduce(
+      (max, receipt) => Math.max(max, Number(receipt.id)),
+      from - 1,
+    );
+    if (lastId >= from) {
+      await this.cursors.updateOne(
+        { key: cursorKey },
+        { $set: { value: lastId } },
+        { upsert: true },
+      );
     }
     return indexed;
   }

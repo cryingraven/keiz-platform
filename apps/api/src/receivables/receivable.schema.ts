@@ -137,6 +137,7 @@ ReceivableSchema.index({ orgId: 1, number: 1 }, { unique: true });
 ReceivableSchema.index({ orgId: 1, createdAt: -1 });
 ReceivableSchema.index({ orgId: 1, status: 1 });
 ReceivableSchema.index({ orgId: 1, dueDate: 1 });
+ReceivableSchema.index({ orgId: 1, currency: 1, status: 1, dueDate: 1 });
 ReceivableSchema.index(
   { 'receipts.chainEventId': 1 },
   { unique: true, sparse: true },

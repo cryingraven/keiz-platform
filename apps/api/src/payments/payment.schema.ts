@@ -130,6 +130,8 @@ export class Payment {
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
 PaymentSchema.index({ orgId: 1, createdAt: -1 });
 PaymentSchema.index({ status: 1, deadline: 1 });
+PaymentSchema.index({ provider: 1, status: 1 });
+PaymentSchema.index({ provider: 1, submittedAt: -1 });
 // A deposit transaction may fund at most one payment in an org.
 PaymentSchema.index(
   { orgId: 1, txHash: 1 },

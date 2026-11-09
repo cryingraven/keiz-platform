@@ -23,6 +23,11 @@ export class PaymentsController {
     return this.payments.list(user.orgId, query.invoiceId);
   }
 
+  @Get('open')
+  open(@CurrentUser() user: AuthUser) {
+    return this.payments.listOpen(user.orgId);
+  }
+
   @Get('tokens')
   tokens() {
     return this.payments.tokens();
