@@ -1,7 +1,7 @@
 # KEIZ — Integration & contract requirements
 
 This document is the boundary between KEIZ and its external integrations: chain contracts,
-NEAR Intents, OutLayer custody, NEAR Auth and the background queues. It records what is wired
+NEAR Intents, OutLayer custody, WebAuthn passkeys and the background queues. It records what is wired
 today, what exists in the contracts but is not wired, and what is still missing.
 
 ---
@@ -11,7 +11,7 @@ today, what exists in the contracts but is not wired, and what is still missing.
 | Integration | Contract / interface | Where used |
 |---|---|---|
 | Wallet login | NEP-413 message signature; on-chain `view_access_key` full-access check | `auth/nep413.ts`, `auth/near-verify.service.ts` |
-| NEAR Auth login | Auth0 login, `fast-auth.sign` through a funded relayer, MPC-derived ed25519 key | `web/lib/near-auth.ts`, `auth/near-auth.service.ts`, `auth/near-tx.ts` |
+| Passkey login | Self-hosted WebAuthn (RP = KEIZ) + PRF-derived ed25519 key; AES-GCM seed wrap | `web/lib/passkey/*`, `auth/webauthn/*` |
 | AP deposit | NEP-141 `ft_transfer` / `ft_transfer_call` to a 1Click deposit address | `web/components/pay-panel.tsx` |
 | wNEAR origin | `wrap.near::near_deposit` + `ft_transfer` | `web/components/pay-panel.tsx` |
 | Cross-chain payout | 1Click REST (`/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`) | `payments/providers/intents.provider.ts` |
@@ -184,8 +184,8 @@ The `vault` value in `PaymentIntent.rail` is reserved and has no execution path 
 `AgentService`/`PaymentsService` yet. Do not describe the vault as the live AP rail until that
 wiring lands.
 
-The NEAR Auth relayer remains `fast-auth.sign` only. Vault proposals/approvals are wallet-signed,
-or use a separate transaction relayer with its own contract and method allowlist.
+There is no NEAR Auth relayer. Vault proposals/approvals are wallet-signed or signed by the
+passkey-derived key. Any future transaction relayer needs its own contract and method allowlist.
 
 ---
 
@@ -233,7 +233,7 @@ This needs a small verifier service per chain, not a smart contract.
 
 ## 6. Implemented: webhooks / queue
 
-Payments, OutLayer custody, the indexer and the NEAR Auth relayer run as BullMQ jobs. The API
+Payments, OutLayer custody and the indexer run as BullMQ jobs. The API
 produces jobs and the separate worker (`pnpm --filter @keiz/api worker`) processes them;
 Redis is required (`REDIS_URL`). `QUEUES_ENABLED=false` makes producers no-ops for tests.
 
@@ -242,7 +242,6 @@ Redis is required (`REDIS_URL`). `QUEUES_ENABLED=false` makes producers no-ops f
 | `payments` | per-payment poll + repeatable sweep | `PAYMENT_SWEEP_INTERVAL_MS` (default 30s) |
 | `outlayer` | per-payment poll + repeatable sweep | 2s first poll, 5s/30s/5m backoff, 5m sweep |
 | `indexer` | repeatable sync | `INDEXER_INTERVAL_MS` (default 30s) |
-| `near-auth` | one job per relay request | concurrency 1 |
 
 `POST /api/indexer/collect` is an ADMIN/OWNER maintenance trigger that indexes every active
 workspace collection immediately.

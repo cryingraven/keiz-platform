@@ -45,8 +45,8 @@ async function main() {
   process.env.PAYMENTS_MODE = 'mock';
   process.env.AGENT_WALLET_MASTER_KEY = 'a'.repeat(64);
   // Never let the smoke test spend a real relayer's gas.
-  process.env.NEAR_AUTH_RELAYER_ACCOUNT_ID = '';
-  process.env.NEAR_AUTH_RELAYER_PRIVATE_KEY = '';
+  process.env.WEBAUTHN_RP_ID = 'localhost';
+  process.env.WEBAUTHN_ORIGINS = 'http://localhost:3000';
   process.env.OUTLAYER_ENABLED = 'false';
   process.env.CHAT_PROVIDER = 'local';
   process.env.NEARAI_API_KEY = '';
@@ -1107,47 +1107,46 @@ async function main() {
     );
     pass('invited members can switch into the shared workspace');
 
-    const signArgs = (guardId: string) =>
-      Buffer.from(JSON.stringify({ guard_id: guardId, verify_payload: 'jwt', sign_payload: [] })).toString(
-        'base64',
-      );
-    const relayWrong = await statusOf('/auth/near-auth/relay', {
-      method: 'POST',
-      body: {
-        receiverId: 'evil.near',
-        methodName: 'sign',
-        argsBase64: signArgs('jwt#https://login.testnet.fast-auth.com/'),
-        gas: '100000000000000',
-        deposit: '1',
-      },
-    });
-    assert(relayWrong === 400, `relayer rejects other contracts (got ${relayWrong})`);
-    const relayBadGuard = await statusOf('/auth/near-auth/relay', {
-      method: 'POST',
-      body: {
-        receiverId: 'fast-auth.testnet',
-        methodName: 'sign',
-        argsBase64: signArgs('jwt#https://evil.example/'),
-        gas: '100000000000000',
-        deposit: '1',
-      },
-    });
-    assert(relayBadGuard === 400, `relayer rejects other guards (got ${relayBadGuard})`);
-    const relayUnconfigured = await statusOf('/auth/near-auth/relay', {
-      method: 'POST',
-      body: {
-        receiverId: 'fast-auth.testnet',
-        methodName: 'sign',
-        argsBase64: signArgs('jwt#https://login.testnet.fast-auth.com/'),
-        gas: '100000000000000',
-        deposit: '1',
-      },
-    });
-    assert(
-      relayUnconfigured === 503,
-      `relayer reports missing configuration (got ${relayUnconfigured})`,
+    const passkeyOptions = await req<{ options: { challenge: string } }>(
+      '/auth/passkey/login/options',
+      { method: 'POST', body: {}, expect: 201 },
     );
-    pass('NEAR Auth relay is restricted to fast-auth + the expected guard and fails closed');
+    assert(
+      typeof passkeyOptions.options?.challenge === 'string' &&
+        passkeyOptions.options.challenge.length > 10,
+      'passkey login options include a challenge',
+    );
+    const badSignup = await statusOf('/auth/passkey/signup/options', {
+      method: 'POST',
+      body: { accountId: 'not-hex', nearPublicKey: 'ed25519:abc' },
+    });
+    assert(badSignup === 400, `passkey signup rejects a non-implicit account (got ${badSignup})`);
+    const prfLeak = await statusOf('/auth/passkey/signup/verify', {
+      method: 'POST',
+      body: {
+        accountId: 'a'.repeat(64),
+        nearPublicKey: 'ed25519:11111111111111111111111111111111',
+        credential: {
+          id: 'x',
+          rawId: 'x',
+          type: 'public-key',
+          response: {},
+          clientExtensionResults: { prf: { results: { first: 'secret' } } },
+        },
+        wrappedSeed: { v: 1, nonce: 'a'.repeat(16), ciphertext: 'a'.repeat(32) },
+        nep413: {
+          accountId: 'a'.repeat(64),
+          publicKey: 'ed25519:11111111111111111111111111111111',
+          signature: 'x',
+          nonce: 'x',
+          recipient: 'localhost',
+        },
+      },
+    });
+    assert(prfLeak === 400, `passkey verify refuses PRF output from the client (got ${prfLeak})`);
+    const passkeyList = await statusOf('/auth/passkey/credentials', {});
+    assert(passkeyList === 401, `passkey credentials require auth (got ${passkeyList})`);
+    pass('passkey endpoints are public where expected, reject PRF leaks and require auth');
 
     await new Promise((resolve) => setTimeout(resolve, 150));
     const audit = await req<Array<{ action: string }>>('/audit', { cookie: aliceCookie });

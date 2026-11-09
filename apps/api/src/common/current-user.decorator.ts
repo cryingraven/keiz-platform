@@ -1,10 +1,14 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
+export type AuthMethod = 'wallet' | 'passkey' | 'recovery';
+
 export interface AuthUser {
   sub: string;
   accountId: string;
   orgId: string;
   role: string;
+  amr?: AuthMethod;
+  authTime?: number;
 }
 
 export const CurrentUser = createParamDecorator(

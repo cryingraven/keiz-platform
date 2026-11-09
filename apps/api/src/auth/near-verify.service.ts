@@ -27,7 +27,10 @@ export class NearVerifyService {
 
   private rpcUrl(network: 'mainnet' | 'testnet'): string {
     if (network === 'testnet') {
-      return this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org';
+      return (
+        this.config.get<string>('NEAR_TESTNET_RPC_URL') ||
+        'https://rpc.testnet.near.org'
+      );
     }
     return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }
@@ -87,9 +90,9 @@ export class NearVerifyService {
   ): Promise<void> {
     const url = this.rpcUrl(network);
 
-    // NEAR Auth users often start with an implicit account that does not exist
-    // on-chain yet. Accept that only when the account id is exactly the hex of
-    // the public key and the chain explicitly reports UNKNOWN_ACCOUNT.
+    // Passkey and recovery users often start with an implicit account that does
+    // not exist on-chain yet. Accept that only when the account id is exactly the
+    // hex of the public key and the chain explicitly reports UNKNOWN_ACCOUNT.
     const account = await this.rpc(url, 'query', {
       request_type: 'view_account',
       finality: 'final',

@@ -8,15 +8,9 @@ import { IndexerModule } from './indexer/indexer.module';
 import { OutlayerModule } from './outlayer/outlayer.module';
 import { PaymentsModule } from './payments/payments.module';
 import { IndexerSyncProcessor } from './queues/processors/indexer-sync.processor';
-import { NearAuthRelayProcessor } from './queues/processors/near-auth-relay.processor';
 import { OutlayerPollProcessor } from './queues/processors/outlayer-poll.processor';
 import { PaymentPollProcessor } from './queues/processors/payment-poll.processor';
-import {
-  INDEXER_QUEUE,
-  NEAR_AUTH_QUEUE,
-  OUTLAYER_QUEUE,
-  PAYMENTS_QUEUE,
-} from './queues/queue.constants';
+import { INDEXER_QUEUE, OUTLAYER_QUEUE, PAYMENTS_QUEUE } from './queues/queue.constants';
 import { QueuesModule } from './queues/queues.module';
 
 @Module({
@@ -38,7 +32,6 @@ import { QueuesModule } from './queues/queues.module';
       { name: PAYMENTS_QUEUE },
       { name: OUTLAYER_QUEUE },
       { name: INDEXER_QUEUE },
-      { name: NEAR_AUTH_QUEUE },
     ),
     PaymentsModule,
     OutlayerModule,
@@ -46,11 +39,6 @@ import { QueuesModule } from './queues/queues.module';
     AuthModule,
     AgentModule,
   ],
-  providers: [
-    PaymentPollProcessor,
-    OutlayerPollProcessor,
-    IndexerSyncProcessor,
-    NearAuthRelayProcessor,
-  ],
+  providers: [PaymentPollProcessor, OutlayerPollProcessor, IndexerSyncProcessor],
 })
 export class WorkerModule {}

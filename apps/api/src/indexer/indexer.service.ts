@@ -239,7 +239,10 @@ export class IndexerService {
 
   private rpcFor(network: 'mainnet' | 'testnet'): string {
     if (network === 'testnet') {
-      return this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org';
+      return (
+        this.config.get<string>('NEAR_TESTNET_RPC_URL') ||
+        'https://rpc.testnet.near.org'
+      );
     }
     return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }

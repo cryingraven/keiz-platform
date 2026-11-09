@@ -7,12 +7,25 @@ import { AuthChallenge, AuthChallengeSchema } from './auth-challenge.schema';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { NearVerifyService } from './near-verify.service';
-import { NearAuthService } from './near-auth.service';
+import { PasskeyController } from './webauthn/passkey.controller';
+import { PasskeyService } from './webauthn/passkey.service';
+import {
+  WebAuthnChallenge,
+  WebAuthnChallengeSchema,
+} from './webauthn/webauthn-challenge.schema';
+import {
+  WebAuthnCredential,
+  WebAuthnCredentialSchema,
+} from './webauthn/webauthn-credential.schema';
 
 @Module({
   imports: [
     UsersModule,
-    MongooseModule.forFeature([{ name: AuthChallenge.name, schema: AuthChallengeSchema }]),
+    MongooseModule.forFeature([
+      { name: AuthChallenge.name, schema: AuthChallengeSchema },
+      { name: WebAuthnChallenge.name, schema: WebAuthnChallengeSchema },
+      { name: WebAuthnCredential.name, schema: WebAuthnCredentialSchema },
+    ]),
     JwtModule.registerAsync({
       global: true,
       imports: [ConfigModule],
@@ -22,8 +35,8 @@ import { NearAuthService } from './near-auth.service';
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, NearVerifyService, NearAuthService],
-  exports: [NearVerifyService, NearAuthService],
+  controllers: [AuthController, PasskeyController],
+  providers: [AuthService, NearVerifyService, PasskeyService],
+  exports: [NearVerifyService, PasskeyService],
 })
 export class AuthModule {}

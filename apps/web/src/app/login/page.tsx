@@ -7,7 +7,6 @@ import { ChevronDown, ChevronRight, Fingerprint, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/hooks';
 import { chainNetwork } from '@/lib/network';
-import { preloadNearAuth } from '@/lib/near-auth';
 import { Logo } from '@/components/logo';
 import { NearProtocolIcon } from '@/components/landing/logos';
 
@@ -15,10 +14,13 @@ export default function LoginPage() {
   const {
     session,
     loading,
-    nearAuthBusy,
-    nearAuthEnabled,
+    passkeyBusy,
+    passkeySupported,
+    passkeyReady,
     signIn,
-    signInWithNearAuth,
+    signInWithPasskey,
+    createPasskeyAccount,
+    signInWithRecoveryKey,
     busy,
     error,
     clearError,
@@ -34,18 +36,18 @@ export default function LoginPage() {
   const router = useRouter();
   const health = useApi<{ network?: string }>('/health');
   const [whyOpen, setWhyOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [recoveryAccount, setRecoveryAccount] = useState('');
 
   useEffect(() => {
     if (!loading && session?.user) router.replace('/dashboard');
   }, [loading, session, router]);
 
   useEffect(() => {
-    // Warm both clients while the user is still on /login. This keeps the
-    // wallet selector and Auth0 popup inside the original click gesture.
+    // Warm the wallet connector while the user is still on /login, so a row
+    // click can connect inside the original click gesture.
     void preloadWallets();
-    void preloadNearAuth().catch(() => {
-      // NEAR Auth setup errors are surfaced when the user actually clicks.
-    });
   }, [preloadWallets]);
 
   const networkMismatch =
@@ -68,66 +70,131 @@ export default function LoginPage() {
           Sign in or create your workspace
         </h1>
         <p className="mt-2 text-[14px] leading-relaxed text-muted">
-          {nearAuthEnabled
-            ? 'Use NEAR Auth for the easiest experience, or connect a NEAR wallet.'
-            : 'Connect a NEAR wallet to sign a one-time message.'}
+          Create a self-custodial passkey account, or connect a NEAR wallet.
         </p>
         {networkMismatch ? (
           <div className="mt-3 rounded-xl border border-amber/20 bg-amber-soft px-4 py-3 text-[12px] leading-relaxed text-amber">
             This page is configured for NEAR {chainNetwork}, but the API is on{' '}
-            {health.data?.network}. Wallet and NEAR Auth sign-in will be rejected until the
-            deployment networks are aligned.
+            {health.data?.network}. Sign-in will be rejected until the deployment networks are
+            aligned.
           </div>
         ) : null}
 
-        {nearAuthEnabled ? (
+        {passkeySupported ? (
           <>
-            <div className="mt-7">
-              <button
-                type="button"
-                onClick={() => void signInWithNearAuth()}
-                disabled={nearAuthBusy || busy}
-                className="group w-full rounded-2xl border border-line bg-white p-5 text-left transition hover:border-line-strong hover:shadow-[0_1px_2px_rgba(0,0,0,0.04)] disabled:cursor-wait disabled:opacity-70"
-              >
-                <div className="flex items-start justify-between">
-                  <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-white">
-                    {nearAuthBusy ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Fingerprint className="h-5 w-5" />
-                    )}
-                  </span>
-                  <span className="rounded-full bg-mint-soft px-2.5 py-1 text-[11px] font-medium text-mint">
-                    Recommended
-                  </span>
-                </div>
-                <p className="mt-5 text-[15px] font-semibold">
-                  {nearAuthBusy ? 'Waiting for NEAR Auth…' : 'Continue with NEAR Auth'}
+            <div className="mt-7 rounded-2xl border border-line bg-white p-5">
+              <div className="flex items-start justify-between">
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-white">
+                  {passkeyBusy ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Fingerprint className="h-5 w-5" />
+                  )}
+                </span>
+                <span className="rounded-full bg-mint-soft px-2.5 py-1 text-[11px] font-medium text-mint">
+                  Recommended
+                </span>
+              </div>
+              <p className="mt-5 text-[15px] font-semibold">Continue with a passkey</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted">
+                Face ID, Touch ID or Windows Hello. Your NEAR key is derived on this device and is
+                never sent to KEIZ.
+              </p>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void createPasskeyAccount()}
+                  disabled={passkeyBusy || busy}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-ink-soft disabled:cursor-wait disabled:opacity-60"
+                >
+                  Create a passkey account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void signInWithPasskey()}
+                  disabled={passkeyBusy || busy}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-line-strong bg-surface px-4 py-2.5 text-[13px] font-medium text-ink transition hover:border-ink/30 disabled:cursor-wait disabled:opacity-60"
+                >
+                  I already have one
+                </button>
+              </div>
+              {!passkeyReady ? (
+                <p className="mt-3 text-[11px] leading-relaxed text-amber">
+                  This browser could not confirm PRF passkey support. If creating an account fails,
+                  use a NEAR wallet below.
                 </p>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted">
-                  Use a passkey, Google, Apple or email. No seed phrase, no extension.
-                </p>
-              </button>
+              ) : null}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setRecoveryOpen((value) => !value)}
+              className="mt-2 inline-flex items-center gap-1 text-[13px] text-muted underline decoration-line-strong underline-offset-4 transition hover:text-ink"
+            >
+              Use a recovery key
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition ${recoveryOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {recoveryOpen ? (
+              <div className="mt-3 rounded-xl border border-line bg-white p-4">
+                <p className="text-[12px] leading-relaxed text-muted">
+                  Paste the NEAR recovery key you exported when you created the passkey account.
+                  It is used locally to sign the NEP-413 challenge; it is never sent to the API.
+                </p>
+                <textarea
+                  value={recoveryKey}
+                  onChange={(event) => setRecoveryKey(event.target.value)}
+                  rows={3}
+                  spellCheck={false}
+                  placeholder="ed25519:..."
+                  className="mt-3 w-full rounded-xl border border-line bg-surface px-3 py-2 font-mono text-[11px] text-ink outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/10"
+                />
+                <input
+                  value={recoveryAccount}
+                  onChange={(event) => setRecoveryAccount(event.target.value)}
+                  spellCheck={false}
+                  placeholder="NEAR account (only for a wallet account)"
+                  className="mt-2 w-full rounded-xl border border-line bg-surface px-3 py-2 font-mono text-[11px] text-ink outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/10"
+                />
+                <button
+                  type="button"
+                  onClick={() => void signInWithRecoveryKey(recoveryKey, recoveryAccount)}
+                  disabled={passkeyBusy || busy || recoveryKey.trim().length === 0}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-[12px] font-medium text-white disabled:cursor-wait disabled:opacity-60"
+                >
+                  {passkeyBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Sign in with recovery key
+                </button>
+              </div>
+            ) : null}
 
             <button
               type="button"
               onClick={() => setWhyOpen((value) => !value)}
               className="mt-2 inline-flex items-center gap-1 text-[13px] text-muted underline decoration-line-strong underline-offset-4 transition hover:text-ink"
             >
-              Why NEAR Auth?
+              How does a passkey account work?
               <ChevronDown className={`h-3.5 w-3.5 transition ${whyOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {whyOpen ? (
               <div className="mt-3 rounded-xl bg-paper px-4 py-3 text-[12px] leading-relaxed text-muted">
-                NEAR Auth signs you in through Auth0, then an MPC network produces a NEP-413
-                signature for your account. The key is never held by one party, and KEIZ never
-                receives a private key.
+                The passkey unlocks a random ed25519 seed in your browser using the WebAuthn PRF
+                extension. The seed is the NEAR account key; KEIZ only stores an encrypted copy that
+                it cannot decrypt. Your passkey never leaves your device.
               </div>
             ) : null}
           </>
-        ) : null}
+        ) : (
+          <div className="mt-7 rounded-2xl border border-line bg-white p-5">
+            <p className="text-[13px] font-semibold">Passkeys are not available here</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+              This browser does not expose WebAuthn. Connect a NEAR wallet below.
+            </p>
+          </div>
+        )}
 
         <div className="my-6 flex items-center gap-3">
           <span className="h-px flex-1 bg-line" />
@@ -203,7 +270,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => void signIn()}
-                  disabled={busy || nearAuthBusy}
+                  disabled={busy || passkeyBusy}
                   className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-brand hover:underline disabled:opacity-60"
                 >
                   Open wallet selector
@@ -219,7 +286,7 @@ export default function LoginPage() {
                       key={wallet.id}
                       type="button"
                       onClick={() => void signInWithWallet(wallet.id)}
-                      disabled={busy || nearAuthBusy}
+                      disabled={busy || passkeyBusy}
                       className="group flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-paper disabled:cursor-wait disabled:opacity-60"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -261,7 +328,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => void signIn()}
-                disabled={busy || nearAuthBusy}
+                disabled={busy || passkeyBusy}
                 className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted underline decoration-line-strong underline-offset-2 transition hover:text-ink disabled:opacity-60"
               >
                 More wallets / open selector
@@ -299,7 +366,7 @@ export default function LoginPage() {
             .
           </p>
           <p className="mt-4 flex items-center gap-1.5 text-[10px] text-muted">
-            <NearProtocolIcon className="h-3.5 w-3.5" /> NEP-413 message signature · verified by KEIZ
+            <NearProtocolIcon className="h-3.5 w-3.5" /> Passkey · self-custodial NEAR key
           </p>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigService } from '@nestjs/config';
 import { auditNetworkConfig, parseNearNetwork, walletNetwork } from './network';
+import { auditWebAuthnConfig } from '../auth/webauthn/webauthn.config';
 
 function config(values: Record<string, string | undefined>): ConfigService {
   return {
@@ -36,29 +37,28 @@ describe('network config', () => {
     ).toThrow(/mainnet-only/);
   });
 
-  it('rejects a NEAR Auth network that differs from the app network', () => {
+  it('rejects a WebAuthn origin outside the RP ID', () => {
     expect(() =>
-      auditNetworkConfig(
+      auditWebAuthnConfig(
         config({
-          CHAIN_NETWORK: 'mainnet',
-          NEAR_AUTH_NETWORK: 'testnet',
-          PAYMENTS_MODE: 'mock',
+          NODE_ENV: 'development',
+          WEBAUTHN_RP_ID: 'keiz.app',
+          WEBAUTHN_ORIGINS: 'https://evil.example',
         }),
       ),
-    ).toThrow(/does not match/);
+    ).toThrow(/not the RP ID/);
   });
 
-  it('rejects a testnet fast-auth contract on mainnet', () => {
+  it('rejects a non-HTTPS production origin', () => {
     expect(() =>
-      auditNetworkConfig(
+      auditWebAuthnConfig(
         config({
-          CHAIN_NETWORK: 'mainnet',
-          NEAR_AUTH_NETWORK: 'mainnet',
-          NEAR_AUTH_CONTRACT_ID: 'fast-auth.testnet',
-          PAYMENTS_MODE: 'mock',
+          NODE_ENV: 'production',
+          WEBAUTHN_RP_ID: 'keiz.app',
+          WEBAUTHN_ORIGINS: 'http://keiz.app',
         }),
       ),
-    ).toThrow(/testnet contract/);
+    ).toThrow(/HTTPS/);
   });
 
   it('rejects an OutLayer host that disagrees with its network', () => {

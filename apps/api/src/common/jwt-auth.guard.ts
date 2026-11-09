@@ -69,6 +69,8 @@ export class JwtAuthGuard implements CanActivate {
       accountId: user.accountId,
       orgId: membership.orgId,
       role: membership.role,
+      amr: payload.amr as 'wallet' | 'passkey' | 'recovery' | undefined,
+      authTime: typeof payload.auth_time === 'number' ? payload.auth_time : undefined,
     };
     return true;
   }

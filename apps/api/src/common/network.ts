@@ -26,13 +26,6 @@ export function walletNetwork(config: ConfigService): NearNetwork {
   );
 }
 
-export function authNetwork(config: ConfigService): NearNetwork {
-  return parseNearNetwork(
-    config.get<string>('NEAR_AUTH_NETWORK') || walletNetwork(config),
-    walletNetwork(config),
-  );
-}
-
 export function outlayerNetwork(config: ConfigService): NearNetwork {
   return parseNearNetwork(config.get<string>('OUTLAYER_NETWORK'), 'testnet');
 }
@@ -60,7 +53,6 @@ export function rpcNetworkHint(url: string | undefined): NearNetwork | 'unknown'
 
 export interface NetworkAudit {
   walletNetwork: NearNetwork;
-  authNetwork: NearNetwork;
   outlayerNetwork: NearNetwork;
   paymentsMode: PaymentsMode;
   warnings: string[];
@@ -72,7 +64,6 @@ export interface NetworkAudit {
  */
 export function auditNetworkConfig(config: ConfigService): NetworkAudit {
   const wallet = walletNetwork(config);
-  const auth = authNetwork(config);
   const outlayer = outlayerNetwork(config);
   const mode = paymentsMode(config);
   const nodeEnv = config.get<string>('NODE_ENV') || 'development';
@@ -83,9 +74,6 @@ export function auditNetworkConfig(config: ConfigService): NetworkAudit {
   };
 
   const rpcUrl = config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
-  const authRpcUrl =
-    config.get<string>('NEAR_AUTH_RPC_URL') ||
-    (auth === 'mainnet' ? 'https://rpc.mainnet.near.org' : 'https://rpc.testnet.near.org');
 
   if (mode === 'intents') {
     if (wallet !== 'mainnet') {
@@ -97,13 +85,6 @@ export function auditNetworkConfig(config: ConfigService): NetworkAudit {
     if (!production) {
       warnings.push('PAYMENTS_MODE=intents is active outside production: real funds can move.');
     }
-  }
-
-  if (auth !== wallet) {
-    fail(
-      `NEAR_AUTH_NETWORK (${auth}) does not match the app network (${wallet}). ` +
-        'NEAR Auth login cannot work across networks. Keep CHAIN_NETWORK, NEXT_PUBLIC_CHAIN_NETWORK and NEAR_AUTH_NETWORK aligned.',
-    );
   }
 
   const explicitChain = config.get<string>('CHAIN_NETWORK');
@@ -120,68 +101,6 @@ export function auditNetworkConfig(config: ConfigService): NetworkAudit {
     const message = `NEAR_RPC_URL looks like ${rpcNetworkHint(rpcUrl)} but the app network is ${wallet}.`;
     if (production) fail(message);
     warnings.push(message);
-  }
-
-  const publicAuthNetwork = config.get<string>('NEXT_PUBLIC_NEAR_AUTH_NETWORK');
-  if (publicAuthNetwork && parseNearNetwork(publicAuthNetwork) !== auth) {
-    fail('NEXT_PUBLIC_NEAR_AUTH_NETWORK and NEAR_AUTH_NETWORK disagree.');
-  }
-  if (rpcNetworkHint(authRpcUrl) !== 'unknown' && rpcNetworkHint(authRpcUrl) !== auth) {
-    const message = `NEAR_AUTH_RPC_URL looks like ${rpcNetworkHint(authRpcUrl)} but NEAR_AUTH_NETWORK is ${auth}.`;
-    if (production) fail(message);
-    warnings.push(message);
-  }
-
-  const contractId =
-    config.get<string>('NEAR_AUTH_CONTRACT_ID') ||
-    (auth === 'mainnet' ? 'fast-auth.near' : 'fast-auth.testnet');
-  if (auth === 'testnet' && !contractId.endsWith('.testnet')) {
-    fail(`NEAR_AUTH_CONTRACT_ID (${contractId}) is not a testnet contract.`);
-  }
-  if (auth === 'mainnet' && contractId.endsWith('.testnet')) {
-    fail(`NEAR_AUTH_CONTRACT_ID (${contractId}) is a testnet contract.`);
-  }
-  const publicContract = config.get<string>('NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID');
-  if (publicContract && publicContract !== contractId) {
-    fail('NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID and NEAR_AUTH_CONTRACT_ID disagree.');
-  }
-  const mpcContract = config.get<string>('NEAR_AUTH_MPC_CONTRACT_ID');
-  const publicMpcContract = config.get<string>('NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID');
-  if (mpcContract && publicMpcContract && mpcContract !== publicMpcContract) {
-    fail('NEAR_AUTH_MPC_CONTRACT_ID and NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID disagree.');
-  }
-  const guardId = config.get<string>('NEAR_AUTH_GUARD_ID');
-  if (guardId && !guardId.startsWith('jwt#')) {
-    fail('NEAR_AUTH_GUARD_ID must be a jwt#... guard id.');
-  }
-  const authDomain = config.get<string>('NEAR_AUTH_DOMAIN');
-  const publicAuthDomain = config.get<string>('NEXT_PUBLIC_NEAR_AUTH_DOMAIN');
-  if (authDomain && publicAuthDomain && authDomain !== publicAuthDomain) {
-    fail('NEAR_AUTH_DOMAIN and NEXT_PUBLIC_NEAR_AUTH_DOMAIN disagree.');
-  }
-  const effectiveAuthDomain =
-    authDomain || publicAuthDomain || (auth === 'mainnet' ? 'login.auth.near.org' : 'login.testnet.fast-auth.com');
-  if (guardId && !guardId.includes(effectiveAuthDomain)) {
-    fail(`NEAR_AUTH_GUARD_ID does not reference the Auth0 domain ${effectiveAuthDomain}.`);
-  }
-  const publicAuthRpc = config.get<string>('NEXT_PUBLIC_NEAR_AUTH_RPC_URL');
-  if (publicAuthRpc) {
-    const publicHint = rpcNetworkHint(publicAuthRpc);
-    if (publicHint !== 'unknown' && publicHint !== auth) {
-      fail(`NEXT_PUBLIC_NEAR_AUTH_RPC_URL looks like ${publicHint} but NEAR_AUTH_NETWORK is ${auth}.`);
-    }
-  }
-
-  const relayerAccount = config.get<string>('NEAR_AUTH_RELAYER_ACCOUNT_ID');
-  if (relayerAccount) {
-    const looksTestnet = relayerAccount.endsWith('.testnet');
-    const looksMainnet = relayerAccount.endsWith('.near');
-    if (auth === 'mainnet' && looksTestnet) {
-      fail('NEAR_AUTH_RELAYER_ACCOUNT_ID is a testnet account on a mainnet NEAR Auth setup.');
-    }
-    if (auth === 'testnet' && looksMainnet) {
-      fail('NEAR_AUTH_RELAYER_ACCOUNT_ID is a mainnet account on a testnet NEAR Auth setup.');
-    }
   }
 
   if (config.get<string>('OUTLAYER_ENABLED') === 'true') {
@@ -221,7 +140,6 @@ export function auditNetworkConfig(config: ConfigService): NetworkAudit {
 
   return {
     walletNetwork: wallet,
-    authNetwork: auth,
     outlayerNetwork: outlayer,
     paymentsMode: mode,
     warnings,

@@ -196,7 +196,7 @@ verifies the destination transfer before marking the invoice paid.
 
 ## Relayer boundary
 
-The NEAR Auth relayer (`/auth/near-auth/relay`) remains `fast-auth.sign` only.
+There is no NEAR Auth relayer. Treasury calls are wallet-signed or signed by the passkey-derived key.
 It is never used for treasury calls. AP proposals/approvals are wallet-signed by
 OWNER/APPROVER accounts; adding a transaction relayer would require its own
 contract/method allowlist and threat model.

@@ -36,6 +36,58 @@ export const switchOrgSchema = z.object({
   orgId: z.string().min(1).max(64),
 });
 
+/** WebAuthn responses are verified by @simplewebauthn/server, not Zod. */
+const webauthnCredentialJson = z.object({
+  id: z.string().min(1).max(2048),
+  rawId: z.string().min(1).max(2048),
+  type: z.literal('public-key'),
+  response: z.record(z.string(), z.unknown()),
+  clientExtensionResults: z.record(z.string(), z.unknown()).optional(),
+  authenticatorAttachment: z.string().optional(),
+});
+
+export const wrappedSeedSchema = z.object({
+  v: z.literal(1),
+  nonce: z.string().min(12).max(64),
+  ciphertext: z.string().min(16).max(512),
+});
+
+export const passkeySignupOptionsSchema = z.object({
+  accountId: z.string().length(64).regex(/^[0-9a-f]+$/i, 'Implicit account must be hex'),
+  nearPublicKey: z.string().min(10).max(100),
+});
+
+export const passkeySignupVerifySchema = passkeySignupOptionsSchema.extend({
+  credential: webauthnCredentialJson,
+  wrappedSeed: wrappedSeedSchema,
+  nep413: loginVerifySchema,
+});
+
+export const passkeyLoginOptionsSchema = z.object({}).default({});
+
+export const passkeyLoginVerifySchema = z.object({
+  credential: webauthnCredentialJson,
+  accountId: z.string().min(2).max(64).optional(),
+});
+
+export const passkeyCredentialOptionsSchema = z.object({
+  nearPublicKey: z.string().min(10).max(100),
+});
+
+export const passkeyCredentialVerifySchema = z.object({
+  nearPublicKey: z.string().min(10).max(100),
+  credential: webauthnCredentialJson,
+  wrappedSeed: wrappedSeedSchema,
+  nep413: loginVerifySchema,
+});
+
+export const passkeyUnlockSchema = z.object({
+  credentialId: z.string().min(1).max(2048),
+});
+
+export type PasskeySignupVerifyInput = z.infer<typeof passkeySignupVerifySchema>;
+export type PasskeyCredentialVerifyInput = z.infer<typeof passkeyCredentialVerifySchema>;
+
 export const createVendorSchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -286,12 +338,4 @@ export type TrialBalanceQuery = z.infer<typeof trialBalanceQuerySchema>;
 
 export const simulateQuerySchema = z.object({
   status: z.enum(['SUCCEEDED', 'FAILED', 'REFUNDED']).default('SUCCEEDED'),
-});
-
-export const nearAuthRelaySchema = z.object({
-  receiverId: z.string().min(2).max(64),
-  methodName: z.literal('sign'),
-  argsBase64: z.string().min(1).max(32_000),
-  gas: z.string().regex(/^\d+$/, 'gas must be an integer string').max(20),
-  deposit: z.string().regex(/^\d+$/, 'deposit must be an integer string').max(40),
 });

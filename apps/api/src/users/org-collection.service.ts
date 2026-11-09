@@ -41,7 +41,8 @@ export class OrgCollectionService {
   async validate(orgId: string, network: 'mainnet' | 'testnet', input: OrgCollectionInput) {
     const rpcUrl =
       network === 'testnet'
-        ? this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org'
+        ? this.config.get<string>('NEAR_TESTNET_RPC_URL') ||
+          'https://rpc.testnet.near.org'
         : this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
 
     const contractOrg = await this.view<string>(rpcUrl, input.contractId, 'get_org_id', {});

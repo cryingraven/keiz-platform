@@ -8,17 +8,18 @@
     "start": "next start -p 3000",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'web tests: covered by api + shared suites'",
+    "test": "vitest run",
     "predev": "pnpm --filter @keiz/shared build",
     "prebuild": "pnpm --filter @keiz/shared build",
     "pretypecheck": "pnpm --filter @keiz/shared build"
   },
   "dependencies": {
-    "@auth0/auth0-spa-js": "2.30.0",
-    "@fast-auth-near/browser-sdk": "1.4.2",
-    "@fast-auth-near/javascript-provider": "1.4.1",
     "@hot-labs/near-connect": "0.12.0",
     "@keiz/shared": "workspace:*",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "@simplewebauthn/browser": "13.2.2",
+    "bs58": "5.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.545.0",
     "near-api-js": "5.1.1",
@@ -33,6 +34,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "tailwindcss": "4.3.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "3.2.7"
   }
 }

@@ -50,18 +50,6 @@ const nextConfig: NextConfig = {
   // Explicitly inline public env. Turbopack computes NEXT_PUBLIC_* before
   // next.config runs, so values loaded from the repo root need to be declared.
   env: {
-    NEXT_PUBLIC_NEAR_AUTH_ENABLED: readEnv('NEXT_PUBLIC_NEAR_AUTH_ENABLED') || 'false',
-    // NEAR Auth network-specific values are intentionally not defaulted here:
-    // near-auth.ts derives them from NEXT_PUBLIC_CHAIN_NETWORK unless overridden.
-    NEXT_PUBLIC_NEAR_AUTH_NETWORK: readEnv('NEXT_PUBLIC_NEAR_AUTH_NETWORK') || '',
-    NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID') || '',
-    NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID') || '',
-    NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID:
-      readEnv('NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID') || '',
-    NEXT_PUBLIC_NEAR_AUTH_RPC_URL: readEnv('NEXT_PUBLIC_NEAR_AUTH_RPC_URL') || '',
-    NEXT_PUBLIC_NEAR_AUTH_DOMAIN: readEnv('NEXT_PUBLIC_NEAR_AUTH_DOMAIN') || '',
-    NEXT_PUBLIC_NEAR_AUTH_SIGNING_AUDIENCE:
-      readEnv('NEXT_PUBLIC_NEAR_AUTH_SIGNING_AUDIENCE') || '',
     NEXT_PUBLIC_CHAIN_NETWORK: chainNetwork,
     NEXT_PUBLIC_NEAR_NETWORK: readEnv('NEXT_PUBLIC_NEAR_NETWORK') || chainNetwork,
   },
@@ -79,10 +67,10 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-          // The NEAR Auth / Auth0 flow needs the opener relationship while the
-          // popup is open. `same-origin-allow-popups` still isolates the popup in
-          // some browsers; `unsafe-none` keeps the standard popup postMessage flow
-          // working. Do not add Cross-Origin-Embedder-Policy here.
+          // Web wallet popups need the opener relationship while they are open.
+          // `same-origin-allow-popups` still isolates the popup in some browsers;
+          // `unsafe-none` keeps the standard popup postMessage flow working. Do
+          // not add Cross-Origin-Embedder-Policy here.
           { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
         ],
       },

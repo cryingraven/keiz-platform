@@ -42,11 +42,11 @@ Then create demo data (after signing in, or from the CLI):
 pnpm --filter @keiz/api seed demo.near
 ```
 
-Open <http://localhost:3000>, sign in with NEAR Auth or a NEAR wallet, and press **Load demo data** if the workspace is empty.
+Open <http://localhost:3000>, create a passkey account or sign in with a NEAR wallet, and press **Load demo data** if the workspace is empty.
 
 ## What is implemented
 
-- **NEAR Auth login** — Auth0 (passkey, Google, Apple, email) backed by an MPC-derived NEAR key. The client requests a NEP-413 message signature through `fast-auth`, a funded API relayer submits the on-chain `sign` call, and the existing verifier checks the resulting signature.
+- **Passkey login** — self-hosted WebAuthn in the API. The passkey unlocks a random ed25519 seed in the browser via the PRF extension; the seed is the NEAR account key and is never sent to the server. The API stores only an AES-GCM wrap it cannot decrypt plus a recovery-key flow (NEP-413).
 - **Wallet login (NEP-413)** — the user signs a one-time message in their NEAR wallet. The backend verifies the signature and the account's full-access key before issuing an httpOnly session cookie. No keys or seed phrases reach the server.
 - **Invoice lifecycle (AP)** — DRAFT → SUBMITTED → APPROVED / REJECTED → PAYMENT_PENDING → PAID, with an append-only approval trail. Totals are computed with integer minor units and 5-decimal-safe tax math.
 - **Customer invoices (AR)** — customers, customer invoices (DRAFT → ISSUED → PARTIALLY_PAID → PAID, plus VOID) and manual receipts with an optional transaction hash. Overdue is computed from the due date, never stored.
@@ -95,7 +95,12 @@ existing no-FX limitation on payments.
 
 ```
 POST /api/auth/challenge          public, create a NEP-413 challenge
-POST /api/auth/near-auth/relay    public, fast-auth.sign only (Auth0/MPC)
+POST /api/auth/passkey/signup/options    public, WebAuthn registration options
+POST /api/auth/passkey/signup/verify     public, verify WebAuthn + NEP-413 + create session
+POST /api/auth/passkey/login/options     public, WebAuthn authentication options
+POST /api/auth/passkey/login/verify      public, verify assertion + set session cookies
+POST /api/auth/passkey/unlock            auth, return the encrypted seed wrap
+GET  /api/auth/passkey/credentials       auth, list passkeys
 POST /api/auth/verify             public, verify signature + set session cookies
 POST /api/auth/refresh            public, rotate the refresh token
 POST /api/auth/logout             public, clear cookies
@@ -208,21 +213,13 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 - **Testnet has no Intents solvers**: registration, address, balance, NEAR transfer/call, policy and signing work; cross-chain withdraw/swap return 503. Use mainnet for the full invoice payout flow.
 - Free tier: 1000 custody operations per wallet per 24h; handle `429 operation_limit_reached`.
 
-## Login (NEAR Auth + wallet)
+## Login (passkey + wallet)
 
-`/login` offers **Continue with NEAR Auth** plus a list of every compatible NEAR Connect wallet. NEAR Auth uses Auth0 for passkeys, Google, Apple and email; the NEAR key is derived by the MPC network and never reaches the browser. The wallet list is not hardcoded: it renders `connector.availableWallets` filtered to wallets that support NEP-413 `signMessage` on the active network, so HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and newly published wallets appear automatically. A “More wallets / open selector” fallback keeps the built-in selector available. Both clients are preloaded on `/login` so popups open inside the click gesture.
+`/login` offers **Create a passkey account**, **I already have one**, and a list of every compatible NEAR Connect wallet. A passkey creates a random ed25519 seed in the browser, unlocks it with the WebAuthn PRF extension, and wraps it in AES-256-GCM under a PRF-derived key before uploading the ciphertext. The API is the WebAuthn relying party and stores only that ciphertext plus the credential metadata; it never sees the seed or the PRF output. The wallet list is not hardcoded: it renders `connector.availableWallets` filtered to wallets that support NEP-413 `signMessage` on the active network.
 
-The API verifies the same NEP-413 `SignedMessage` for both paths. The challenge is single-use, TTL-indexed and bound to `CHAIN_NETWORK`; full-access keys are required. New NEAR Auth users are implicit accounts (hex of the ed25519 key), accepted only when `view_account` reports `UNKNOWN_ACCOUNT` and the id matches the key.
+Signup requires both WebAuthn registration and a NEP-413 signature from the derived key, so an attacker cannot claim an arbitrary implicit account id. Login is a WebAuthn assertion; on-chain actions unlock the seed locally and sign with `PasskeySigner`. Multiple passkeys wrap the same seed, and an exported `ed25519:` recovery key can sign in through `/auth/passkey/recovery/verify`.
 
-**NEAR Auth flow:** `JavascriptProvider` → `FastAuthClient.login()` → `signer.getPublicKey()` → `/auth/challenge` → `signer.requestMessageSignature(...)` → `getSignatureRequest()` → `createSignAction()` → `POST /auth/near-auth/relay` → `FastAuthSignature.recover('ed25519')` → `/auth/verify`.
-
-> **SDK caveat:** the docs describe `requestMessageSignature`, but the latest published packages (`@fast-auth-near/browser-sdk@1.4.2`, `@fast-auth-near/javascript-provider@1.4.1`) do not expose it yet. `apps/web/src/lib/near-auth.ts` feature-detects the method and falls back to the same `nep413` Auth0 authorization parameter the upstream SDK sends internally. Remove the fallback and the direct `@auth0/auth0-spa-js` dependency when the SDK ships it.
-
-> **Cross-origin troubleshooting:** the app uses a refresh-token Auth0 client (no hidden iframe) and `Cross-Origin-Opener-Policy: unsafe-none` so the login popup keeps its opener. If sign-in still fails, add the app origin to the Auth0 client's **Allowed Callback URLs** and **Allowed Web Origins** (`http://localhost:3000` and the deployed origin), enable the refresh-token grant, and open KEIZ in a top-level tab with popups allowed. Running the login inside an iframe is not supported.
-
-**Relayer:** `POST /auth/near-auth/relay` submits `sign` to the configured `fast-auth` contract. It only accepts that contract and the expected `jwt#https://<auth0-domain>/` guard id, caps gas, requires a 1 yoctoNEAR deposit, and fails closed when `NEAR_AUTH_RELAYER_*` is unset or the account is underfunded. Daily per-user and global relay limits bound gas abuse. Testnet uses the shared Auth0 client; mainnet needs an approved client id.
-
-`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives both login paths and the dashboard badge. The API's `CHAIN_NETWORK` and `NEAR_AUTH_NETWORK` must match it.
+`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives both login paths and the dashboard badge. The API's `CHAIN_NETWORK` must match it. Passkeys are bound to `WEBAUTHN_RP_ID`; changing it invalidates existing credentials.
 
 ## Environment
 
@@ -241,13 +238,10 @@ See `.env.example`. The important ones:
 | `NEXT_PUBLIC_CHAIN_NETWORK` | Frontend switch: `mainnet` or `testnet`; drives wallet login and the dashboard badge |
 | `CHAIN_NETWORK` | Server source of truth; must match `NEXT_PUBLIC_CHAIN_NETWORK`. The API rejects challenges for a different network |
 | `NEAR_RPC_URL` | Wallet auth, deposit verification and indexer RPC |
-| `NEXT_PUBLIC_NEAR_AUTH_ENABLED` / `NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID` | Show NEAR Auth and point it at the Auth0 application |
-| `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | NEAR Auth network and `fast-auth` contract |
-| `NEAR_AUTH_MPC_CONTRACT_ID` / `NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID` | MPC signer used by the browser SDK |
-| `NEAR_AUTH_RPC_URL` | Testnet wallet and NEAR Auth RPC |
-| `NEAR_AUTH_RELAYER_ACCOUNT_ID` / `_PRIVATE_KEY` | Funded account that submits the `sign` call |
-| `NEAR_AUTH_RELAYER_MAX_GAS` / `NEAR_AUTH_GUARD_ID` | Relayer gas cap and the only Auth0 guard id it accepts |
-| `NEAR_AUTH_RELAYER_DAILY_LIMIT` / `_PER_USER` | Global and per-Auth0-user daily relay caps |
+| `WEBAUTHN_RP_ID` | Passkey relying-party domain; changing it invalidates existing credentials |
+| `WEBAUTHN_ORIGINS` | Comma-separated exact HTTPS origins allowed to complete WebAuthn ceremonies |
+| `WEBAUTHN_RP_NAME` | Name shown in the passkey picker |
+| `NEAR_TESTNET_RPC_URL` | Testnet RPC used by NEP-413 verification and recovery |
 | `KEIZ_COLLECT_CODE_HASH` | Canonical `keiz-collect` wasm hash; required in production to activate a workspace contract |
 | `REDIS_URL` / `QUEUES_ENABLED` | BullMQ connection and whether the API produces background jobs |
 | `QUEUE_PREFIX` | Redis key prefix shared by API and worker |
@@ -292,7 +286,7 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 ## Known limits
 
 - Agent custody is real when OutLayer is enabled. With it disabled, the local agent wallet still cannot sign on-chain; execution delegates to the mock/1Click payment provider.
-- NEAR Auth authenticates only. The relayer is restricted to `fast-auth.sign`, so deposits are still signed in a NEAR wallet; a NEAR Auth user needs a wallet to fund an invoice.
+- Passkeys authenticate and hold a self-custodial NEAR key. A passkey account signs its own deposits; a wallet account can add a passkey from Settings (the wallet approves an on-chain `AddKey` first).
 - OutLayer custody execution requires a configured policy (`dryRun.policy_check.decision` must be `allowed` or `requires_approval`). No-policy wallets are blocked. Actions remain `EXECUTING` until OutLayer reports `success`, and only USD invoices can be paid through custody.
 - In-app OutLayer multisig approval signing is not wired; pending custody approvals link to the OutLayer dashboard.
 - Cross-chain custody payouts are mainnet-only (OutLayer has no testnet Intents solvers).

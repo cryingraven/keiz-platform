@@ -32,8 +32,16 @@ with reuse detection).
 | Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
 | POST | `/challenge` | Public | `{ accountId, network }` | Creates a one-time NEP-413 challenge (5m TTL, bound to `CHAIN_NETWORK`). |
-| POST | `/near-auth/relay` | Public | `{ receiverId, methodName: "sign", argsBase64, gas, deposit }` | Submits `fast-auth.sign`; contract/guard/gas/deposit allowlisted, fails closed when unconfigured. |
-| POST | `/verify` | Public | `{ accountId, publicKey, signature, nonce, recipient }` | Verifies NEP-413 + full-access key; sets cookies. |
+| POST | `/passkey/signup/options` | Public | `{ accountId, nearPublicKey }` | WebAuthn registration options for a new implicit passkey account. |
+| POST | `/passkey/signup/verify` | Public | `{ accountId, nearPublicKey, credential, wrappedSeed, nep413 }` | Verifies WebAuthn + NEP-413 proof of the derived key; creates the user and sets cookies. |
+| POST | `/passkey/login/options` | Public | — | Usernameless WebAuthn authentication options. |
+| POST | `/passkey/login/verify` | Public | `{ credential, accountId? }` | Verifies the passkey assertion; sets cookies. |
+| POST | `/passkey/recovery/verify` | Public | `{ accountId, publicKey, signature, nonce, recipient }` | NEP-413 recovery-key login; issues a session flagged `recovery`. |
+| POST | `/passkey/unlock` | Member | `{ credentialId }` | Returns the AES-GCM seed wrap for the caller's credential. |
+| GET | `/passkey/credentials` | Member | — | Lists the caller's passkeys (no secrets). |
+| POST | `/passkey/credentials` | Member | `{ nearPublicKey, credential, wrappedSeed, nep413 }` | Adds a passkey after proving the seed with NEP-413; for a wallet account the derived key must already be an on-chain full-access key. |
+| DELETE | `/passkey/credentials/:id` | Member | `?confirmRecovery=true` | Removes a passkey; the last one requires confirmation. |
+| POST | `/verify` | Public | `{ accountId, publicKey, signature, nonce, recipient }` | Wallet NEP-413 login: verifies the signature + full-access key; sets cookies. |
 | POST | `/refresh` | Public | — (refresh cookie) | Rotates refresh token; reuse revokes the family. |
 | POST | `/logout` | Public | — (refresh cookie) | Clears cookies. |
 | GET | `/me` | Public | — | Session object or `{ user: null }`; never 401. |

@@ -80,9 +80,11 @@ export class UsersService {
       }
     }
     if (!membership || !org) {
+      const implicit = /^[0-9a-f]{64}$/i.test(accountId);
+      const label = implicit ? `Passkey ${accountId.slice(0, 6)}` : accountId.split('.')[0];
       org = await this.orgs.create({
-        name: `${accountId.split('.')[0]} workspace`,
-        slug: `${accountId.replace(/[^a-z0-9]+/g, '-')}-${randomBytes(3).toString('hex')}`,
+        name: `${label} workspace`,
+        slug: `${(implicit ? `passkey-${accountId.slice(0, 12)}` : accountId).replace(/[^a-z0-9]+/g, '-')}-${randomBytes(3).toString('hex')}`,
         network,
       });
       membership = await this.memberships.create({

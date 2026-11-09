@@ -12,7 +12,7 @@ function service() {
   const config = {
     get: (key: string) => {
       if (key === 'NEAR_RPC_URL') return 'https://mainnet.test';
-      if (key === 'NEAR_AUTH_RPC_URL') return 'https://testnet.test';
+      if (key === 'NEAR_TESTNET_RPC_URL') return 'https://testnet.test';
       return undefined;
     },
   } as unknown as ConfigService;
@@ -95,7 +95,7 @@ describe('NearVerifyService', () => {
     );
   });
 
-  it('uses NEAR_AUTH_RPC_URL for testnet challenges', async () => {
+  it('uses NEAR_TESTNET_RPC_URL for testnet challenges', async () => {
     const fetchMock = mockRpc({
       account: () => ({ result: { amount: '1' } }),
       key: () => ({ result: { permission: 'FullAccess' } }),

@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { LoginVerifyInput } from '@keiz/shared';
+import type { AuthMethod } from '../common/current-user.decorator';
 import { NearNetwork, walletNetwork } from '../common/network';
 import { UsersService } from '../users/users.service';
 import { AuthChallenge, AuthChallengeDocument } from './auth-challenge.schema';
@@ -20,6 +21,15 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export interface SessionTokens {
   accessToken: string;
   refreshToken: string;
+}
+
+export interface CompletedLogin {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; accountId: string; displayName: string | null };
+  org: { id: string; name: string; slug: string };
+  role: string;
+  authMethod: AuthMethod;
 }
 
 @Injectable()
@@ -77,7 +87,12 @@ export class AuthService {
     };
   }
 
-  async verify(input: LoginVerifyInput) {
+  /**
+   * Verifies a NEP-413 payload and atomically claims its challenge. The caller
+   * decides what to do next: `verify()` issues a wallet session, while passkey
+   * signup uses this to prove ownership of the derived NEAR key.
+   */
+  async claimNep413(input: LoginVerifyInput): Promise<AuthChallengeDocument> {
     const challenge = await this.challenges.findOne({
       nonce: input.nonce,
       accountId: input.accountId,
@@ -122,11 +137,32 @@ export class AuthService {
     if (claimed.modifiedCount !== 1) {
       throw new UnauthorizedException('Challenge already used');
     }
+    return challenge;
+  }
 
-    const { user, org, membership } = await this.users.bootstrap(
-      input.accountId,
-      challenge.network,
-    );
+  async verify(input: LoginVerifyInput): Promise<CompletedLogin> {
+    const challenge = await this.claimNep413(input);
+    return this.completeLogin(input.accountId, challenge.network, 'wallet');
+  }
+
+  /** Recovery-key login: same NEP-413 proof, but flagged so the UI signs locally. */
+  async verifyRecovery(input: LoginVerifyInput): Promise<CompletedLogin> {
+    const challenge = await this.claimNep413(input);
+    return this.completeLogin(input.accountId, challenge.network, 'recovery');
+  }
+
+  /** Used by passkey signup: proves the derived NEAR key, without a session yet. */
+  async verifyNep413Only(input: LoginVerifyInput): Promise<AuthChallengeDocument> {
+    return this.claimNep413(input);
+  }
+
+  /** Bootstrap the user/workspace and issue the normal access + refresh cookies. */
+  async completeLogin(
+    accountId: string,
+    network: NearNetwork,
+    authMethod: AuthMethod,
+  ): Promise<CompletedLogin> {
+    const { user, org, membership } = await this.users.bootstrap(accountId, network);
     const refreshJti = randomUUID();
     await this.users.setRefreshJti(user.id, refreshJti);
     const tokens = await this.issueTokens(
@@ -135,10 +171,11 @@ export class AuthService {
         accountId: user.accountId,
         orgId: org!.id,
         role: membership!.role,
-        network: challenge.network,
+        network,
       },
       user.tokenVersion ?? 0,
       refreshJti,
+      authMethod,
     );
 
     return {
@@ -146,6 +183,7 @@ export class AuthService {
       user: { id: user.id, accountId: user.accountId, displayName: user.displayName ?? null },
       org: { id: org!.id, name: org!.name, slug: org!.slug },
       role: membership!.role,
+      authMethod,
     };
   }
 
@@ -159,14 +197,30 @@ export class AuthService {
     },
     tokenVersion: number,
     refreshJti: string,
+    authMethod: AuthMethod = 'wallet',
+    authTime?: number,
   ): Promise<SessionTokens> {
     const secret = this.config.getOrThrow<string>('JWT_SECRET');
+    const authenticatedAt = authTime ?? Math.floor(Date.now() / 1000);
     const accessToken = await this.jwt.signAsync(
-      { ...payload, type: 'access', ver: tokenVersion },
+      {
+        ...payload,
+        type: 'access',
+        ver: tokenVersion,
+        amr: authMethod,
+        auth_time: authenticatedAt,
+      },
       { secret, expiresIn: this.config.get('JWT_ACCESS_TTL') || '900s' },
     );
     const refreshToken = await this.jwt.signAsync(
-      { ...payload, type: 'refresh', ver: tokenVersion, jti: refreshJti },
+      {
+        ...payload,
+        type: 'refresh',
+        ver: tokenVersion,
+        jti: refreshJti,
+        amr: authMethod,
+        auth_time: authenticatedAt,
+      },
       { secret, expiresIn: this.config.get('JWT_REFRESH_TTL') || '7d' },
     );
     return { accessToken, refreshToken };
@@ -174,7 +228,7 @@ export class AuthService {
 
   /** Returns a session or null - never throws, so the landing page has no 401 noise. */
   async session(token: string | undefined) {
-    const empty = { user: null, org: null, role: null };
+    const empty = { user: null, org: null, role: null, authMethod: null };
     if (!token) return empty;
     try {
       const payload = await this.jwt.verifyAsync(token, {
@@ -195,6 +249,7 @@ export class AuthService {
         },
         org: { id: org.id, name: org.name, slug: org.slug },
         role: membership.role,
+        authMethod: (payload.amr as AuthMethod | undefined) ?? 'wallet',
       };
     } catch {
       return empty;
@@ -273,6 +328,8 @@ export class AuthService {
         },
         authUser.tokenVersion ?? 0,
         activeJti,
+        (payload.amr as AuthMethod | undefined) ?? 'wallet',
+        typeof payload.auth_time === 'number' ? payload.auth_time : undefined,
       );
     } catch {
       throw new UnauthorizedException('Refresh token is invalid');

@@ -20,7 +20,6 @@ export class HealthController {
         ok: true,
         service: 'keiz-api',
         network: network.walletNetwork,
-        authNetwork: network.authNetwork,
         outlayerNetwork: network.outlayerNetwork,
         paymentsMode: network.paymentsMode,
         queues: { enabled: this.queue.enabled },

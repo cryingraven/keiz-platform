@@ -6,6 +6,7 @@ import { HttpAdapterHost } from '@nestjs/core';
 import type { NextFunction, Request, Response } from 'express';
 import { MongoExceptionFilter } from './common/mongo-exception.filter';
 import { auditNetworkConfig } from './common/network';
+import { auditWebAuthnConfig } from './auth/webauthn/webauthn.config';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -15,10 +16,11 @@ async function bootstrap() {
   const logger = new Logger('bootstrap');
   const config = app.get(ConfigService);
   const network = auditNetworkConfig(config);
+  const webauthn = auditWebAuthnConfig(config);
   for (const warning of network.warnings) logger.warn(warning);
   logger.log(
-    `network=${network.walletNetwork} auth=${network.authNetwork} ` +
-      `outlayer=${network.outlayerNetwork} payments=${network.paymentsMode}`,
+    `network=${network.walletNetwork} outlayer=${network.outlayerNetwork} ` +
+      `payments=${network.paymentsMode} webauthn=${webauthn.rpId}`,
   );
   app.setGlobalPrefix('api');
   // Respect X-Forwarded-For from the reverse proxy. Without this every audit

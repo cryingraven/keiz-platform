@@ -6,7 +6,7 @@ Diagrams are Mermaid and render on GitHub.
 
 - **Web** — Next.js 16 App Router, React 19, Tailwind 4
 - **API** — NestJS 12, Mongoose 9, MongoDB
-- **Chain** — NEAR RPC, NEAR Intents 1Click, NEAR Auth (FastAuth), OutLayer custody, NEAR AI Cloud
+- **Chain** — NEAR RPC, NEAR Intents 1Click, self-hosted WebAuthn passkeys, OutLayer custody, NEAR AI Cloud
 
 ---
 
@@ -16,7 +16,7 @@ Diagrams are Mermaid and render on GitHub.
 flowchart LR
   subgraph Client["Browser"]
     UI["Next.js App Router"]
-    WalletUI["near-connect / NEAR Auth SDK"]
+    WalletUI["near-connect / passkey client"]
   end
 
   subgraph Edge["Next.js server"]
@@ -44,8 +44,7 @@ flowchart LR
   OneClick["NEAR Intents 1Click"]
   OutLayer["OutLayer custody<br/>Intel TDX + NEAR MPC"]
   NEARAI["NEAR AI Cloud"]
-  Auth0["Auth0 + NEAR Auth"]
-  Relayer["NEAR Auth relayer"]
+  Passkey["WebAuthn authenticator<br/>Face ID / Touch ID / Windows Hello"]
 
   UI --> Proxy
   WalletUI --> Proxy
@@ -61,9 +60,7 @@ flowchart LR
   Guards --> Idx
   Guards --> AuditMod
 
-  AuthMod --> Auth0
-  AuthMod --> Relayer
-  Relayer --> Auth0
+  AuthMod --> Passkey
   AuthMod --> RPC
 
   UsersMod --> DB
@@ -98,10 +95,10 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph Web["apps/web"]
-    Login["/login<br/>NEAR Auth + wallets"]
+    Login["/login<br/>passkey + wallets"]
     Dash["/dashboard<br/>overview · bills · receivables<br/>customers · vendors · team"]
     Ops["payments · accounting · agent<br/>audit · settings · assistant"]
-    Lib["lib/auth · lib/near-auth<br/>lib/chat-stream · lib/api · lib/csv"]
+    Lib["lib/auth · lib/passkey<br/>lib/chat-stream · lib/api · lib/csv"]
   end
 
   subgraph Shared["packages/shared"]
@@ -128,7 +125,7 @@ flowchart TB
   end
 
   subgraph Worker["apps/api worker"]
-    Jobs["payments · outlayer<br/>indexer · near-auth"]
+    Jobs["payments · outlayer<br/>indexer"]
   end
 
   Web --> Shared
@@ -141,7 +138,7 @@ Web routes (App Router, client-rendered):
 | Route | Purpose |
 |---|---|
 | `/` | Landing page. |
-| `/login` | The only sign-in entry: NEAR Auth card + the full compatible NEAR wallet list. |
+| `/login` | The only sign-in entry: passkey account/sign-in + the full compatible NEAR wallet list + recovery key. |
 | `/dashboard` | Overview. |
 | `/dashboard/invoices`, `/dashboard/invoices/[id]` | AP bills and detail (approve, quote, pay). |
 | `/dashboard/receivables`, `/dashboard/receivables/[id]` | AR invoices, receipts and collection quote. |
@@ -185,37 +182,36 @@ flowchart TD
 
 ## 4. Authentication
 
-### 4.1 NEAR Auth (Auth0 + MPC)
+### 4.1 Passkey (self-hosted WebAuthn + PRF)
 
-Auth0 handles passkey/Google/Apple/email login. The browser SDK derives the
-MPC key, requests a NEP-413 message signature, and builds the `sign` action.
-The API relayer submits it to `fast-auth`; only the configured contract and
-`jwt#https://<auth0-domain>/` guard are accepted, with a 1 yoctoNEAR deposit.
+The API is the WebAuthn relying party. A random ed25519 seed is generated in
+the browser; the passkey's PRF output derives an AES-256-GCM wrap key, and the
+API stores only the ciphertext. Signup also proves the derived NEAR key with a
+NEP-413 signature. Login is a WebAuthn assertion; on-chain actions unlock the
+seed locally and sign with it. The PRF output never reaches the server.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor U as User
   participant W as Web
-  participant N as Auth0
   participant A as API
-  participant F as fast-auth contract
   participant P as NEAR RPC
 
-  U->>W: Continue with NEAR Auth
-  W->>N: login (passkey / social / email)
-  N-->>W: session + signing JWT
+  U->>W: Create a passkey account
+  W->>W: seed = random32 · nearKey = ed25519(seed)
+  W->>A: POST /auth/passkey/signup/options
+  A-->>W: WebAuthn creation options + challenge
+  W->>W: passkey create + PRF · AES-GCM wrap(seed)
   W->>A: POST /auth/challenge
-  A-->>W: message · recipient · nonce TTL 5m
-  W->>N: requestMessageSignature (NEP-413)
-  N-->>W: JWT with signed message payload
-  W->>A: POST /auth/near-auth/relay (sign action)
-  A->>F: sign via funded relayer
-  F-->>A: SuccessValue = MPC signature
-  A-->>W: successValue
-  W->>A: POST /auth/verify
+  A-->>W: NEP-413 message · nonce TTL 5m
+  W->>A: POST /auth/passkey/signup/verify (WebAuthn + NEP-413 + wrap)
   A->>P: view_account + view_access_key
   Note over A,P: UNKNOWN_ACCOUNT + implicit hex is allowed once
+  A-->>W: access + refresh cookies
+  W->>A: POST /auth/passkey/login/options
+  A-->>W: assertion challenge
+  W->>A: POST /auth/passkey/login/verify (assertion, PRF stripped)
   A-->>W: access + refresh cookies
 ```
 
@@ -258,8 +254,8 @@ at execution, requires M-of-N approval, and can pay either a vendor directly or
 a committed 1Click deposit address for cross-chain payouts. The intended split is
 that the API coordinates the 1Click quote/status while the contract only moves
 NEP-141 tokens; that wiring is not implemented yet, so the vault is operated
-separately. The NEAR Auth relayer remains restricted to `fast-auth.sign` and is
-not used for treasury calls.
+separately. There is no NEAR Auth relayer; treasury calls are wallet-signed or
+signed by the passkey-derived key.
 
 ### 4.4 Payment intents and rails
 
@@ -742,7 +738,7 @@ See [Data model reference](./data-model.md) for every collection and field.
 ```mermaid
 flowchart LR
   subgraph Browser["Untrusted: browser"]
-    B["Session cookie<br/>wallet or NEAR Auth signature"]
+    B["Session cookie<br/>wallet, passkey or recovery"]
   end
 
   subgraph KEIZ["Trusted: KEIZ API"]
@@ -752,7 +748,7 @@ flowchart LR
   subgraph Partners["Third parties"]
     OC["1Click<br/>sees quote and deposit"]
     OL["OutLayer TEE<br/>holds keys · enforces policy"]
-    AU["Auth0 + fast-auth + MPC<br/>identity and NEAR Auth signing"]
+    AU["WebAuthn authenticator<br/>Face ID / Touch ID / Windows Hello"]
     AI["NEAR AI Cloud<br/>sees prompts and tool results"]
   end
 
@@ -771,9 +767,9 @@ flowchart LR
 - **1Click is mainnet-only.** There is no testnet deployment.
 - **OutLayer keys never leave the TEE.** The API key is full wallet authority;
   it is stored encrypted and only exposed through the OWNER handoff URL.
-- **The NEAR Auth relayer** can only submit `sign` to `fast-auth`, for the
-  expected guard id, within the gas cap and with a 1 yoctoNEAR deposit. It
-  cannot move funds.
+- **The WebAuthn relying party** verifies origin, RP ID and user verification.
+  It stores only an encrypted seed wrap; the PRF output stays in the browser.
+  The passkey-derived key is used for on-chain actions via the local signer.
 - **NEAR AI** receives the prompt, the conversation window, and tool results.
   Use the local provider for offline or sensitive demos.
 
@@ -789,15 +785,15 @@ flowchart LR
   API --> OneClick["1Click"]
   API --> OutLayer["OutLayer"]
   API --> NEARAI["NEAR AI Cloud"]
-  API --> Auth0["Auth0 / fast-auth"]
+  Web -.->|"WebAuthn assertion"| API
 ```
 
 - Two long-running processes plus a worker: Next, Nest, and the BullMQ worker.
-- Pollers/queue processors (`payments`, `outlayer`, `indexer`, `near-auth`) run in the worker; Redis is required (`REDIS_URL`). The API only produces jobs. Tests set `QUEUES_ENABLED=false`.
+- Pollers/queue processors (`payments`, `outlayer`, `indexer`) run in the worker; Redis is required (`REDIS_URL`). The API only produces jobs. Tests set `QUEUES_ENABLED=false`.
 - Queue cadence: payment polls run per payment (4s default) plus a sweep every
   `PAYMENT_SWEEP_INTERVAL_MS` (30s); OutLayer polls start at 2s with 5s/30s/5m backoff plus a
-  5m sweeper; the indexer syncs every `INDEXER_INTERVAL_MS` (30s); the NEAR Auth relay queue
-  runs with concurrency 1. `POST /api/indexer/collect` triggers an immediate collect sync.
+  5m sweeper; the indexer syncs every `INDEXER_INTERVAL_MS` (30s).
+  `POST /api/indexer/collect` triggers an immediate collect sync.
 - Mongo is required for app state and Mastra memory. Use the same database name
   for both clients.
 - `pnpm dev` runs Turbo; `pnpm build` builds shared → api → web. Stop dev before
@@ -810,7 +806,7 @@ flowchart LR
 | Suite | Covers |
 |---|---|
 | `pnpm test` | 84 unit tests (69 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, OutLayer status map |
-| `pnpm --filter @keiz/api smoke` | 50 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, NEAR Auth relayer fencing |
+| `pnpm --filter @keiz/api smoke` | 50 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, passkey endpoint fencing |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
 | `pnpm --filter @keiz/api smoke:mastra` | Mastra plan suspension, approve/resume, typed cards, request-scoped tools, memory, thread isolation |
 | `pnpm contracts:test` | collect message parsing and vault policy validation |
@@ -824,5 +820,5 @@ flowchart LR
 - [Contract README](../contracts/README.md)
 - [Security model](../README.md#security-model)
 - [Agent custody](../README.md#agent-custody-outlayer)
-- [Login (NEAR Auth + wallet)](../README.md#login-near-auth--wallet)
+- [Login (passkey + wallet)](../README.md#login-passkey--wallet)
 - [Agent instructions](../AGENTS.md)
