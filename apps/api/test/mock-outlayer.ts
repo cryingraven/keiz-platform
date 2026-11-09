@@ -51,7 +51,8 @@ export async function startMockOutlayer(port: number) {
         wallet_id: 'wallet-mock-1',
         controller: publicKey,
         frozen: false,
-        policy: 'none',
+        policy: 'configured',
+        rules: { per_tx_limit: '10000000000', daily_limit: '50000000000' },
         usage: {},
       });
     }
@@ -71,7 +72,12 @@ export async function startMockOutlayer(port: number) {
     }
 
     if (req.method === 'POST' && path === '/wallet/v1/intents/withdraw/dry-run') {
-      return json(res, { would_succeed: true, estimated_fee: '0', fee_token: 'near' });
+      return json(res, {
+        would_succeed: true,
+        estimated_fee: '0',
+        fee_token: 'near',
+        policy_check: { decision: 'allowed' },
+      });
     }
 
     if (req.method === 'POST' && path === '/wallet/v1/intents/withdraw') {

@@ -74,11 +74,19 @@ export class OutlayerPoller {
 
     if (status === payment.status && request.status === payment.rawStatus) return;
 
-    payment.status = status;
-    payment.rawStatus = request.status;
     const result = request.result as { intent_hash?: string } | null | undefined;
-    if (result?.intent_hash) payment.txHash = result.intent_hash;
-    await payment.save();
+    const update: Record<string, unknown> = { status, rawStatus: request.status };
+    if (result?.intent_hash) update.txHash = result.intent_hash;
+
+    // Atomic claim: duplicate queue jobs must not create duplicate events or
+    // advance the invoice twice.
+    const updated = await this.payments.findOneAndUpdate(
+      { _id: payment._id, status: payment.status, rawStatus: payment.rawStatus },
+      { $set: update },
+      { returnDocument: 'after' },
+    );
+    if (!updated) return;
+    Object.assign(payment, updated.toObject());
 
     await this.events.create({
       orgId: payment.orgId,
@@ -98,6 +106,11 @@ export class OutlayerPoller {
         await this.actions.updateOne(
           { _id: payment.agentActionId },
           { $set: { status: 'EXECUTED', executedAt: new Date() } },
+        );
+      } else if (status === 'PROCESSING') {
+        await this.actions.updateOne(
+          { _id: payment.agentActionId },
+          { $set: { status: 'EXECUTING' } },
         );
       } else if (status === 'NEEDS_REVIEW') {
         await this.actions.updateOne(

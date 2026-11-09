@@ -492,6 +492,11 @@ export class AgentService {
       status: string;
     },
   ) {
+    if (invoice.currency !== 'USD') {
+      throw new BadRequestException(
+        `Custody payouts support USD invoices only (received ${invoice.currency})`,
+      );
+    }
     const apiKey = this.decryptOutlayerKey(wallet);
     const vendorRecord = await this.vendors.findOne(orgId, invoice.vendorId);
     const addressError = validatePayoutAddress(
@@ -536,6 +541,12 @@ export class AgentService {
         `Custody policy refused the payment: ${dryRun.reason ?? 'unknown'} ${dryRun.message ?? ''}`.trim(),
       );
     }
+    const policyDecision = dryRun.policy_check?.decision;
+    if (!policyDecision || !['allowed', 'requires_approval'].includes(policyDecision)) {
+      throw new BadRequestException(
+        `Custody wallet has no usable policy (${policyDecision ?? 'unknown'}). Set a policy in the OutLayer handoff before paying.`,
+      );
+    }
 
     const response = await this.outlayer.withdraw(apiKey, {
       chain: vendorRecord.payoutChain,
@@ -546,7 +557,7 @@ export class AgentService {
     });
 
     const pendingApproval = response.status === 'pending_approval';
-    const status =
+    const paymentStatus =
       response.status === 'success'
         ? 'SUCCEEDED'
         : response.status === 'failed'
@@ -554,8 +565,24 @@ export class AgentService {
           : response.status === 'refunded'
             ? 'REFUNDED'
             : 'PROCESSING';
+    const actionStatus = pendingApproval
+      ? 'PENDING_APPROVAL'
+      : paymentStatus === 'FAILED' || paymentStatus === 'REFUNDED'
+        ? 'FAILED'
+        : 'EXECUTING';
 
-    if (status === 'FAILED' || status === 'REFUNDED') {
+    // Persist the external request id before creating the payment. If the DB
+    // write below fails, the catch block must never put the action back into
+    // APPROVED and invite a second withdrawal.
+    action.outlayerRequestId = response.request_id;
+    action.outlayerApprovalId = response.approval_id ?? undefined;
+    action.outlayerRequired = response.required ?? undefined;
+    action.outlayerApproved = response.approved ?? undefined;
+    action.status = actionStatus;
+    action.executedAt = undefined;
+    await action.save();
+
+    if (paymentStatus === 'FAILED' || paymentStatus === 'REFUNDED') {
       throw new BadRequestException(`Custody withdrawal ended as ${response.status}`);
     }
 
@@ -564,7 +591,7 @@ export class AgentService {
       invoiceId: String(invoice._id),
       provider: 'outlayer',
       payer: 'AGENT',
-      status,
+      status: paymentStatus,
       rawStatus: response.status,
       originAsset: token.tokenId,
       destinationAsset: token.tokenId,
@@ -585,16 +612,18 @@ export class AgentService {
     });
 
     action.paymentId = payment.id;
-    action.outlayerRequestId = response.request_id;
-    action.outlayerApprovalId = response.approval_id ?? undefined;
-    action.outlayerRequired = response.required ?? undefined;
-    action.outlayerApproved = response.approved ?? undefined;
-    action.status = pendingApproval ? 'PENDING_APPROVAL' : 'EXECUTED';
-    action.executedAt = new Date();
+    if (paymentStatus === 'SUCCEEDED') {
+      action.status = 'EXECUTED';
+      action.executedAt = new Date();
+    }
     await action.save();
 
     await this.invoices.markPaymentPending(orgId, String(invoice._id), payment.id);
-    await this.queue.enqueueOutlayerPoll(payment.id, 2_000);
+    if (paymentStatus === 'SUCCEEDED') {
+      await this.invoices.markPaid(orgId, String(invoice._id));
+    } else {
+      await this.queue.enqueueOutlayerPoll(payment.id, 2_000);
+    }
 
     return { action: action.toObject(), payment: payment.toObject() };
   }

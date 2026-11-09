@@ -33,10 +33,12 @@ async function main() {
   process.env.OUTLAYER_BASE_URL = `http://127.0.0.1:${MOCK_PORT}`;
   process.env.CHAT_PROVIDER = 'local';
   process.env.NODE_ENV = 'test';
+  process.env.QUEUES_ENABLED = 'false';
 
   const { NestFactory } = await import('@nestjs/core');
   const { AppModule } = await import('../src/app.module');
   const { UsersService } = await import('../src/users/users.service');
+  const { OutlayerPoller } = await import('../src/outlayer/outlayer.poller');
 
   const app = await NestFactory.create(AppModule, { logger: ['error'] });
   app.setGlobalPrefix('api');
@@ -159,16 +161,23 @@ async function main() {
 
     const executed = await req<{
       action: { status: string; paymentId?: string };
-      payment: { provider: string; status: string; amountOutFormatted?: string };
+      payment: { _id: string; provider: string; status: string; amountOutFormatted?: string };
     }>(`/agent/actions/${action._id}/execute`, { method: 'POST', cookie });
-    assert(executed.action.status === 'EXECUTED', 'action executed');
+    assert(
+      executed.action.status === 'EXECUTING',
+      'action is executing while custody is processing',
+    );
     assert(executed.payment.provider === 'outlayer', 'payment uses the custody provider');
     assert(executed.payment.status === 'PROCESSING', 'payment starts processing');
     assert(executed.payment.amountOutFormatted === '4200', 'stablecoin amount is the invoice total');
     pass('custody withdraw executed and recorded as a payment');
 
-    console.log('  ...  waiting for the custody poller');
-    await new Promise((resolve) => setTimeout(resolve, 20_000));
+    console.log('  ...  polling custody directly (queue worker disabled in tests)');
+    const poller = app.get(OutlayerPoller);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const result = await poller.pollOne(executed.payment._id);
+      if (result === 'terminal') break;
+    }
 
     const paid = await req<{ status: string; paidAt?: string }>(`/invoices/${invoice._id}`, {
       cookie,

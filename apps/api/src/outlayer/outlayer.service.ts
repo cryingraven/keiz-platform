@@ -25,6 +25,8 @@ export interface OutlayerWalletInfo {
   intentsUsdc: string;
   frozen: boolean;
   policy: Record<string, unknown> | null;
+  /** Non-fatal custody API failures; balances may be stale/zero when present. */
+  errors?: string[];
 }
 
 type Chain =
@@ -119,10 +121,15 @@ export class OutlayerService {
 
   async describe(apiKey: string): Promise<OutlayerWalletInfo> {
     const client = this.client(apiKey);
+    const errors: string[] = [];
+    const capture = (label: string, error: unknown) => {
+      errors.push(`${label}: ${(error as Error).message}`);
+      return null;
+    };
     const [address, native, policy] = await Promise.all([
-      client.getAddress('near').catch(() => null),
-      client.getBalance({ chain: 'near' }).catch(() => null),
-      client.policy.get().catch(() => null),
+      client.getAddress('near').catch((error) => capture('address', error)),
+      client.getBalance({ chain: 'near' }).catch((error) => capture('balance', error)),
+      client.policy.get().catch((error) => capture('policy', error)),
     ]);
 
     let intentsUsdc = '0';
@@ -134,7 +141,8 @@ export class OutlayerService {
         source: 'intents',
       });
       intentsUsdc = balance.balance ?? '0';
-    } catch {
+    } catch (error) {
+      capture('intentsBalance', error);
       // no Intents balance or token catalog unavailable
     }
 
@@ -145,6 +153,7 @@ export class OutlayerService {
       intentsUsdc,
       frozen: Boolean((policy as { frozen?: boolean } | null)?.frozen),
       policy: (policy as Record<string, unknown> | null) ?? null,
+      errors: errors.length > 0 ? errors : undefined,
     };
   }
 

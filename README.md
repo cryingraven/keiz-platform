@@ -261,6 +261,7 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 
 - Agent custody is real when OutLayer is enabled. With it disabled, the local agent wallet still cannot sign on-chain; execution delegates to the mock/1Click payment provider.
 - NEAR Auth authenticates only. The relayer is restricted to `fast-auth.sign`, so deposits are still signed in a NEAR wallet; a NEAR Auth user needs a wallet to fund an invoice.
+- OutLayer custody execution requires a configured policy (`dryRun.policy_check.decision` must be `allowed` or `requires_approval`). No-policy wallets are blocked. Actions remain `EXECUTING` until OutLayer reports `success`, and only USD invoices can be paid through custody.
 - In-app OutLayer multisig approval signing is not wired; pending custody approvals link to the OutLayer dashboard.
 - Cross-chain custody payouts are mainnet-only (OutLayer has no testnet Intents solvers).
 - The payment/outlayer/indexer pollers are durable BullMQ jobs. The API process only produces; run the worker (`pnpm worker`) next to it. Redis is required in dev/prod; tests use `QUEUES_ENABLED=false`.
