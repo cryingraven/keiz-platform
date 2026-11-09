@@ -263,12 +263,13 @@ Implemented:
 | Draft bill edit | `PATCH /api/invoices/:id` (DRAFT only, totals recomputed) |
 | AR collection config | `GET/PATCH /api/orgs/current/collection` |
 | CSV export | client-side download on bills, receivables and journal pages |
+| Report export | server-side PDF/XLSX from `/api/accounting/reports/export` |
 
 Still missing:
 
 | Capability | Needed work |
 |---|---|
 | Invites | An invite-token flow around `POST /members`; today an admin adds an existing NEAR account id directly. |
-| Server-side exports | API endpoints for CSV/accounting exports (the UI currently exports the loaded page). |
+| Server-side CSV exports | API endpoints for CSV exports (the UI currently exports the loaded page). PDF/XLSX report exports are implemented. |
 | Attachments | Presigned upload + an `attachments` collection. |
 | Notifications | Email/webhook on submit/approve/pay. |

@@ -12,7 +12,8 @@ Start here:
 | [Contract README](../contracts/README.md) | Contract ABIs, message formats, event schemas, deployment |
 | [Security model](../README.md#security-model) | RBAC, deposit verification, quote idempotency, agent controls, sessions, hardening |
 | [Agent custody](../README.md#agent-custody-outlayer) | OutLayer wallets, policy handoff, funding, testnet/mainnet limits |
-| [Login (passkey + wallet)](../README.md#login-passkey--wallet) | WebAuthn PRF passkey, self-custodial key wrap, wallet NEP-413, recovery key |
+| [Login (passkey + wallet)](../README.md#login-passkey--wallet) | WebAuthn PRF passkey, self-custodial key wrap, NEP-413 wallet sign-in |
+| [Submission guide](../submission-guide.md) | NEAR HACKATHON checklist, tracks, demo script and submission API |
 | [AGENTS.md](../AGENTS.md) | Repo rules and gotchas for coding agents |
 
 ## Diagram conventions

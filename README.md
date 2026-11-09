@@ -4,7 +4,7 @@ A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-ent
 
 ![KEIZ](https://img.shields.io/badge/NEAR-Intents-4f46e5) ![NEP-413](https://img.shields.io/badge/auth-NEP--413-0f9d76)
 
-**Docs:** [Architecture & diagrams](docs/architecture.md) · [API reference](docs/api.md) · [Data model](docs/data-model.md) · [Chat cards & approvals](docs/chat-cards.md) · [Integrations & contracts](docs/integrations.md) · [Contract README](contracts/README.md) · [Docs index](docs/README.md) · [Agent instructions](AGENTS.md)
+**Docs:** [Architecture & diagrams](docs/architecture.md) · [API reference](docs/api.md) · [Data model](docs/data-model.md) · [Chat cards & approvals](docs/chat-cards.md) · [Integrations & contracts](docs/integrations.md) · [Contract README](contracts/README.md) · [Docs index](docs/README.md) · [Submission guide](submission-guide.md) · [Agent instructions](AGENTS.md)
 
 ## Stack
 
@@ -19,6 +19,20 @@ A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-ent
 | Chain data | NEAR RPC + append-only Mongo event log |
 | Accounting | Per-org chart of accounts, immutable journal, AP/AR subledgers |
 | Agent custody | OutLayer (Intel TDX + NEAR MPC) — optional |
+
+## Hackathon disclosure
+
+The repository history starts on 2026-11-03, inside the NEAR HACKATHON window
+(2026-11-01 to 2026-11-14). There is no pre-hackathon product baseline to diff against.
+
+The full dependency set is in the package manifests. Major libraries and SDKs:
+
+- Web: Next.js 16, React 19, Tailwind CSS 4, `@hot-labs/near-connect`, `near-api-js`, `@noble/curves`, `@noble/hashes`.
+- API: NestJS 12, Mongoose 9, Zod 4, Mastra, BullMQ, `@outlayer/sdk`, ExcelJS, PDFKit.
+- Contracts: Rust with `near-sdk`.
+
+AI coding agents were used during implementation and documentation. The repository history is the
+record of the changes. No secrets or private keys are committed.
 
 ## Quick start
 
@@ -44,9 +58,28 @@ pnpm --filter @keiz/api seed demo.near
 
 Open <http://localhost:3000>, create a passkey account or sign in with a NEAR wallet, and press **Load demo data** if the workspace is empty.
 
+## Judge quick path
+
+```bash
+pnpm install
+cp .env.example .env          # set JWT_SECRET and AGENT_WALLET_MASTER_KEY
+docker compose up -d          # MongoDB :27017 + Redis :6379
+pnpm dev                      # web :3000, api :3001
+pnpm worker                   # BullMQ worker (Redis)
+```
+
+Open <http://localhost:3000>, sign in, and press **Load demo data** if needed. Then:
+
+1. **Bills (AP):** open `INV-1001`, approve it, request a quote and simulate settlement. Check that the invoice becomes `PAID` and the ledger has the expense, AP and cash postings.
+2. **Receivables (AR):** open `AR-2001`, record a partial receipt, and check the outstanding balance and cash posting.
+3. **Reporting:** choose monthly, quarterly or annual. Review inflow/outflow, profit & loss and the balance sheet, then export the report as PDF and Excel.
+4. **Assistant:** ask “What do we owe this week?” and approve the plan. Read-only tools run; a payment proposal needs a separate confirmation and still cannot move funds.
+
+Mock payments are the default (`PAYMENTS_MODE=mock`), so this path needs no mainnet funds.
+
 ## What is implemented
 
-- **Passkey login** — self-hosted WebAuthn in the API. The passkey unlocks a random ed25519 seed in the browser via the PRF extension; the seed is the NEAR account key and is never sent to the server. The API stores only an AES-GCM wrap it cannot decrypt plus a recovery-key flow (NEP-413).
+- **Passkey login** — self-hosted WebAuthn in the API. The passkey unlocks a random ed25519 seed in the browser via the PRF extension; the seed is the NEAR account key and is never sent to the server. The API stores only an AES-GCM wrap it cannot decrypt. A recovery-key endpoint (NEP-413) remains available; the current login UI exposes passkey and wallet sign-in only.
 - **Wallet login (NEP-413)** — the user signs a one-time message in their NEAR wallet. The backend verifies the signature and the account's full-access key before issuing an httpOnly session cookie. No keys or seed phrases reach the server.
 - **Invoice lifecycle (AP)** — DRAFT → SUBMITTED → APPROVED / REJECTED → PAYMENT_PENDING → PAID, with an append-only approval trail. Totals are computed with integer minor units and 5-decimal-safe tax math.
 - **Customer invoices (AR)** — customers, customer invoices (DRAFT → ISSUED → PARTIALLY_PAID → PAID, plus VOID) and manual receipts with an optional transaction hash. Overdue is computed from the due date, never stored.
@@ -111,14 +144,15 @@ POST /api/auth/switch-org         switch active workspace, reissue cookies
 GET/POST /api/vendors
 GET/PATCH/DELETE /api/vendors/:id   PATCH/DELETE ADMIN/OWNER (delete archives)
 
-GET/POST /api/invoices
+GET  /api/invoices                ?status= &vendorId= &from= &to= &dateField=
+POST /api/invoices                create a DRAFT bill
 GET  /api/invoices/summary
 PATCH /api/invoices/:id             DRAFT only, totals recomputed
 POST /api/invoices/:id/submit
 POST /api/invoices/:id/decision     APPROVER/ADMIN/OWNER
 POST /api/invoices/:id/void         ADMIN/OWNER
 
-GET  /api/payments                ?invoiceId= filter
+GET  /api/payments                ?invoiceId= &from= &to=
 GET  /api/payments/open
 GET  /api/payments/tokens
 POST /api/payments                commit a quote
@@ -132,7 +166,7 @@ GET/POST /api/customers            GET supports ?includeArchived=true&q=...
 PATCH/DELETE /api/customers/:id     ADMIN/OWNER (delete archives)
 POST /api/customers/:id/restore     ADMIN/OWNER
 
-GET  /api/receivables                 ?status= &customerId= &currency=
+GET  /api/receivables                 ?status= &customerId= &currency= &from= &to= &dateField=
 GET  /api/receivables/summary
 GET  /api/receivables/:id
 POST /api/receivables
@@ -150,6 +184,8 @@ GET  /api/accounting/trial-balance    ?currency= &asOf=
 GET  /api/accounting/journal-entries  ?currency= &accountCode= &sourceType= &sourceId=
 POST /api/accounting/journal-entries  ADMIN/OWNER, balanced manual entry
 GET  /api/accounting/aging            ?side=AP|AR &currency=
+GET  /api/accounting/reports          ?currency= &from= &to=
+GET  /api/accounting/reports/export   ?currency= &from= &to= &format=pdf|xlsx
 POST /api/accounting/rebuild          ADMIN/OWNER, idempotent backfill
 
 GET  /api/agent/wallet
@@ -181,6 +217,9 @@ GET  /api/health                  public
 
 The full route table with request schemas and status codes is in
 [`docs/api.md`](docs/api.md).
+
+`dateField` on bill and receivable lists is `issueDate` (default), `dueDate` or
+`createdAt`. `from` and `to` are ISO datetimes and filter inclusively by UTC day.
 
 ## Security model
 
@@ -215,9 +254,9 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 
 ## Login (passkey + wallet)
 
-`/login` offers **Create a passkey account**, **I already have one**, and a list of every compatible NEAR Connect wallet. A passkey creates a random ed25519 seed in the browser, unlocks it with the WebAuthn PRF extension, and wraps it in AES-256-GCM under a PRF-derived key before uploading the ciphertext. The API is the WebAuthn relying party and stores only that ciphertext plus the credential metadata; it never sees the seed or the PRF output. The wallet list is not hardcoded: it renders `connector.availableWallets` filtered to wallets that support NEP-413 `signMessage` on the active network.
+`/login` offers **Create account**, **Sign in** on the passkey card, and one **Continue with a NEAR wallet** button that opens the NEAR Connect selector. The selector is not hardcoded: it uses `connector.availableWallets`, filtered to wallets that support NEP-413 `signMessage` on the active network. A passkey creates a random ed25519 seed in the browser, unlocks it with the WebAuthn PRF extension, and wraps it in AES-256-GCM under a PRF-derived key before uploading the ciphertext. The API is the WebAuthn relying party and stores only that ciphertext plus the credential metadata; it never sees the seed or the PRF output.
 
-Signup requires both WebAuthn registration and a NEP-413 signature from the derived key, so an attacker cannot claim an arbitrary implicit account id. Login is a WebAuthn assertion; on-chain actions unlock the seed locally and sign with `PasskeySigner`. Multiple passkeys wrap the same seed, and an exported `ed25519:` recovery key can sign in through `/auth/passkey/recovery/verify`.
+Signup requires both WebAuthn registration and a NEP-413 signature from the derived key, so an attacker cannot claim an arbitrary implicit account id. Login is a WebAuthn assertion; on-chain actions unlock the seed locally and sign with `PasskeySigner`. Multiple passkeys wrap the same seed. The API still accepts an exported `ed25519:` recovery key through `/auth/passkey/recovery/verify`, but the current login UI does not expose that option.
 
 `NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives both login paths and the dashboard badge. The API's `CHAIN_NETWORK` must match it. Passkeys are bound to `WEBAUTHN_RP_ID`; changing it invalidates existing credentials.
 
@@ -256,8 +295,8 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test                              # 84 unit tests (69 API + 15 shared)
-pnpm --filter @keiz/api smoke          # 50 end-to-end checks, in-memory Mongo
+pnpm test                              # unit tests across API and shared
+pnpm --filter @keiz/api smoke          # end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 pnpm contracts:test                    # Rust contract unit tests
