@@ -30,14 +30,13 @@ describe('network config', () => {
       auditNetworkConfig(
         config({
           CHAIN_NETWORK: 'testnet',
-          NEAR_AUTH_NETWORK: 'testnet',
           PAYMENTS_MODE: 'intents',
         }),
       ),
     ).toThrow(/mainnet-only/);
   });
 
-  it('rejects a passkey network that differs from the app network', () => {
+  it('rejects a NEAR Auth network that differs from the app network', () => {
     expect(() =>
       auditNetworkConfig(
         config({
@@ -67,7 +66,6 @@ describe('network config', () => {
       auditNetworkConfig(
         config({
           CHAIN_NETWORK: 'testnet',
-          NEAR_AUTH_NETWORK: 'testnet',
           OUTLAYER_ENABLED: 'true',
           OUTLAYER_NETWORK: 'testnet',
           OUTLAYER_BASE_URL: 'https://api.outlayer.ai',
@@ -81,8 +79,6 @@ describe('network config', () => {
     const result = auditNetworkConfig(
       config({
         CHAIN_NETWORK: 'testnet',
-        NEAR_AUTH_NETWORK: 'testnet',
-        NEAR_AUTH_CONTRACT_ID: 'fast-auth.testnet',
         NEAR_RPC_URL: 'https://free.rpc.fastnear.com',
         PAYMENTS_MODE: 'mock',
       }),

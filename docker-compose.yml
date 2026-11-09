@@ -7,6 +7,15 @@ services:
       - "127.0.0.1:27017:27017"
     volumes:
       - keiz-mongo:/data/db
+  redis:
+    image: redis:7-alpine
+    container_name: keiz-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - keiz-redis:/data
 
 volumes:
   keiz-mongo:
+  keiz-redis:

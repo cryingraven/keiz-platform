@@ -17,4 +17,10 @@ export class IndexerController {
   backfill(@CurrentUser() user: AuthUser, @Param('paymentId') paymentId: string) {
     return this.indexer.backfill(user.orgId, paymentId);
   }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post('collect')
+  collect() {
+    return this.indexer.syncCollectReceipts(100);
+  }
 }

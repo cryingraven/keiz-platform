@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AgentModule } from './agent/agent.module';
 import { AuditInterceptor } from './audit/audit.interceptor';
@@ -16,6 +15,7 @@ import { HealthController } from './health/health.controller';
 import { IndexerModule } from './indexer/indexer.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { PaymentsModule } from './payments/payments.module';
+import { QueuesModule } from './queues/queues.module';
 import { ReceivablesModule } from './receivables/receivables.module';
 import { UsersModule } from './users/users.module';
 import { VendorsModule } from './vendors/vendors.module';
@@ -35,13 +35,13 @@ import { VendorsModule } from './vendors/vendors.module';
       }),
     }),
     AuditModule,
-    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     UsersModule,
     AuthModule,
     VendorsModule,
     InvoicesModule,
     PaymentsModule,
+    QueuesModule,
     ReceivablesModule,
     AgentModule,
     ChatModule,

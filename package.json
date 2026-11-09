@@ -12,7 +12,10 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "seed": "pnpm --filter @keiz/api seed"
+    "seed": "pnpm --filter @keiz/api seed",
+    "worker": "pnpm --filter @keiz/api worker:dev",
+    "contracts:test": "cargo test --workspace --manifest-path contracts/Cargo.toml",
+    "contracts:build": "cargo build --workspace --target wasm32-unknown-unknown --release --manifest-path contracts/Cargo.toml"
   },
   "devDependencies": {
     "turbo": "2.11.10",

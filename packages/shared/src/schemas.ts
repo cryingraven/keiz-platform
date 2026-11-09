@@ -121,6 +121,15 @@ export const recordReceiptSchema = z.object({
   method: z.enum(RECEIPT_METHODS).default('BANK_TRANSFER'),
   reference: z.string().max(200).optional(),
   txHash: z.string().max(200).optional(),
+  chainEventId: z.string().max(200).optional(),
+  receivableRef: z.string().max(64).optional(),
+  tokenContract: z.string().max(64).optional(),
+  sender: z.string().max(64).optional(),
+});
+
+export const collectionQuoteSchema = z.object({
+  originAsset: z.string().min(1).max(200),
+  refundTo: z.string().min(1).max(200),
 });
 
 const journalAmount = z
@@ -197,6 +206,7 @@ export type CreateMemberInput = z.infer<typeof createMemberSchema>;
 export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
 export type CreateReceivableInput = z.infer<typeof createReceivableSchema>;
 export type RecordReceiptInput = z.infer<typeof recordReceiptSchema>;
+export type CollectionQuoteInput = z.infer<typeof collectionQuoteSchema>;
 export type ManualJournalInput = z.infer<typeof manualJournalSchema>;
 export type JournalLineInput = z.infer<typeof journalLineSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
@@ -259,10 +269,10 @@ export const simulateQuerySchema = z.object({
   status: z.enum(['SUCCEEDED', 'FAILED', 'REFUNDED']).default('SUCCEEDED'),
 });
 
-export const passkeyRelaySchema = z.object({
+export const nearAuthRelaySchema = z.object({
   receiverId: z.string().min(2).max(64),
   methodName: z.literal('sign'),
-  argsBase64: z.string().min(1).max(24_000),
+  argsBase64: z.string().min(1).max(32_000),
   gas: z.string().regex(/^\d+$/, 'gas must be an integer string').max(20),
   deposit: z.string().regex(/^\d+$/, 'deposit must be an integer string').max(40),
 });

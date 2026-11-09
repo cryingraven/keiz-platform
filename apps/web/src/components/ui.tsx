@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { humanize, toneFor } from '@/lib/format';
@@ -115,7 +115,10 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   );
 }
 
-export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> }) {
   return <textarea className={cn(fieldClasses, 'min-h-24 resize-y', className)} {...props} />;
 }
 

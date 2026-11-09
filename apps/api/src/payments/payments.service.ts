@@ -23,6 +23,7 @@ import { Payment, PaymentDocument } from './payment.schema';
 import { NearTxVerifier } from './near-tx-verifier';
 import { PaymentProviderFactory } from './payment-provider.factory';
 import { PaymentProvider, QuoteResult, StatusResult, TokenInfo } from './providers/provider';
+import { QueueProducer } from '../queues/queue-producer.service';
 
 @Injectable()
 export class PaymentsService {
@@ -35,6 +36,7 @@ export class PaymentsService {
     private readonly invoices: InvoicesService,
     private readonly vendors: VendorsService,
     private readonly nearTx: NearTxVerifier,
+    private readonly queue: QueueProducer,
   ) {}
 
   private get provider(): PaymentProvider {
@@ -187,6 +189,7 @@ export class PaymentsService {
         payload: { depositAddress: committed.depositAddress },
       });
       await this.invoices.markPaymentPending(orgId, String(invoice._id), payment.id);
+      await this.queue.enqueuePaymentPoll(payment.id, 4_000);
 
       return {
         payment: payment.toObject(),
@@ -245,6 +248,7 @@ export class PaymentsService {
     payment.submittedAt = new Date();
     payment.status = 'PROCESSING';
     await payment.save();
+    await this.queue.enqueuePaymentPoll(payment.id, 4_000);
 
     await this.events.create({
       orgId,
@@ -275,6 +279,33 @@ export class PaymentsService {
     if (TERMINAL_PAYMENT_STATUSES.includes(payment.status)) return payment.toObject();
     await this.applyStatus(payment, await this.provider.getStatus(payment.depositAddress!, payment.depositMemo));
     return payment.toObject();
+  }
+
+  /** Called by the queue worker for one payment. */
+  async pollOne(
+    paymentId: string,
+  ): Promise<'pending' | 'terminal' | 'missing'> {
+    const payment = await this.payments.findById(paymentId);
+    if (!payment) return 'missing';
+    if (TERMINAL_PAYMENT_STATUSES.includes(payment.status)) return 'terminal';
+    if (!payment.depositAddress) return 'terminal';
+    if (
+      payment.status === 'AWAITING_DEPOSIT' &&
+      payment.deadline &&
+      payment.deadline.getTime() < Date.now()
+    ) {
+      await this.applyStatus(payment, {
+        status: 'EXPIRED',
+        rawStatus: 'QUOTE_EXPIRED',
+        raw: {},
+      });
+      return 'terminal';
+    }
+    const result = await this.provider.getStatus(payment.depositAddress, payment.depositMemo);
+    if (result.status !== payment.status) {
+      await this.applyStatus(payment, result);
+    }
+    return TERMINAL_PAYMENT_STATUSES.includes(payment.status) ? 'terminal' : 'pending';
   }
 
   /** Called by the poller. Returns the number of payments that changed state. */
@@ -314,10 +345,23 @@ export class PaymentsService {
 
   private async applyStatus(payment: PaymentDocument, result: StatusResult) {
     const before = payment.status;
-    payment.status = result.status;
-    payment.rawStatus = result.rawStatus;
-    if (result.swapDetails?.destinationTxHashes) {
-      payment.destinationTxHashes = result.swapDetails.destinationTxHashes.map((tx) => ({
+    const destinationTxHashes = result.swapDetails?.destinationTxHashes ?? [];
+    // Do not release the invoice on 1Click SUCCESS alone: a missing destination
+    // transaction is an unverified payout, not a settled one.
+    const status =
+      result.status === 'SUCCEEDED' &&
+      destinationTxHashes.length === 0 &&
+      payment.provider !== 'mock'
+        ? 'NEEDS_REVIEW'
+        : result.status;
+    const rawStatus =
+      status === 'NEEDS_REVIEW' && result.status === 'SUCCEEDED'
+        ? 'DESTINATION_UNVERIFIED'
+        : result.rawStatus;
+    payment.status = status;
+    payment.rawStatus = rawStatus;
+    if (destinationTxHashes.length > 0) {
+      payment.destinationTxHashes = destinationTxHashes.map((tx) => ({
         hash: tx.hash,
         explorerUrl: tx.explorerUrl,
       }));
@@ -334,14 +378,14 @@ export class PaymentsService {
     await this.events.create({
       orgId: payment.orgId,
       paymentId: payment.id,
-      status: result.status,
-      rawStatus: result.rawStatus,
+      status,
+      rawStatus,
       payload: { from: before, raw: result.raw },
     });
 
-    if (result.status === 'SUCCEEDED') {
+    if (status === 'SUCCEEDED') {
       await this.invoices.markPaid(payment.orgId, payment.invoiceId);
-    } else if (['FAILED', 'REFUNDED', 'UNDERPAID', 'EXPIRED'].includes(result.status)) {
+    } else if (['FAILED', 'REFUNDED', 'UNDERPAID', 'EXPIRED'].includes(status)) {
       await this.invoices.resetForRetry(payment.orgId, payment.invoiceId);
     }
   }

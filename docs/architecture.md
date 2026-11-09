@@ -42,7 +42,7 @@ flowchart LR
   OutLayer["OutLayer custody<br/>Intel TDX + NEAR MPC"]
   NEARAI["NEAR AI Cloud"]
   Auth0["Auth0 + NEAR Auth"]
-  Relayer["Passkey relayer"]
+  Relayer["NEAR Auth relayer"]
 
   UI --> Proxy
   WalletUI --> Proxy
@@ -86,10 +86,10 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph Web["apps/web"]
-    Login["/login<br/>passkey + wallets"]
+    Login["/login<br/>NEAR Auth + wallets"]
     Dash["/dashboard<br/>overview · bills · receivables<br/>vendors · accounting"]
     PayUI["payments · agent · assistant"]
-    Lib["lib/auth · lib/passkey<br/>lib/chat-stream · lib/api"]
+    Lib["lib/auth · lib/near-auth<br/>lib/chat-stream · lib/api"]
   end
 
   subgraph Shared["packages/shared"]
@@ -146,35 +146,34 @@ flowchart TD
 
 ## 4. Authentication
 
-### 4.1 Passkey (NEAR Auth / FastAuth)
+### 4.1 NEAR Auth (Auth0 + MPC)
 
-The passkey is an Auth0 factor. The NEAR key is MPC-derived and never reaches
-the browser. The API relayer submits the `sign` action to `fast-auth`; it only
-accepts `sign` on the configured contract, with gas ≤ 300 TGas and zero deposit.
+Auth0 handles passkey/Google/Apple/email login. The browser SDK derives the
+MPC key, requests a NEP-413 message signature, and builds the `sign` action.
+The API relayer submits it to `fast-auth`; only the configured contract and
+`jwt#https://<auth0-domain>/` guard are accepted, with a 1 yoctoNEAR deposit.
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor U as User
   participant W as Web
+  participant N as Auth0
   participant A as API
-  participant N as Auth0 + NEAR Auth
-  participant R as Relayer
   participant F as fast-auth contract
   participant P as NEAR RPC
 
-  U->>W: Continue with passkey
-  W->>N: Auth0 login with passkey
-  N-->>W: Session + MPC signer
+  U->>W: Continue with NEAR Auth
+  W->>N: login (passkey / social / email)
+  N-->>W: session + signing JWT
   W->>A: POST /auth/challenge
   A-->>W: message · recipient · nonce TTL 5m
-  W->>N: requestMessageSignature
-  N-->>W: signed intent request
-  W->>W: createSignAction
-  W->>A: POST /auth/passkey/relay
-  A->>F: send_tx sign via funded relayer
+  W->>N: requestMessageSignature (NEP-413)
+  N-->>W: JWT with signed message payload
+  W->>A: POST /auth/near-auth/relay (sign action)
+  A->>F: sign via funded relayer
   F-->>A: SuccessValue = MPC signature
-  A-->>W: signature payload
+  A-->>W: successValue
   W->>A: POST /auth/verify
   A->>P: view_account + view_access_key
   Note over A,P: UNKNOWN_ACCOUNT + implicit hex is allowed once
@@ -208,6 +207,18 @@ NEP-413 payload: Borsh `tag(2^31+413) || message || nonce[32] || recipient || Op
 → SHA-256 → Ed25519. Nonces are single-use and TTL-indexed.
 
 ---
+
+### 4.3 On-chain AR/AP contracts
+
+`contracts/keiz-collect` receives NEP-141 customer payments and records them by
+receivable reference. 1Click can deliver cross-chain AR by sending
+`ft_transfer_call` with `customRecipientMsg = {"receivableRef":"AR-2001"}`.
+
+`contracts/keiz-vault` is the AP treasury. It checks policy at proposal and again
+at execution, requires M-of-N approval, and can pay either a vendor directly or
+a committed 1Click deposit address for cross-chain payouts. The API coordinates
+the 1Click quote/status; the contract only moves NEP-141 tokens. The NEAR Auth
+relayer remains restricted to `fast-auth.sign` and is not used for treasury calls.
 
 ## 5. Invoice and 1Click settlement
 
@@ -554,7 +565,7 @@ Money is stored as an integer string in the asset's smallest unit plus a
 ```mermaid
 flowchart LR
   subgraph Browser["Untrusted: browser"]
-    B["Session cookie<br/>wallet or passkey signature"]
+    B["Session cookie<br/>wallet or NEAR Auth signature"]
   end
 
   subgraph KEIZ["Trusted: KEIZ API"]
@@ -564,7 +575,7 @@ flowchart LR
   subgraph Partners["Third parties"]
     OC["1Click<br/>sees quote and deposit"]
     OL["OutLayer TEE<br/>holds keys · enforces policy"]
-    AU["Auth0 + fast-auth + MPC<br/>identity and passkey signing"]
+    AU["Auth0 + fast-auth + MPC<br/>identity and NEAR Auth signing"]
     AI["NEAR AI Cloud<br/>sees prompts and tool results"]
   end
 
@@ -583,8 +594,9 @@ flowchart LR
 - **1Click is mainnet-only.** There is no testnet deployment.
 - **OutLayer keys never leave the TEE.** The API key is full wallet authority;
   it is stored encrypted and only exposed through the OWNER handoff URL.
-- **Passkey relayer** can only submit `sign` to `fast-auth`, within gas and
-  deposit caps. It cannot move funds.
+- **The NEAR Auth relayer** can only submit `sign` to `fast-auth`, for the
+  expected guard id, within the gas cap and with a 1 yoctoNEAR deposit. It
+  cannot move funds.
 - **NEAR AI** receives the prompt, the conversation window, and tool results.
   Use the local provider for offline or sensitive demos.
 
@@ -603,9 +615,8 @@ flowchart LR
   API --> Auth0["Auth0 / fast-auth"]
 ```
 
-- Two long-running processes: Next and Nest.
-- Pollers (`payments`, `outlayer`, `indexer`) are in-process and assume a single
-  API instance. There is no Redis or queue.
+- Two long-running processes plus a worker: Next, Nest, and the BullMQ worker.
+- Pollers/queue processors (`payments`, `outlayer`, `indexer`, `near-auth`) run in the worker; Redis is required (`REDIS_URL`). The API only produces jobs. Tests set `QUEUES_ENABLED=false`.
 - Mongo is required for app state and Mastra memory. Use the same database name
   for both clients.
 - `pnpm dev` runs Turbo; `pnpm build` builds shared → api → web. Stop dev before
@@ -627,5 +638,5 @@ flowchart LR
 
 - [Security model](../README.md#security-model)
 - [Agent custody](../README.md#agent-custody-outlayer)
-- [Passkey login](../README.md#passkey-login-near-auth)
+- [Login (NEAR Auth + wallet)](../README.md#login-near-auth--wallet)
 - [Agent instructions](../AGENTS.md)

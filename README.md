@@ -25,8 +25,9 @@ A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-ent
 ```bash
 pnpm install
 cp .env.example .env          # then set JWT_SECRET and AGENT_WALLET_MASTER_KEY
-docker compose up -d          # MongoDB on :27017
+docker compose up -d          # MongoDB :27017 + Redis :6379
 pnpm dev                      # web :3000, api :3001
+pnpm worker                   # BullMQ worker (Redis)
 ```
 
 No Docker? Use the throwaway in-memory Mongo:
@@ -41,11 +42,12 @@ Then create demo data (after signing in, or from the CLI):
 pnpm --filter @keiz/api seed demo.near
 ```
 
-Open <http://localhost:3000>, sign in with a passkey or a NEAR wallet, and press **Load demo data** if the workspace is empty.
+Open <http://localhost:3000>, sign in with NEAR Auth or a NEAR wallet, and press **Load demo data** if the workspace is empty.
 
 ## What is implemented
 
-- **Passkey login (NEAR Auth)** — Auth0 passkey sign-in backed by MPC. The backend verifies the NEP-413 signature it receives, with a tight relayer that only forwards `sign` calls to the configured `fast-auth` contract. Wallet login remains available.
+- **NEAR Auth login** — Auth0 (passkey, Google, Apple, email) backed by an MPC-derived NEAR key. The client requests a NEP-413 message signature through `fast-auth`, a funded API relayer submits the on-chain `sign` call, and the existing verifier checks the resulting signature.
+- **Wallet login (NEP-413)** — the user signs a one-time message in their NEAR wallet. The backend verifies the signature and the account's full-access key before issuing an httpOnly session cookie. No keys or seed phrases reach the server.
 - **Invoice lifecycle (AP)** — DRAFT → SUBMITTED → APPROVED / REJECTED → PAYMENT_PENDING → PAID, with an append-only approval trail. Totals are computed with integer minor units and 5-decimal-safe tax math.
 - **Customer invoices (AR)** — customers, customer invoices (DRAFT → ISSUED → PARTIALLY_PAID → PAID, plus VOID) and manual receipts with an optional transaction hash. Overdue is computed from the due date, never stored.
 - **Double-entry accounting** — a per-org chart of accounts and an immutable, balanced journal. Approving a bill posts expense + input tax against AP; paying it clears AP against cash. Issuing a customer invoice posts AR against revenue + tax payable; a receipt posts cash against AR. Voiding reverses the original entry instead of editing it. Trial balance, P&L, AP/AR aging and the journal live under `/dashboard/accounting`.
@@ -55,7 +57,9 @@ Open <http://localhost:3000>, sign in with a passkey or a NEAR wallet, and press
   - **OutLayer custody** (when `OUTLAYER_ENABLED=true`): the agent gets an OutLayer wallet, API key, NEAR implicit account and Intents balance. Keys live in an Intel TDX enclave; spending policy is encrypted on-chain and enforced before signing. KEIZ stores only the encrypted API key.
   - **Local** (fallback): generated ed25519 keypair, AES-256-GCM at rest, local USD caps. Useful for the offline/mock demo.
 - **AI assistant** — a Mastra agent with five tools over your own invoices, vendors and spend. It can create payment *proposals* but has no path to move funds. Streams tokens and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback that calls the same tools.
+- **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. See `contracts/README.md`.
 - **History indexing** — every payment transition is appended to `payment_events`; on-chain deposits are normalised into `chain_events` with a unique `(txHash, eventIndex)` index so re-polling cannot duplicate rows.
+- **Audit log** — every mutating request is recorded append-only and readable by ADMIN/OWNER at `/dashboard/audit` with actor, path, status and IP.
 
 ## Demo without mainnet funds
 
@@ -184,27 +188,19 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 - **Testnet has no Intents solvers**: registration, address, balance, NEAR transfer/call, policy and signing work; cross-chain withdraw/swap return 503. Use mainnet for the full invoice payout flow.
 - Free tier: 1000 custody operations per wallet per 24h; handle `429 operation_limit_reached`.
 
-## Passkey login (NEAR Auth)
+## Login (NEAR Auth + wallet)
 
-`/login` mirrors near.com's centered sign-in layout: a recommended **Sign in with passkey** card, plus a **NEAR Wallets** button when `NEXT_PUBLIC_WALLET_LOGIN=true` (the default). The button opens the near-connect selector, which supports HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and the rest of the manifest. Set the flag to `false` for passkey-only; the near-connect manifest is then never loaded. The connector is preloaded on `/login` so the selector opens inside the click gesture, but it is never imported on dashboard pages. WalletConnect/Unity remain hidden unless a WalletConnect SignClient is configured.
+`/login` offers **Continue with NEAR Auth** plus the near-connect wallet selector. NEAR Auth uses Auth0 for passkeys, Google, Apple and email; the NEAR key is derived by the MPC network and never reaches the browser. The wallet selector supports HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and the rest of the manifest. Both clients are preloaded on `/login` so their popups open inside the click gesture.
 
-Passkeys use [NEAR Auth](https://docs.auth.near.org): Auth0 issues a JWT, the `fast-auth` contract verifies it, and an MPC network signs the NEP-413 message. The installed Browser SDK (`1.4.2`) predates `requestMessageSignature`, so `apps/web/src/lib/passkey.ts` implements the same `nep413` Auth0 approval and `SignatureRequest` locally; it must be kept in sync when the SDK is upgraded.
+The API verifies the same NEP-413 `SignedMessage` for both paths. The challenge is single-use, TTL-indexed and bound to `CHAIN_NETWORK`; full-access keys are required. New NEAR Auth users are implicit accounts (hex of the ed25519 key), accepted only when `view_account` reports `UNKNOWN_ACCOUNT` and the id matches the key.
 
-Testnet is preconfigured in `.env.example` with the shared Auth0 client and contracts. Two things are required beyond that:
+**NEAR Auth flow:** `JavascriptProvider` → `FastAuthClient.login()` → `signer.getPublicKey()` → `/auth/challenge` → `signer.requestMessageSignature(...)` → `getSignatureRequest()` → `createSignAction()` → `POST /auth/near-auth/relay` → `FastAuthSignature.recover('ed25519')` → `/auth/verify`.
 
-1. **A funded relayer.** Signing a NEP-413 message requires an on-chain `sign` call to `fast-auth.testnet`. Create a testnet account, fund it from the [faucet](https://docs.near.org/getting-started/faucet), export its key, and set:
-   ```
-   NEAR_AUTH_RELAYER_ACCOUNT_ID=your-relayer.testnet
-   NEAR_AUTH_RELAYER_PRIVATE_KEY=ed25519:...
-   ```
-   The relayer only accepts `sign` calls to `fast-auth.<network>`, with gas ≤ 300 TGas and zero deposit. Keep it minimally funded.
-2. **An Auth0 tenant that offers passkeys.** The shared testnet client is for development; for production passkeys apply for [mainnet access](https://docs.auth.near.org/home/apply).
+> **SDK caveat:** the docs describe `requestMessageSignature`, but the latest published packages (`@fast-auth-near/browser-sdk@1.4.2`, `@fast-auth-near/javascript-provider@1.4.1`) do not expose it yet. `apps/web/src/lib/near-auth.ts` feature-detects the method and falls back to the same `nep413` Auth0 authorization parameter the upstream SDK sends internally. Remove the fallback and the direct `@auth0/auth0-spa-js` dependency when the SDK ships it.
 
-New NEAR Auth users are **implicit accounts** (hex of their public key) that do not exist on-chain yet. The backend accepts that case only when `view_account` returns `UNKNOWN_ACCOUNT` and the id exactly matches the key; otherwise it requires a full-access key.
+**Relayer:** `POST /auth/near-auth/relay` submits `sign` to the configured `fast-auth` contract. It only accepts that contract and the expected `jwt#https://<auth0-domain>/` guard id, caps gas, requires a 1 yoctoNEAR deposit, and fails closed when `NEAR_AUTH_RELAYER_*` is unset or the account is underfunded. Daily per-user and global relay limits bound gas abuse. Testnet uses the shared Auth0 client; mainnet needs an approved client id.
 
-Passkey login currently authenticates the user only. With wallet login disabled there is no wallet to sign invoice deposits: mock mode uses the admin simulation, mainnet mode keeps the verified transaction-hash fallback, and passkey-signed payments need a second relayer flow.
-
-`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives the wallet connector, passkey defaults and the dashboard badge. The API's `CHAIN_NETWORK` must match it. Passkey mainnet also requires a mainnet Auth0 client and the API's `NEAR_AUTH_NETWORK`, contract and relayer to be on mainnet. Wallet login also depends on the API's RPC mapping for that network (`NEAR_RPC_URL` for mainnet, `NEAR_AUTH_RPC_URL` for testnet); the API now rejects challenges for a different network.
+`NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives both login paths and the dashboard badge. The API's `CHAIN_NETWORK` and `NEAR_AUTH_NETWORK` must match it.
 
 ## Environment
 
@@ -220,14 +216,20 @@ See `.env.example`. The important ones:
 | `NEARAI_API_KEY` | Enables the Mastra + NEAR AI path; unset = local fallback |
 | `CHAT_PROVIDER` | `mastra` or `local`; `mastra` without a key still falls back |
 | `MONGODB_DB_NAME` | Database for both Mongoose and Mastra storage |
-| `NEXT_PUBLIC_CHAIN_NETWORK` | Frontend switch: `mainnet` or `testnet`; drives wallet login, passkey defaults and the dashboard badge |
+| `NEXT_PUBLIC_CHAIN_NETWORK` | Frontend switch: `mainnet` or `testnet`; drives wallet login and the dashboard badge |
 | `CHAIN_NETWORK` | Server source of truth; must match `NEXT_PUBLIC_CHAIN_NETWORK`. The API rejects challenges for a different network |
-| `NEAR_RPC_URL` | Mainnet wallet auth, deposit verification and indexer RPC |
-| `NEAR_AUTH_RPC_URL` | Testnet wallet auth and passkey relayer RPC |
-| `NEXT_PUBLIC_PASSKEY_ENABLED` | Show the passkey button |
-| `NEXT_PUBLIC_WALLET_LOGIN` | `true` by default; `false` hides the wallet connector and loads no near-connect code |
-| `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | API-side passkey network, `testnet` + `fast-auth.testnet` (defaults) |
+| `NEAR_RPC_URL` | Wallet auth, deposit verification and indexer RPC |
+| `NEXT_PUBLIC_NEAR_AUTH_ENABLED` / `NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID` | Show NEAR Auth and point it at the Auth0 application |
+| `NEAR_AUTH_NETWORK` / `NEAR_AUTH_CONTRACT_ID` | NEAR Auth network and `fast-auth` contract |
+| `NEAR_AUTH_MPC_CONTRACT_ID` / `NEXT_PUBLIC_NEAR_AUTH_MPC_CONTRACT_ID` | MPC signer used by the browser SDK |
+| `NEAR_AUTH_RPC_URL` | Testnet wallet and NEAR Auth RPC |
 | `NEAR_AUTH_RELAYER_ACCOUNT_ID` / `_PRIVATE_KEY` | Funded account that submits the `sign` call |
+| `NEAR_AUTH_RELAYER_MAX_GAS` / `NEAR_AUTH_GUARD_ID` | Relayer gas cap and the only Auth0 guard id it accepts |
+| `NEAR_AUTH_RELAYER_DAILY_LIMIT` / `_PER_USER` | Global and per-Auth0-user daily relay caps |
+| `KEIZ_COLLECT_CONTRACT_ID` / `KEIZ_COLLECT_ASSET_ID` | Deployed AR receiver and its allowlisted destination asset |
+| `KEIZ_COLLECT_ORG_ID` / `KEIZ_COLLECT_TOKEN_CONTRACT` / `KEIZ_COLLECT_ASSET_DECIMALS` | Workspace owner, accepted NEP-141 token, and token decimals for receipt indexing |
+| `REDIS_URL` / `QUEUES_ENABLED` | BullMQ connection and whether the API produces background jobs |
+| `QUEUE_PREFIX` | Redis key prefix shared by API and worker |
 | `AGENT_WALLET_MASTER_KEY` | 32-byte hex/base64 key for AES-256-GCM |
 | `OUTLAYER_ENABLED` | Enable OutLayer agent custody (new wallets become custody wallets) |
 | `OUTLAYER_NETWORK` | `testnet` or `mainnet`; cross-chain Intents are mainnet-only |
@@ -239,8 +241,8 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test                              # 67 unit tests
-pnpm --filter @keiz/api smoke          # 44 end-to-end checks, in-memory Mongo
+pnpm test                              # 72 unit tests
+pnpm --filter @keiz/api smoke          # 48 end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 ```
@@ -258,13 +260,16 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 ## Known limits
 
 - Agent custody is real when OutLayer is enabled. With it disabled, the local agent wallet still cannot sign on-chain; execution delegates to the mock/1Click payment provider.
+- NEAR Auth authenticates only. The relayer is restricted to `fast-auth.sign`, so deposits are still signed in a NEAR wallet; a NEAR Auth user needs a wallet to fund an invoice.
 - In-app OutLayer multisig approval signing is not wired; pending custody approvals link to the OutLayer dashboard.
 - Cross-chain custody payouts are mainnet-only (OutLayer has no testnet Intents solvers).
-- The payment poller is in-process and assumes a single API instance. Move to a queue/worker before scaling horizontally.
+- The payment/outlayer/indexer pollers are durable BullMQ jobs. The API process only produces; run the worker (`pnpm worker`) next to it. Redis is required in dev/prod; tests use `QUEUES_ENABLED=false`.
 - Mastra semantic recall is disabled (`semanticRecall: false`, `vector: false`) because standalone MongoDB has no Atlas Search. Message history works; vector search would need Atlas or another vector store.
 - Mastra opens a second Mongo client alongside Mongoose. It is closed on shutdown, but both must point at the same database name.
 - Only USD invoices are payable on-chain; there is no FX oracle for EUR/SGD/IDR yet. The ledger therefore reports per currency and does not translate between them.
-- Customer receipts are recorded, not chain-verified. A `txHash` on a receipt is a reference for the books; only AP deposits are checked against NEAR RPC.
+- Cross-chain AP payouts are marked `NEEDS_REVIEW` when 1Click reports success without a destination transaction hash. Full destination amount/token/recipient verification is still missing.
 - Mongo is a single node, so a state change and its journal posting are not atomic. Posting is idempotent and best-effort; `POST /api/accounting/rebuild` repairs gaps.
 - Native NEAR payments require wrapping to wNEAR in the same transaction. The UI builds `near_deposit` + `ft_transfer` for wNEAR origin quotes; other origins must already be NEP-141 tokens.
-- On-chain AR collection is not implemented. Receipts are book entries with an optional reference hash; see [integrations.md](docs/integrations.md) for the receiver-contract design that would make them verifiable.
+- On-chain AR collection is implemented in `contracts/keiz-collect` and indexed into receivables. It still needs a per-workspace deployment and token registration before production.
+- The AP vault is implemented in `contracts/keiz-vault`; invoice approval is not yet wired to on-chain proposals, so it is currently deployed and operated separately.
+- 1Click is mainnet-only, so cross-chain AR/AP cannot be end-to-end tested on testnet.

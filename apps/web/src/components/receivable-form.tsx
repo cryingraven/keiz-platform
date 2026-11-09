@@ -10,6 +10,14 @@ interface Customer {
   name: string;
 }
 
+export interface CustomerRecord {
+  _id: string;
+  name: string;
+  email: string;
+  taxId?: string;
+  billingAddress?: string;
+}
+
 interface LineItem {
   description: string;
   quantity: string;
@@ -275,15 +283,20 @@ export function ReceivableForm({
 
 export function CustomerForm({
   open,
+  customer,
   onClose,
   onCreated,
 }: {
   open: boolean;
+  customer?: CustomerRecord | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const isEdit = Boolean(customer);
+  const [name, setName] = useState(customer?.name ?? '');
+  const [email, setEmail] = useState(customer?.email ?? '');
+  const [taxId, setTaxId] = useState(customer?.taxId ?? '');
+  const [billingAddress, setBillingAddress] = useState(customer?.billingAddress ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -291,16 +304,25 @@ export function CustomerForm({
     setBusy(true);
     setError(null);
     try {
-      await api('/customers', {
-        method: 'POST',
-        body: JSON.stringify({ name, email }),
+      await api(isEdit ? `/customers/${customer!._id}` : '/customers', {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          name,
+          email,
+          taxId: taxId || undefined,
+          billingAddress: billingAddress || undefined,
+        }),
       });
       onCreated();
       onClose();
-      setName('');
-      setEmail('');
+      if (!isEdit) {
+        setName('');
+        setEmail('');
+        setTaxId('');
+        setBillingAddress('');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the customer');
+      setError(err instanceof Error ? err.message : 'Could not save the customer');
     } finally {
       setBusy(false);
     }
@@ -310,7 +332,7 @@ export function CustomerForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="Add customer"
+      title={isEdit ? 'Edit customer' : 'Add customer'}
       description="Customers receive the invoices you issue and record receipts against."
     >
       <div className="space-y-3">
@@ -327,6 +349,20 @@ export function CustomerForm({
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="c-tax">Tax ID (optional)</Label>
+            <Input id="c-tax" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="c-address">Billing address (optional)</Label>
+            <Input
+              id="c-address"
+              value={billingAddress}
+              onChange={(e) => setBillingAddress(e.target.value)}
+            />
+          </div>
+        </div>
         {error ? (
           <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
             {error}
@@ -337,7 +373,7 @@ export function CustomerForm({
             Cancel
           </Button>
           <Button loading={busy} disabled={!name || !email} onClick={() => void submit()}>
-            Add customer
+            {isEdit ? 'Save changes' : 'Add customer'}
           </Button>
         </div>
       </div>

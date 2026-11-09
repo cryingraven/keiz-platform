@@ -19,6 +19,6 @@ import { OutlayerService } from './outlayer.service';
     ]),
   ],
   providers: [OutlayerService, OutlayerPoller],
-  exports: [OutlayerService],
+  exports: [OutlayerService, OutlayerPoller],
 })
 export class OutlayerModule {}

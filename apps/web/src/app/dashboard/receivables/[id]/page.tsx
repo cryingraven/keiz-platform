@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Check,
   CircleSlash,
+  Copy,
   HandCoins,
   Plus,
   Receipt as ReceiptIcon,
@@ -88,6 +89,13 @@ interface JournalEntry {
   }>;
 }
 
+interface TokenInfo {
+  assetId: string;
+  symbol: string;
+  blockchain: string;
+  decimals: number;
+}
+
 export default function ReceivableDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -99,6 +107,7 @@ export default function ReceivableDetailPage() {
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [collectOpen, setCollectOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { session } = useAuth();
   const role = session?.role ?? 'MEMBER';
@@ -369,6 +378,15 @@ export default function ReceivableDetailPage() {
                     <ReceiptIcon className="h-3.5 w-3.5" /> Record receipt
                   </Button>
                 ) : null}
+                {['ISSUED', 'PARTIALLY_PAID'].includes(data.status) ? (
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    onClick={() => setCollectOpen(true)}
+                  >
+                    <HandCoins className="h-3.5 w-3.5" /> Collect on-chain
+                  </Button>
+                ) : null}
                 {canVoid ? (
                   <Button
                     variant="ghost"
@@ -433,6 +451,19 @@ export default function ReceivableDetailPage() {
           receivable={data}
           onClose={() => setReceiptOpen(false)}
           onRecorded={() => {
+            void receivable.reload();
+            void ledger.reload();
+          }}
+        />
+      ) : null}
+
+      {collectOpen ? (
+        <CollectionModal
+          open
+          receivableId={data._id}
+          number={data.number}
+          onClose={() => setCollectOpen(false)}
+          onQuote={() => {
             void receivable.reload();
             void ledger.reload();
           }}
@@ -558,6 +589,145 @@ function ReceiptModal({
           </Button>
           <Button loading={busy} disabled={!amount} onClick={() => void submit()}>
             Record receipt
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+interface CollectionQuote {
+  depositAddress?: string;
+  depositMemo?: string;
+  amountInFormatted?: string;
+  deadline?: string;
+  receivableNumber: string;
+}
+
+function CollectionModal({
+  open,
+  receivableId,
+  number,
+  onClose,
+}: {
+  open: boolean;
+  receivableId: string;
+  number: string;
+  onClose: () => void;
+  onQuote?: () => void;
+}) {
+  const tokens = useApi<TokenInfo[]>(open ? '/payments/tokens' : null);
+  const [originAsset, setOriginAsset] = useState('');
+  const [refundTo, setRefundTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<CollectionQuote | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function createQuote() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<CollectionQuote>(
+        `/receivables/${receivableId}/collection-quote`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ originAsset, refundTo }),
+        },
+      );
+      if (!result.depositAddress) {
+        throw new Error('1Click did not return a deposit address');
+      }
+      setQuote(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the collection quote');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyAddress() {
+    if (!quote?.depositAddress) return;
+    await navigator.clipboard.writeText(quote.depositAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Collect ${number} on-chain`}
+      description="A customer pays from another chain; 1Click delivers the allowlisted token to the workspace collect contract."
+    >
+      <div className="space-y-3">
+        <div>
+          <Label htmlFor="c-origin">Customer pays with</Label>
+          <Select
+            id="c-origin"
+            value={originAsset}
+            onChange={(event) => setOriginAsset(event.target.value)}
+          >
+            <option value="">Select an origin token…</option>
+            {(tokens.data ?? []).map((token) => (
+              <option key={token.assetId} value={token.assetId}>
+                {token.symbol} · {token.blockchain}
+              </option>
+            ))}
+          </Select>
+          {tokens.loading ? (
+            <p className="mt-1 text-[10px] text-muted">Loading 1Click tokens…</p>
+          ) : null}
+        </div>
+        <div>
+          <Label htmlFor="c-refund">Refund address on the origin chain</Label>
+          <Input
+            id="c-refund"
+            placeholder="0x… or Solana address"
+            value={refundTo}
+            onChange={(event) => setRefundTo(event.target.value)}
+          />
+        </div>
+        {quote ? (
+          <div className="space-y-2 rounded-xl border border-line bg-paper px-3 py-3">
+            <p className="text-[11px] font-medium">Send exactly</p>
+            <p className="font-num text-[13px]">
+              {quote.amountInFormatted} {quote.depositMemo ? `· memo ${quote.depositMemo}` : ''}
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="font-num min-w-0 flex-1 truncate rounded-lg bg-surface px-2 py-1.5 text-[11px]">
+                {quote.depositAddress}
+              </code>
+              <button
+                type="button"
+                onClick={() => void copyAddress()}
+                className="rounded-lg p-1.5 text-muted transition hover:bg-surface hover:text-ink"
+                aria-label="Copy deposit address"
+              >
+                {copied ? <Check className="h-3.5 w-3.5 text-mint" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-muted">
+              Deposit before {quote.deadline ? new Date(quote.deadline).toLocaleString('en-US') : 'the quote expires'}.
+              The receipt is recorded automatically after delivery.
+            </p>
+          </div>
+        ) : null}
+        {error ? (
+          <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+          <Button
+            loading={busy}
+            disabled={!originAsset || !refundTo}
+            onClick={() => void createQuote()}
+          >
+            {quote ? 'Create another quote' : 'Create collection quote'}
           </Button>
         </div>
       </div>

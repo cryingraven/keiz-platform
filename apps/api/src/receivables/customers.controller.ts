@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   CreateCustomerInput,
   createCustomerSchema,
@@ -15,8 +15,15 @@ export class CustomersController {
   constructor(private readonly receivables: ReceivablesService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.receivables.listCustomers(user.orgId);
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query('includeArchived') includeArchived?: string,
+    @Query('q') query?: string,
+  ) {
+    return this.receivables.listCustomers(user.orgId, {
+      includeArchived: includeArchived === 'true',
+      query,
+    });
   }
 
   @Post()
@@ -41,5 +48,11 @@ export class CustomersController {
   @Delete(':id')
   archive(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.receivables.archiveCustomer(user.orgId, id);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post(':id/restore')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.receivables.restoreCustomer(user.orgId, id);
   }
 }

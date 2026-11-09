@@ -51,6 +51,7 @@ async function main() {
   process.env.CHAT_PROVIDER = 'local';
   process.env.NEARAI_API_KEY = '';
   process.env.NODE_ENV = 'test';
+  process.env.QUEUES_ENABLED = 'false';
 
   const { NestFactory } = await import('@nestjs/core');
   const { AppModule } = await import('../src/app.module');
@@ -1016,32 +1017,47 @@ async function main() {
     );
     pass('invited members can switch into the shared workspace');
 
-    const relayWrong = await statusOf('/auth/passkey/relay', {
+    const signArgs = (guardId: string) =>
+      Buffer.from(JSON.stringify({ guard_id: guardId, verify_payload: 'jwt', sign_payload: [] })).toString(
+        'base64',
+      );
+    const relayWrong = await statusOf('/auth/near-auth/relay', {
       method: 'POST',
       body: {
         receiverId: 'evil.near',
         methodName: 'sign',
-        argsBase64: 'AA==',
+        argsBase64: signArgs('jwt#https://login.testnet.fast-auth.com/'),
         gas: '100000000000000',
-        deposit: '0',
+        deposit: '1',
       },
     });
     assert(relayWrong === 400, `relayer rejects other contracts (got ${relayWrong})`);
-    const relayUnconfigured = await statusOf('/auth/passkey/relay', {
+    const relayBadGuard = await statusOf('/auth/near-auth/relay', {
       method: 'POST',
       body: {
         receiverId: 'fast-auth.testnet',
         methodName: 'sign',
-        argsBase64: 'AA==',
+        argsBase64: signArgs('jwt#https://evil.example/'),
         gas: '100000000000000',
-        deposit: '0',
+        deposit: '1',
+      },
+    });
+    assert(relayBadGuard === 400, `relayer rejects other guards (got ${relayBadGuard})`);
+    const relayUnconfigured = await statusOf('/auth/near-auth/relay', {
+      method: 'POST',
+      body: {
+        receiverId: 'fast-auth.testnet',
+        methodName: 'sign',
+        argsBase64: signArgs('jwt#https://login.testnet.fast-auth.com/'),
+        gas: '100000000000000',
+        deposit: '1',
       },
     });
     assert(
       relayUnconfigured === 503,
       `relayer reports missing configuration (got ${relayUnconfigured})`,
     );
-    pass('passkey relay is restricted to fast-auth and fails closed');
+    pass('NEAR Auth relay is restricted to fast-auth + the expected guard and fails closed');
 
     await new Promise((resolve) => setTimeout(resolve, 150));
     const audit = await req<Array<{ action: string }>>('/audit', { cookie: aliceCookie });

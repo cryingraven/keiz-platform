@@ -31,11 +31,17 @@ export class ReceivablesService {
     private readonly accounting: AccountingService,
   ) {}
 
-  listCustomers(orgId: string) {
-    return this.customers
-      .find({ orgId, status: 'ACTIVE' })
-      .sort({ createdAt: -1 })
-      .lean();
+  listCustomers(orgId: string, options: { includeArchived?: boolean; query?: string } = {}) {
+    const filter: Record<string, unknown> = { orgId };
+    if (!options.includeArchived) filter.status = 'ACTIVE';
+    const query = options.query?.trim();
+    if (query) {
+      filter.$or = [
+        { name: { $regex: query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { email: { $regex: query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      ];
+    }
+    return this.customers.find(filter).sort({ createdAt: -1 }).limit(200).lean();
   }
 
   async createCustomer(orgId: string, input: CreateCustomerInput) {
@@ -62,6 +68,16 @@ export class ReceivablesService {
     const customer = await this.customers.findOneAndUpdate(
       { _id: id, orgId },
       { $set: { status: 'ARCHIVED' } },
+      { returnDocument: 'after' },
+    );
+    if (!customer) throw new NotFoundException('Customer not found');
+    return customer.toObject();
+  }
+
+  async restoreCustomer(orgId: string, id: string) {
+    const customer = await this.customers.findOneAndUpdate(
+      { _id: id, orgId },
+      { $set: { status: 'ACTIVE' } },
       { returnDocument: 'after' },
     );
     if (!customer) throw new NotFoundException('Customer not found');
@@ -155,6 +171,18 @@ export class ReceivablesService {
     return receivable;
   }
 
+  async findByNumber(orgId: string, number: string) {
+    return this.receivables.findOne({ orgId, number }).lean();
+  }
+
+  async hasChainEvent(orgId: string, chainEventId: string) {
+    const hit = await this.receivables.exists({
+      orgId,
+      'receipts.chainEventId': chainEventId,
+    });
+    return Boolean(hit);
+  }
+
   async issue(orgId: string, id: string) {
     const receivable = await this.receivables.findOne({ _id: id, orgId });
     if (!receivable) throw new NotFoundException('Receivable not found');
@@ -209,6 +237,10 @@ export class ReceivablesService {
       method: input.method,
       reference: input.reference,
       txHash: input.txHash,
+      chainEventId: input.chainEventId,
+      receivableRef: input.receivableRef,
+      tokenContract: input.tokenContract,
+      sender: input.sender,
       recordedByUserId: userId,
     };
 

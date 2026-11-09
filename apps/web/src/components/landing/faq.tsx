@@ -21,7 +21,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         q: 'Do I need crypto to use it?',
-        a: 'You sign in with a passkey or a NEAR wallet. Vendor payouts settle in stablecoins on the chain the vendor chooses.',
+        a: 'You sign in with a NEAR wallet. Vendor payouts settle in stablecoins on the chain the vendor chooses.',
       },
     ],
   },

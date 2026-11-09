@@ -20,7 +20,9 @@
     "smoke:mastra": "ts-node --project tsconfig.json test/mastra-smoke.ts",
     "presmoke:mastra": "pnpm --filter @keiz/shared build",
     "smoke:outlayer": "ts-node --project tsconfig.json test/outlayer-smoke.ts",
-    "presmoke:outlayer": "pnpm --filter @keiz/shared build"
+    "presmoke:outlayer": "pnpm --filter @keiz/shared build",
+    "worker": "nest start --entryFile worker",
+    "worker:dev": "nest start --watch --entryFile worker"
   },
   "dependencies": {
     "@keiz/shared": "workspace:*",
@@ -43,7 +45,10 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tweetnacl": "^1.0.3",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@nestjs/bullmq": "12.0.1",
+    "bullmq": "6.7.2",
+    "ioredis": "^5.8.2"
   },
   "devDependencies": {
     "@nestjs/cli": "12.0.11",

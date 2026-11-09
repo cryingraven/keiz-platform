@@ -2,19 +2,31 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Interval } from '@nestjs/schedule';
+import { formatUnits, parseUnits } from '@keiz/shared';
 import { fetchRpcWithRetry } from '../common/rpc-client';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
+import { ReceivablesService } from '../receivables/receivables.service';
 import { ChainEvent, ChainEventDocument } from './chain-event.schema';
+
+interface CollectReceipt {
+  id: number;
+  token: string;
+  sender: string;
+  amount: string;
+  receivable_ref?: string;
+  receivableRef?: string;
+  block_height: number;
+  observed_at: number;
+}
 
 @Injectable()
 export class IndexerService {
   private readonly logger = new Logger(IndexerService.name);
-  private running = false;
 
   constructor(
     @InjectModel(ChainEvent.name) private readonly events: Model<ChainEventDocument>,
     @InjectModel(Payment.name) private readonly payments: Model<PaymentDocument>,
+    private readonly receivables: ReceivablesService,
     private readonly config: ConfigService,
   ) {}
 
@@ -22,17 +34,10 @@ export class IndexerService {
     return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }
 
-  @Interval(30_000)
-  async tick() {
-    if (this.running) return;
-    this.running = true;
-    try {
-      await this.syncPending(25);
-    } catch (error) {
-      this.logger.warn(`Indexer tick failed: ${(error as Error).message}`);
-    } finally {
-      this.running = false;
-    }
+  async syncAll(limit = 25): Promise<{ payments: number; collect: number }> {
+    const payments = await this.syncPending(limit);
+    const collect = await this.syncCollectReceipts(100);
+    return { payments, collect };
   }
 
   /** Indexes every payment that has an on-chain deposit hash but no chain event yet. */
@@ -65,6 +70,151 @@ export class IndexerService {
     const payment = await this.payments.findOne({ _id: paymentId, orgId });
     if (!payment) throw new Error('Payment not found');
     return this.indexPayment(payment);
+  }
+
+  /**
+   * Pulls receipts from the configured keiz-collect contract. The contract does
+   * not know the transaction hash, so its stable receipt id is the idempotency
+   * key and the synthetic txHash used by chain_events.
+   */
+  async syncCollectReceipts(limit = 100): Promise<number> {
+    const contractId = this.config.get<string>('KEIZ_COLLECT_CONTRACT_ID');
+    const orgId = this.config.get<string>('KEIZ_COLLECT_ORG_ID');
+    if (!contractId || !orgId) return 0;
+    const tokenContract = this.config.get<string>('KEIZ_COLLECT_TOKEN_CONTRACT');
+    const tokenDecimals = Number(this.config.get<string>('KEIZ_COLLECT_ASSET_DECIMALS') || '6');
+
+    const count = Number(
+      await this.viewContract<number>(contractId, 'get_receipt_count', {}),
+    );
+    if (!Number.isFinite(count) || count <= 0) return 0;
+    const from = Math.max(0, count - limit);
+    const receipts = await this.viewContract<CollectReceipt[]>(contractId, 'get_receipts', {
+      from_index: from,
+      limit,
+    });
+
+    let indexed = 0;
+    for (const receipt of receipts ?? []) {
+      const reference = receipt.receivable_ref ?? receipt.receivableRef;
+      const chainEventId = `collect:${contractId}:${receipt.id}`;
+      const existing = await this.events.exists({
+        orgId,
+        txHash: chainEventId,
+        eventIndex: 0,
+      });
+      if (existing) continue;
+
+      if (tokenContract && receipt.token !== tokenContract) {
+        await this.recordCollectEvent(orgId, chainEventId, receipt, 'IGNORED', {
+          reason: `unexpected token ${receipt.token}`,
+        });
+        continue;
+      }
+
+      const receivable = reference
+        ? await this.receivables.findByNumber(orgId, reference)
+        : null;
+      if (!receivable) {
+        await this.recordCollectEvent(orgId, chainEventId, receipt, 'IGNORED', {
+          reason: `unknown receivable ${reference ?? ''}`,
+        });
+        continue;
+      }
+      if (!['ISSUED', 'PARTIALLY_PAID'].includes(receivable.status)) {
+        await this.recordCollectEvent(orgId, chainEventId, receipt, 'IGNORED', {
+          reason: `receivable is ${receivable.status}`,
+        });
+        continue;
+      }
+      if (await this.receivables.hasChainEvent(orgId, chainEventId)) {
+        await this.recordCollectEvent(orgId, chainEventId, receipt, 'SUCCESS', {});
+        continue;
+      }
+
+      try {
+        const amount = formatUnits(receipt.amount, tokenDecimals);
+        await this.receivables.recordReceipt(orgId, 'system:indexer', String(receivable._id), {
+          amount,
+          receivedAt: new Date(Number(receipt.observed_at) / 1_000_000).toISOString(),
+          method: 'ONCHAIN',
+          txHash: chainEventId,
+          chainEventId,
+          receivableRef: reference ?? undefined,
+          tokenContract: receipt.token,
+          sender: receipt.sender,
+        });
+        await this.recordCollectEvent(orgId, chainEventId, receipt, 'SUCCESS', {});
+        indexed += 1;
+      } catch (error) {
+        await this.recordCollectEvent(orgId, chainEventId, receipt, 'IGNORED', {
+          reason: (error as Error).message,
+        });
+      }
+    }
+    return indexed;
+  }
+
+  private async recordCollectEvent(
+    orgId: string,
+    chainEventId: string,
+    receipt: CollectReceipt,
+    status: 'SUCCESS' | 'IGNORED',
+    extra: Record<string, unknown>,
+  ) {
+    await this.events.findOneAndUpdate(
+      { orgId, txHash: chainEventId, eventIndex: 0 },
+      {
+        $setOnInsert: {
+          orgId,
+          txHash: chainEventId,
+          eventIndex: 0,
+          kind: 'AR_RECEIPT',
+          status,
+          blockHeight: receipt.block_height,
+          senderAccountId: receipt.sender,
+          payload: { receipt, ...extra },
+          observedAt: new Date(Number(receipt.observed_at) / 1_000_000),
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  private async viewContract<T>(
+    contractId: string,
+    method: string,
+    args: Record<string, unknown>,
+  ): Promise<T> {
+    const response = await fetchRpcWithRetry(
+      this.rpcUrl,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'keiz-collect-indexer',
+          method: 'query',
+          params: {
+            request_type: 'call',
+            finality: 'final',
+            account_id: contractId,
+            method_name: method,
+            args: Buffer.from(JSON.stringify(args)).toString('base64'),
+          },
+        }),
+      },
+      { timeoutMs: 15_000 },
+    );
+    const json = (await response.json()) as {
+      result?: { result?: string };
+      error?: { message?: string };
+    };
+    if (json.error || !json.result?.result) {
+      throw new Error(json.error?.message ?? 'Collect contract returned no result');
+    }
+    const decoded = Buffer.from(json.result.result, 'base64').toString('utf8');
+    return JSON.parse(decoded) as T;
   }
 
   private async indexPayment(payment: PaymentDocument) {

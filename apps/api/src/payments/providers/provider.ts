@@ -19,6 +19,8 @@ export interface QuoteParams {
   recipient: string;
   refundTo: string;
   slippageBps?: number;
+  /** 1Click passes this to ft_transfer_call on a NEAR destination. */
+  customRecipientMsg?: string;
 }
 
 export interface QuoteResult {

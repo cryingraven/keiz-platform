@@ -27,9 +27,7 @@ export class NearVerifyService {
 
   private rpcUrl(network: 'mainnet' | 'testnet'): string {
     if (network === 'testnet') {
-      return (
-        this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org'
-      );
+      return this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org';
     }
     return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }

@@ -49,6 +49,19 @@ export class Receipt {
   @Prop()
   txHash?: string;
 
+  /** Stable on-chain identity for receipts ingested from keiz-collect. */
+  @Prop()
+  chainEventId?: string;
+
+  @Prop()
+  receivableRef?: string;
+
+  @Prop()
+  tokenContract?: string;
+
+  @Prop()
+  sender?: string;
+
   @Prop({ required: true })
   recordedByUserId: string;
 }
@@ -124,3 +137,7 @@ ReceivableSchema.index({ orgId: 1, number: 1 }, { unique: true });
 ReceivableSchema.index({ orgId: 1, createdAt: -1 });
 ReceivableSchema.index({ orgId: 1, status: 1 });
 ReceivableSchema.index({ orgId: 1, dueDate: 1 });
+ReceivableSchema.index(
+  { 'receipts.chainEventId': 1 },
+  { unique: true, sparse: true },
+);

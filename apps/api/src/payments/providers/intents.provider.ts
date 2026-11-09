@@ -91,6 +91,9 @@ export class IntentsPaymentProvider implements PaymentProvider {
       refundTo: params.refundTo,
       slippageTolerance: params.slippageBps ?? 100,
       referral: this.config.referral,
+      ...(params.customRecipientMsg
+        ? { customRecipientMsg: params.customRecipientMsg, recipientType: 'DESTINATION_CHAIN' }
+        : {}),
     };
     const data = await this.request<OneClickQuoteResponse>('/v0/quote', {
       method: 'POST',

@@ -1,9 +1,9 @@
 /**
  * Single frontend network switch.
  *
- * `NEXT_PUBLIC_CHAIN_NETWORK` (mainnet | testnet) drives wallet login, the
- * passkey defaults and the dashboard badge. `NEXT_PUBLIC_NEAR_NETWORK` is kept
- * as a legacy fallback so existing deployments keep working.
+ * `NEXT_PUBLIC_CHAIN_NETWORK` (mainnet | testnet) drives the wallet connector
+ * and the dashboard badge. `NEXT_PUBLIC_NEAR_NETWORK` is kept as a legacy
+ * fallback so existing deployments keep working.
  */
 export type NearNetwork = 'mainnet' | 'testnet';
 

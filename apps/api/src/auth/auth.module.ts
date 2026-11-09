@@ -7,7 +7,7 @@ import { AuthChallenge, AuthChallengeSchema } from './auth-challenge.schema';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { NearVerifyService } from './near-verify.service';
-import { PasskeyService } from './passkey.service';
+import { NearAuthService } from './near-auth.service';
 
 @Module({
   imports: [
@@ -23,7 +23,7 @@ import { PasskeyService } from './passkey.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, NearVerifyService, PasskeyService],
-  exports: [NearVerifyService],
+  providers: [AuthService, NearVerifyService, NearAuthService],
+  exports: [NearVerifyService, NearAuthService],
 })
 export class AuthModule {}

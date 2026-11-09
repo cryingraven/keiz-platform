@@ -2,10 +2,14 @@ import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { auditNetworkConfig } from '../common/network';
 import { Public } from '../common/public.decorator';
+import { QueueProducer } from '../queues/queue-producer.service';
 
 @Controller('health')
 export class HealthController {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly queue: QueueProducer,
+  ) {}
 
   @Public()
   @Get()
@@ -19,6 +23,7 @@ export class HealthController {
         authNetwork: network.authNetwork,
         outlayerNetwork: network.outlayerNetwork,
         paymentsMode: network.paymentsMode,
+        queues: { enabled: this.queue.enabled },
         warnings: network.warnings,
         time: new Date().toISOString(),
       };

@@ -11,7 +11,7 @@ export default function TermsPage() {
         <p className="mt-3 text-sm leading-relaxed text-muted">
           KEIZ is a finance workspace for vendor bills, customer invoices, payments and a
           double-entry ledger. By signing in you agree to use it only for lawful invoice and
-          payment activity, and to keep your wallet or passkey secure.
+          payment activity, and to keep your wallet secure.
         </p>
         <div className="mt-8 space-y-5 text-[13px] leading-relaxed text-muted">
           <p>

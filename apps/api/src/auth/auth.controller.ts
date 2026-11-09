@@ -5,7 +5,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   loginChallengeSchema,
   loginVerifySchema,
-  passkeyRelaySchema,
+  nearAuthRelaySchema,
   switchOrgSchema,
 } from '@keiz/shared';
 import { ACCESS_COOKIE, REFRESH_COOKIE } from '../common/jwt-auth.guard';
@@ -14,7 +14,7 @@ import { Public } from '../common/public.decorator';
 import { ZodBody } from '../common/zod-body';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
-import { PasskeyService } from './passkey.service';
+import { NearAuthService } from './near-auth.service';
 
 function cookieOptions() {
   const secure =
@@ -34,7 +34,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly users: UsersService,
-    private readonly passkey: PasskeyService,
+    private readonly nearAuth: NearAuthService,
   ) {}
 
   @Public()
@@ -47,15 +47,15 @@ export class AuthController {
     return this.auth.createChallenge(body.accountId, body.network);
   }
 
-  /** Submits the NEAR Auth `sign` action. The relayer only calls fast-auth. */
+  /** Submits the NEAR Auth `sign` action on behalf of a logged-in Auth0 user. */
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('passkey/relay')
+  @Post('near-auth/relay')
   relay(
-    @Body(new ZodBody(passkeyRelaySchema))
+    @Body(new ZodBody(nearAuthRelaySchema))
     body: { receiverId: string; methodName: 'sign'; argsBase64: string; gas: string; deposit: string },
   ) {
-    return this.passkey.relay(body);
+    return this.nearAuth.relay(body);
   }
 
   @Public()

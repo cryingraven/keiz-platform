@@ -14,9 +14,8 @@ export default function PrivacyPage() {
         </p>
         <div className="mt-8 space-y-5 text-[13px] leading-relaxed text-muted">
           <p>
-            Passkey sign-in is brokered by NEAR Auth and Auth0. A passkey never leaves your device,
-            and KEIZ never receives a private key. Wallet sign-in asks your wallet to sign a
-            NEP-413 message; that signature is verified server-side.
+            Wallet sign-in asks your wallet to sign a NEP-413 message; that signature is verified
+            server-side. KEIZ never receives a private key.
           </p>
           <p>
             Bill and invoice documents, ledger entries and payment metadata are stored in the
@@ -56,7 +55,7 @@ export default function PrivacyPage() {
           </p>
           <p>
             <span className="font-medium text-ink">Third-party services.</span> OutLayer, NEAR AI
-            Cloud, NEAR RPC, 1Click and Auth0/NEAR Auth process data as needed for the features you
+            Cloud, NEAR RPC and 1Click process data as needed for the features you
             enable. Their terms and privacy policies apply.
           </p>
           <p>

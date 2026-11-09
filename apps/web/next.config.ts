@@ -50,11 +50,9 @@ const nextConfig: NextConfig = {
   // Explicitly inline public env. Turbopack computes NEXT_PUBLIC_* before
   // next.config runs, so values loaded from the repo root need to be declared.
   env: {
-    NEXT_PUBLIC_PASSKEY_ENABLED: readEnv('NEXT_PUBLIC_PASSKEY_ENABLED') || 'false',
-    NEXT_PUBLIC_WALLET_LOGIN: readEnv('NEXT_PUBLIC_WALLET_LOGIN') || 'false',
-    // Passkey network-specific values are intentionally not defaulted here:
-    // passkey.ts derives them from NEXT_PUBLIC_CHAIN_NETWORK unless explicitly
-    // overridden (empty values fall through to the derived defaults).
+    NEXT_PUBLIC_NEAR_AUTH_ENABLED: readEnv('NEXT_PUBLIC_NEAR_AUTH_ENABLED') || 'false',
+    // NEAR Auth network-specific values are intentionally not defaulted here:
+    // near-auth.ts derives them from NEXT_PUBLIC_CHAIN_NETWORK unless overridden.
     NEXT_PUBLIC_NEAR_AUTH_NETWORK: readEnv('NEXT_PUBLIC_NEAR_AUTH_NETWORK') || '',
     NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CLIENT_ID') || '',
     NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID: readEnv('NEXT_PUBLIC_NEAR_AUTH_CONTRACT_ID') || '',

@@ -3,7 +3,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { VendorsModule } from '../vendors/vendors.module';
 import { PaymentEvent, PaymentEventSchema } from './payment-event.schema';
-import { PaymentPollerService } from './payment-poller.service';
 import { NearTxVerifier } from './near-tx-verifier';
 import { PaymentProviderFactory } from './payment-provider.factory';
 import { Payment, PaymentSchema } from './payment.schema';
@@ -20,7 +19,7 @@ import { PaymentsService } from './payments.service';
     ]),
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService, PaymentProviderFactory, PaymentPollerService, NearTxVerifier],
+  providers: [PaymentsService, PaymentProviderFactory, NearTxVerifier],
   exports: [PaymentsService, PaymentProviderFactory],
 })
 export class PaymentsModule {}

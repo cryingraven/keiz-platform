@@ -23,6 +23,7 @@ import {
 import { InvoicesService } from '../invoices/invoices.service';
 import { VendorsService } from '../vendors/vendors.service';
 import { OutlayerService } from '../outlayer/outlayer.service';
+import { QueueProducer } from '../queues/queue-producer.service';
 import { PaymentsService } from '../payments/payments.service';
 import { walletNetwork } from '../common/network';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
@@ -49,6 +50,7 @@ export class AgentService {
     private readonly payments: PaymentsService,
     private readonly outlayer: OutlayerService,
     private readonly config: ConfigService,
+    private readonly queue: QueueProducer,
   ) {}
 
   private masterKey(): Buffer {
@@ -592,6 +594,7 @@ export class AgentService {
     await action.save();
 
     await this.invoices.markPaymentPending(orgId, String(invoice._id), payment.id);
+    await this.queue.enqueueOutlayerPoll(payment.id, 2_000);
 
     return { action: action.toObject(), payment: payment.toObject() };
   }

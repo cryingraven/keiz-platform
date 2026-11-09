@@ -6,12 +6,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   ArrowLeftRight,
   BookOpen,
-  Bot,
   Building2,
+  Contact,
   FileText,
   HandCoins,
   LayoutDashboard,
   Menu,
+  ScrollText,
   Sparkles,
   Users,
   Wallet,
@@ -26,17 +27,19 @@ import { Logo } from './logo';
 import { NearCredit } from './landing/logos';
 import { ConnectButton } from './connect-button';
 import { Spinner } from './ui';
+import { AssistantProvider } from './assistant';
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/invoices', label: 'Bills (AP)', icon: FileText },
   { href: '/dashboard/receivables', label: 'Receivables (AR)', icon: HandCoins },
+  { href: '/dashboard/customers', label: 'Customers', icon: Contact },
   { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
   { href: '/dashboard/team', label: 'Team', icon: Users },
   { href: '/dashboard/payments', label: 'Payments', icon: ArrowLeftRight },
   { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
   { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
-  { href: '/dashboard/chat', label: 'Assistant', icon: Bot },
+  { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -179,7 +182,9 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+          <AssistantProvider>{children}</AssistantProvider>
+        </main>
       </div>
 
       {open ? (

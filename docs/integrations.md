@@ -11,7 +11,7 @@ piece must expose. Nothing here is deployed; it is the spec to implement against
 | Integration | Contract / interface | Where used |
 |---|---|---|
 | Wallet login | NEP-413 message signature; on-chain `view_access_key` full-access check | `auth/nep413.ts`, `auth/near-verify.service.ts` |
-| Passkey login | `fast-auth.sign` through a funded relayer; MPC-derived ed25519 key | `auth/near-tx.ts`, `auth/passkey.service.ts` |
+| NEAR Auth login | Auth0 login, `fast-auth.sign` through a funded relayer, MPC-derived ed25519 key | `web/lib/near-auth.ts`, `auth/near-auth.service.ts`, `auth/near-tx.ts` |
 | AP deposit | NEP-141 `ft_transfer` / `ft_transfer_call` to a 1Click deposit address | `web/components/pay-panel.tsx` |
 | wNEAR origin | `wrap.near::near_deposit` + `ft_transfer` | `web/components/pay-panel.tsx` |
 | Cross-chain payout | 1Click REST (`/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`) | `payments/providers/intents.provider.ts` |
@@ -24,11 +24,10 @@ verifying it (1Click mode). Keep those invariants.
 
 ---
 
-## 2. Missing: on-chain AR collection (`keiz-collect`)
+## 2. Implemented: on-chain AR collection (`keiz-collect`)
 
-Customer receipts are currently trusted strings. To reconcile incoming payments
-automatically, deploy a NEP-141 receiver per workspace (or one shared contract
-with an `org/workspace` field) and index its receipts.
+The Rust contract lives in `contracts/keiz-collect`. It is a NEP-141 receiver
+that attributes incoming transfers to a receivable reference.
 
 ### Interface
 
@@ -60,7 +59,19 @@ impl KeizCollect {
 }
 ```
 
-`ReceiptView { tx_hash, sender_id, token, amount, receivable_ref, observed_at }`.
+`ReceiptView { id, token, sender_id, amount, receivable_ref, block_height, observed_at }`.
+
+A NEAR contract cannot read its transaction hash; the indexer adds
+`tx_hash`/`log_index` when it records the receipt.
+
+### Cross-chain AR with 1Click
+
+Create a committed quote with `recipient = keiz-collect.<workspace>`,
+`recipientType = DESTINATION_CHAIN`, and
+`customRecipientMsg = {"receivableRef":"AR-2001"}`. 1Click calls
+`ft_transfer_call` on the destination token, which invokes `ft_on_transfer`.
+The destination token must be allowlisted in the contract and registered for
+storage. 1Click is mainnet-only.
 
 ### Client flow
 
@@ -81,59 +92,35 @@ reliable way to attribute an incoming transfer to a receivable. Alternatives:
   storage deposit per invoice);
 - a single treasury account plus manual matching (current behaviour).
 
-### Required follow-up
+### Follow-up
 
-- Add `receipts.receivableRef` and `chainEventId` columns.
-- Reject duplicate `(txHash, logIndex)` at the database level.
-- Only accept `ONCHAIN` receipts from the indexer, never from the browser.
-
----
-
-## 3. Missing: passkey payment signing
-
-Passkey login currently authenticates only. A passkey cannot sign an
-`ft_transfer`, so passkey-only deployments are read-only for payments.
-
-### Option A — second relayer action (recommended for hackathon)
-
-Extend the relayer to accept a **pre-signed** `ft_transfer` request:
-
-```ts
-type RelayTransfer = {
-  receiverId: string;      // token contract
-  methodName: 'ft_transfer';
-  argsBase64: string;      // { receiver_id, amount, memo? }
-  gas: string;             // <= 100 TGas
-  deposit: string;         // must be "1"
-  fastAuthSignature: string; // the MPC signature returned by fast-auth.sign
-};
-```
-
-The relayer must:
-
-- allow only `ft_transfer` on token contracts in `NEAR_DEPOSIT_ALLOWLIST`;
-- cap gas and require `deposit === "1"`;
-- verify `fastAuthSignature` was produced for this exact action (bind the
-  signature to a hash of the serialized transaction);
-- rate-limit per account and per IP.
-
-This is a **fund-moving relayer**, so it must be treated as a higher-risk
-component than the current `sign`-only relayer: separate keys, separate quota,
-and an audit row for every submission.
-
-### Option B — NEP-366 meta-transactions
-
-Wrap the `ft_transfer` in a `SignedDelegate` and submit it through a relayer.
-This is more generic but requires a `DelegateAction` builder and a relayer that
-already supports NEP-366. Use this if you expect more contract calls later.
+- The indexer now reads `get_receipts` from the configured collect contract and
+  records `ONCHAIN` receipts with a stable `chainEventId`
+  (`collect:<contract>:<receiptId>`). It rejects overpayments and unknown refs.
+- Set `KEIZ_COLLECT_ORG_ID`, `KEIZ_COLLECT_TOKEN_CONTRACT` and
+  `KEIZ_COLLECT_ASSET_DECIMALS` alongside the contract id.
+- Per-workspace deployment is still manual; the current env config is one
+  collect contract per deployment.
+- Only the indexer creates `ONCHAIN` receipts; the browser cannot.
 
 ---
 
-## 4. Missing: local agent execution / policy vault
+## 3. Implemented: on-chain AP treasury (`keiz-vault`)
 
-The `provider: "local"` agent wallet generates an ed25519 key that is never used
-to sign anything. Either remove local custody or make it real with a policy
-vault.
+`contracts/keiz-vault` is the policy-bound treasury for vendor payments. It
+supports M-of-N approval, per-transaction and daily limits, allowed assets and
+recipients, pause, and an `intents_deposit` proposal kind for 1Click payouts.
+Policy is re-checked at execution time inside the contract.
+
+For cross-chain AP, the API creates a 1Click `EXACT_OUTPUT` quote, then the vault
+proposes/approves an `intents_deposit` transfer to the quote's deposit address.
+The API submits the vault tx hash to `/v0/deposit/submit` and verifies the
+destination transfer before marking the invoice paid.
+
+The NEAR Auth relayer remains `fast-auth.sign` only. Vault proposals/approvals
+are wallet-signed, or use a separate transaction relayer with its own contract
+and method allowlist.
+
 
 ### `keiz-vault` interface
 
@@ -163,12 +150,13 @@ pub struct Policy {
 ```
 
 The key property is that the limit is checked **at execution time inside the
-contract**, so a compromised API cannot bypass it. Until this exists, local
-agents must not be described as custody.
+contract**, so a compromised API cannot bypass it. The contract now exists in
+`contracts/keiz-vault`; local agents must still not be described as custody
+until it is deployed and wired.
 
 ---
 
-## 5. Missing: OutLayer policy write
+## 4. Missing: OutLayer policy write
 
 Custody policy is read-only in KEIZ; owners must use the handoff URL. A wallet
 with no policy is unrestricted. Two acceptable fixes:
@@ -184,9 +172,10 @@ Never silently allow an unrestricted custody wallet to spend.
 
 ---
 
-## 6. Missing: destination payout verification
+## 5. Partially implemented: destination payout verification
 
-`Payment.destinationTxHashes` is display-only. For production:
+A missing destination transaction hash now forces `NEEDS_REVIEW` instead of
+marking the invoice paid. Still missing:
 
 - verify the destination transfer on the target chain (`eth_getTransactionByHash`,
   Solana `getTransaction`, etc.);
@@ -199,21 +188,21 @@ This needs a small verifier service per chain, not a smart contract.
 
 ---
 
-## 7. Missing: webhooks / queue
+## 6. Implemented: webhooks / queue
 
-All three pollers (`payments`, `outlayer`, `indexer`) are in-process and assume a
-single API instance. Before scaling out:
+Payments, OutLayer custody, the indexer and the NEAR Auth relayer now run as
+BullMQ jobs. The API produces jobs and the separate worker
+(`pnpm --filter @keiz/api worker`) processes them; Redis is required
+(`REDIS_URL`). Payment/OutLayer polls are per-payment delayed jobs plus
+repeatable sweepers; the relayer queue uses concurrency 1. `QUEUES_ENABLED=false`
+makes producers no-ops for tests.
 
-- move pollers to a worker process (BullMQ/Redis, SQS, or a dedicated Nest app);
-- add a 1Click webhook endpoint if/when the provider offers one;
-- make every handler idempotent on `(provider, providerRequestId, status)`.
-
-The database already has the right idempotency keys; only the execution model
-needs to change.
+Still missing: a 1Click webhook endpoint (provider-dependent) and notification
+fan-out.
 
 ---
 
-## 8. Missing: B2B workspace operations
+## 7. Missing: B2B workspace operations
 
 These are API/product contracts, not smart contracts, but they block real use:
 

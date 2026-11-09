@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Interval } from '@nestjs/schedule';
 import { AgentAction, AgentActionDocument } from '../agent/agent-action.schema';
 import { AgentWallet, AgentWalletDocument } from '../agent/agent-wallet.schema';
 import { decryptSecret, deriveMasterKey } from '../agent/agent-crypto';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentEvent, PaymentEventDocument } from '../payments/payment-event.schema';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
+import { QueueProducer } from '../queues/queue-producer.service';
 import { mapOutlayerStatus } from './outlayer.mapper';
 import { OutlayerService } from './outlayer.service';
 import { ConfigService } from '@nestjs/config';
@@ -15,13 +15,6 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class OutlayerPoller {
   private readonly logger = new Logger(OutlayerPoller.name);
-  private running = false;
-  /**
-   * Free custody tiers are measured per operation, so a fixed 5s poll can burn
-   * a wallet's daily quota in under two hours. Poll aggressively right after a
-   * request, then back off hard. State is per-process and intentionally cheap.
-   */
-  private readonly pollState = new Map<string, { count: number; nextAt: number }>();
 
   constructor(
     @InjectModel(Payment.name) private readonly payments: Model<PaymentDocument>,
@@ -31,6 +24,7 @@ export class OutlayerPoller {
     private readonly invoices: InvoicesService,
     private readonly outlayer: OutlayerService,
     private readonly config: ConfigService,
+    private readonly queue: QueueProducer,
   ) {}
 
   private masterKey(): Buffer {
@@ -40,59 +34,29 @@ export class OutlayerPoller {
     );
   }
 
-  private isDue(paymentId: string): boolean {
-    const state = this.pollState.get(paymentId);
-    return !state || Date.now() >= state.nextAt;
-  }
-
-  private schedule(paymentId: string) {
-    const state = this.pollState.get(paymentId) ?? { count: 0, nextAt: 0 };
-    state.count += 1;
-    // Fast right after submission, then 30s, then 5m. This keeps quota use low
-    // while still settling a normal request within a few seconds.
-    const delay = state.count <= 3 ? 5_000 : state.count <= 6 ? 30_000 : 300_000;
-    state.nextAt = Date.now() + delay;
-    this.pollState.set(paymentId, state);
-  }
-
-  private coolDown(paymentId: string) {
-    this.pollState.set(paymentId, {
-      count: 10,
-      nextAt: Date.now() + 10 * 60_000,
-    });
-  }
-
-  @Interval(5_000)
-  async tick() {
-    if (this.running || !this.outlayer.isEnabled) return;
-    this.running = true;
-    try {
-      const open = await this.payments
-        .find({ provider: 'outlayer', status: { $in: ['PROCESSING', 'AWAITING_DEPOSIT'] } })
-        .limit(25);
-
-      for (const payment of open) {
-        if (!this.isDue(payment.id)) continue;
-        try {
-          await this.refresh(payment);
-          if (['PROCESSING', 'AWAITING_DEPOSIT'].includes(payment.status)) {
-            this.schedule(payment.id);
-          } else {
-            this.pollState.delete(payment.id);
-          }
-        } catch (error) {
-          const message = (error as Error).message;
-          if (/429|operation_limit|rate/i.test(message)) {
-            this.coolDown(payment.id);
-          } else {
-            this.schedule(payment.id);
-          }
-          this.logger.warn(`Custody poll failed for ${payment.id}: ${message}`);
-        }
-      }
-    } finally {
-      this.running = false;
+  /** Queue sweep: re-arm polls that were lost on a restart. */
+  async sweep(): Promise<number> {
+    if (!this.outlayer.isEnabled) return 0;
+    const open = await this.payments
+      .find({ provider: 'outlayer', status: { $in: ['PROCESSING', 'AWAITING_DEPOSIT'] } })
+      .select('_id')
+      .limit(100);
+    for (const payment of open) {
+      await this.queue.enqueueOutlayerPoll(String(payment._id), 0);
     }
+    return open.length;
+  }
+
+  /** Queue processor for one payment. */
+  async pollOne(paymentId: string): Promise<'pending' | 'terminal' | 'missing'> {
+    if (!this.outlayer.isEnabled) return 'terminal';
+    const payment = await this.payments.findById(paymentId);
+    if (!payment || payment.provider !== 'outlayer') return 'missing';
+    if (!['PROCESSING', 'AWAITING_DEPOSIT'].includes(payment.status)) return 'terminal';
+    await this.refresh(payment);
+    return ['PROCESSING', 'AWAITING_DEPOSIT'].includes(payment.status)
+      ? 'pending'
+      : 'terminal';
   }
 
   private async refresh(payment: PaymentDocument) {

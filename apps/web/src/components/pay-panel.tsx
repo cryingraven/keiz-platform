@@ -74,7 +74,7 @@ export function PayPanel({
   const payments = useApi<Payment[]>(`/payments?invoiceId=${invoiceId}`, { pollMs: 3000 });
   const health = useApi<{ paymentsMode: string }>('/health');
   const tokens = useApi<Token[]>('/payments/tokens');
-  const { session, sendTransactions, walletLoginEnabled } = useAuth();
+  const { session, sendTransactions } = useAuth();
   const active = payments.data?.[0];
   const events = useApi<PaymentEvent[]>(active ? `/payments/${active._id}/events` : null, {
     pollMs: 3000,
@@ -132,10 +132,6 @@ export function PayPanel({
   }
 
   async function signDeposit() {
-    if (!walletLoginEnabled) {
-      setError('Passkey transaction signing is not enabled yet.');
-      return;
-    }
     if (!active?.depositAddress) return;
     setSigning(true);
     setError(null);
@@ -454,7 +450,7 @@ export function PayPanel({
                   <p className="rounded-xl bg-paper px-3 py-2 text-center text-[11px] text-muted">
                     Ask an admin to settle this mock payment.
                   </p>
-                ) : walletLoginEnabled ? (
+                ) : (
                   <Button
                     size="sm"
                     className="w-full"
@@ -463,11 +459,6 @@ export function PayPanel({
                   >
                     <Wallet className="h-3.5 w-3.5" /> Sign deposit in wallet
                   </Button>
-                ) : (
-                  <p className="rounded-xl bg-paper px-3 py-2.5 text-[11px] leading-relaxed text-muted">
-                    Passkey transaction signing is not enabled yet. Use the verified transaction
-                    hash below, or enable wallet login for deposits.
-                  </p>
                 )}
 
                 <div className="flex gap-2">

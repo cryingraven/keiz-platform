@@ -8,10 +8,10 @@ import {
   Clock,
   Cpu,
   FileText,
-  Fingerprint,
   HandCoins,
   RotateCcw,
   ShieldCheck,
+  Wallet,
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { FaqSection } from '@/components/landing/faq';
@@ -31,7 +31,7 @@ import {
 } from '@/components/landing/previews';
 
 const TRUST = [
-  { label: 'Passkey sign-in', icon: Fingerprint },
+  { label: 'NEAR wallet sign-in', icon: Wallet },
   { label: 'Approval trails', icon: ShieldCheck },
   { label: 'TEE-backed privacy', icon: Cpu },
   { label: 'Cross-chain payouts', icon: ArrowLeftRight },
@@ -418,8 +418,8 @@ export default function LandingPage() {
               ))}
             </div>
             <p className="mt-8 inline-flex items-center gap-1.5 text-[11px] text-muted">
-              <Fingerprint className="h-3.5 w-3.5" /> Sign in with a passkey. No seed phrase, no
-              extension.
+              <Wallet className="h-3.5 w-3.5" /> Sign in with a NEAR wallet. One message signature,
+              no transaction.
             </p>
           </div>
         </section>
@@ -464,7 +464,7 @@ export default function LandingPage() {
                 machine for offline demos.
               </p>
               <p className="text-[11px] leading-relaxed text-muted">
-                No seed phrase. Passkey login. KEIZ never holds your keys.
+                NEAR wallet sign-in. KEIZ never holds your keys.
               </p>
             </div>
           </div>
@@ -527,7 +527,7 @@ export default function LandingPage() {
                 </a>
               </div>
               <p className="mt-4 text-[11px] text-white/40">
-                Passkey or NEAR wallet. No seed phrase.
+                NEAR wallet. No seed phrase shared.
               </p>
             </div>
           </div>

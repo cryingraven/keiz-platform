@@ -13,7 +13,11 @@ import {
 import { api, ApiError } from './api';
 import { base64ToBytes, bytesToBase64 } from './format';
 import { chainNetwork } from './network';
-import { passkeyEnabled, signInWithPasskey as passkeySignIn } from './passkey';
+import {
+  nearAuthEnabled,
+  signInWithNearAuth as nearAuthSignIn,
+  signOutNearAuth,
+} from './near-auth';
 
 export interface Session {
   user: { id: string; accountId: string; displayName: string | null } | null;
@@ -30,12 +34,11 @@ interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   busy: boolean;
-  passkeyBusy: boolean;
-  passkeyEnabled: boolean;
-  walletLoginEnabled: boolean;
+  nearAuthBusy: boolean;
+  nearAuthEnabled: boolean;
   error: string | null;
   signIn: () => Promise<void>;
-  signInWithPasskey: () => Promise<void>;
+  signInWithNearAuth: () => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   clearError: () => void;
@@ -45,8 +48,6 @@ interface AuthContextValue {
   chooseAccount: (accountId: string) => Promise<void>;
   cancelAccountSelection: () => void;
 }
-
-const walletLoginEnabled = process.env.NEXT_PUBLIC_WALLET_LOGIN === 'true';
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -103,7 +104,7 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [nearAuthBusy, setNearAuthBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<WalletAccount[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,8 +131,8 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   /**
-   * Load near-connect lazily, on the first wallet action. Passkey-only mode and
-   * dashboard pages never import it.
+   * Load near-connect lazily, on the first wallet action. Dashboard pages
+   * never import it.
    */
   const ensureConnector = useCallback(async () => {
     if (connectorRef.current) return connectorRef.current;
@@ -197,10 +198,6 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signIn = useCallback(async () => {
-    if (!walletLoginEnabled) {
-      setError('Wallet login is disabled. Use a passkey.');
-      return;
-    }
     setBusy(true);
     setError(null);
     setAccounts([]);
@@ -249,34 +246,26 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
 
   const cancelAccountSelection = useCallback(() => setAccounts([]), []);
 
+  const signInWithNearAuth = useCallback(async () => {
+    setNearAuthBusy(true);
+    setError(null);
+    try {
+      const next = await nearAuthSignIn();
+      setSession(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'NEAR Auth sign-in failed.');
+    } finally {
+      setNearAuthBusy(false);
+    }
+  }, []);
+
   const preloadWallets = useCallback(async () => {
-    if (!walletLoginEnabled) return;
     // Warm the connector while the user is still on /login so connect() can
     // open the selector inside the click gesture (popup blockers).
     await ensureConnector();
   }, [ensureConnector]);
 
-  const signInWithPasskey = useCallback(async () => {
-    setPasskeyBusy(true);
-    setError(null);
-    try {
-      const next = await passkeySignIn();
-      setSession(next);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Passkey sign-in failed. Check the Auth0 and relayer configuration.',
-      );
-    } finally {
-      setPasskeyBusy(false);
-    }
-  }, []);
-
   const ensureWallet = useCallback(async (): Promise<WalletLike> => {
-    if (!walletLoginEnabled) {
-      throw new Error('Wallet signing is disabled. Enable NEXT_PUBLIC_WALLET_LOGIN to use it.');
-    }
     if (walletRef.current) return walletRef.current;
     const connector = await ensureConnector();
     if (!connector) throw new Error('Wallet connector is unavailable');
@@ -307,6 +296,7 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
     }
     walletRef.current = null;
     setAccounts([]);
+    await signOutNearAuth();
     try {
       await api('/auth/logout', { method: 'POST' });
     } catch {
@@ -321,12 +311,11 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       busy,
-      passkeyBusy,
-      passkeyEnabled,
-      walletLoginEnabled,
+      nearAuthBusy,
+      nearAuthEnabled,
       error,
       signIn,
-      signInWithPasskey,
+      signInWithNearAuth,
       signOut,
       refresh,
       clearError: () => setError(null),
@@ -340,10 +329,10 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       busy,
-      passkeyBusy,
+      nearAuthBusy,
       error,
       signIn,
-      signInWithPasskey,
+      signInWithNearAuth,
       signOut,
       refresh,
       sendTransactions,

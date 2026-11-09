@@ -95,7 +95,7 @@ describe('NearVerifyService', () => {
     );
   });
 
-  it('uses the testnet RPC for testnet challenges', async () => {
+  it('uses NEAR_AUTH_RPC_URL for testnet challenges', async () => {
     const fetchMock = mockRpc({
       account: () => ({ result: { amount: '1' } }),
       key: () => ({ result: { permission: 'FullAccess' } }),

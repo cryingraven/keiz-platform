@@ -3,7 +3,7 @@ import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 
 /**
- * Minimal NEAR transaction builder used only by the passkey relayer.
+ * Minimal NEAR transaction builder used only by the NEAR Auth relayer.
  * We deliberately do not add near-api-js (ESM) to the CommonJS API.
  */
 
@@ -63,7 +63,7 @@ function keyType(): Buffer {
 
 export function validateSignAction(
   input: SignActionInput,
-  config: { contractId: string; maxGas: bigint },
+  config: { contractId: string; maxGas: bigint; allowedGuardId: string },
 ): Buffer {
   if (input.receiverId !== config.contractId) {
     throw new NearRelayError('Relayer only calls the configured NEAR Auth contract', 400);
@@ -83,8 +83,8 @@ export function validateSignAction(
   if (gas <= 0n || gas > config.maxGas) {
     throw new NearRelayError('Gas is outside the allowed range', 400);
   }
-  if (deposit !== 0n) {
-    throw new NearRelayError('The relayer does not attach a deposit', 400);
+  if (deposit !== 1n) {
+    throw new NearRelayError('The NEAR Auth sign call requires a 1 yoctoNEAR deposit', 400);
   }
 
   let args: Buffer;
@@ -93,8 +93,18 @@ export function validateSignAction(
   } catch {
     throw new NearRelayError('argsBase64 is not valid base64', 400);
   }
-  if (args.length === 0 || args.length > 16_384) {
+  if (args.length === 0 || args.length > 24_000) {
     throw new NearRelayError('Action arguments are empty or too large', 400);
+  }
+
+  let parsed: { guard_id?: unknown };
+  try {
+    parsed = JSON.parse(args.toString('utf8')) as { guard_id?: unknown };
+  } catch {
+    throw new NearRelayError('Action arguments are not JSON', 400);
+  }
+  if (parsed.guard_id !== config.allowedGuardId) {
+    throw new NearRelayError('Unknown Auth0 guard id', 400);
   }
 
   return serializeFunctionCall(input.methodName, args, gas, deposit);
@@ -174,6 +184,8 @@ export interface RelayerConfig {
   accountId?: string;
   privateKey?: string;
   maxGas: bigint;
+  allowedGuardId: string;
+  minBalanceYocto?: bigint;
 }
 
 export class NearAuthRelayer {
@@ -191,7 +203,7 @@ export class NearAuthRelayer {
     const response = await fetch(this.config.rpcUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 'keiz-passkey', method, params }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'keiz-near-auth', method, params }),
       signal: AbortSignal.timeout(20_000),
     });
     const json = (await response.json()) as { result?: T; error?: { message?: string } };
@@ -205,11 +217,12 @@ export class NearAuthRelayer {
     const action = validateSignAction(input, {
       contractId: this.config.contractId,
       maxGas: this.config.maxGas,
+      allowedGuardId: this.config.allowedGuardId,
     });
 
     if (!this.config.accountId || !this.config.privateKey) {
       throw new NearRelayError(
-        'Passkey relayer is not configured. Set NEAR_AUTH_RELAYER_ACCOUNT_ID and NEAR_AUTH_RELAYER_PRIVATE_KEY.',
+        'NEAR Auth relayer is not configured. Set NEAR_AUTH_RELAYER_ACCOUNT_ID and NEAR_AUTH_RELAYER_PRIVATE_KEY.',
         503,
       );
     }
@@ -217,6 +230,17 @@ export class NearAuthRelayer {
     return this.serialize(async () => {
       const keyPair = parseRelayerKey(this.config.privateKey!);
       const publicKey = `ed25519:${bs58.encode(Buffer.from(keyPair.publicKey))}`;
+
+      if (this.config.minBalanceYocto && this.config.minBalanceYocto > 0n) {
+        const balance = await this.rpc<{ amount: string }>('query', {
+          request_type: 'view_account',
+          finality: 'final',
+          account_id: this.config.accountId,
+        });
+        if (BigInt(balance.amount) < this.config.minBalanceYocto) {
+          throw new NearRelayError('NEAR Auth relayer is underfunded', 503);
+        }
+      }
 
       let lastError: unknown;
       for (let attempt = 0; attempt < 3; attempt += 1) {
