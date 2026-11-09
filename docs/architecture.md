@@ -141,7 +141,7 @@ Web routes (App Router, client-rendered):
 | Route | Purpose |
 |---|---|
 | `/` | Landing page. |
-| `/login` | The only sign-in entry: NEAR Auth card + NEAR wallet selector. |
+| `/login` | The only sign-in entry: NEAR Auth card + the full compatible NEAR wallet list. |
 | `/dashboard` | Overview. |
 | `/dashboard/invoices`, `/dashboard/invoices/[id]` | AP bills and detail (approve, quote, pay). |
 | `/dashboard/receivables`, `/dashboard/receivables/[id]` | AR invoices, receipts and collection quote. |

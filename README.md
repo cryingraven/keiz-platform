@@ -210,7 +210,7 @@ The SDK's built-in hosts are stale, so `OUTLAYER_BASE_URL` is always passed expl
 
 ## Login (NEAR Auth + wallet)
 
-`/login` offers **Continue with NEAR Auth** plus the near-connect wallet selector. NEAR Auth uses Auth0 for passkeys, Google, Apple and email; the NEAR key is derived by the MPC network and never reaches the browser. The wallet selector supports HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and the rest of the manifest. Both clients are preloaded on `/login` so their popups open inside the click gesture.
+`/login` offers **Continue with NEAR Auth** plus a list of every compatible NEAR Connect wallet. NEAR Auth uses Auth0 for passkeys, Google, Apple and email; the NEAR key is derived by the MPC network and never reaches the browser. The wallet list is not hardcoded: it renders `connector.availableWallets` filtered to wallets that support NEP-413 `signMessage` on the active network, so HOT, Meteor, Intear, MyNearWallet, Nightly, NEAR Mobile, OKX, Hana, Ledger and newly published wallets appear automatically. A “More wallets / open selector” fallback keeps the built-in selector available. Both clients are preloaded on `/login` so popups open inside the click gesture.
 
 The API verifies the same NEP-413 `SignedMessage` for both paths. The challenge is single-use, TTL-indexed and bound to `CHAIN_NETWORK`; full-access keys are required. New NEAR Auth users are implicit accounts (hex of the ed25519 key), accepted only when `view_account` reports `UNKNOWN_ACCOUNT` and the id matches the key.
 

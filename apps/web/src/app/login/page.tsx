@@ -23,6 +23,10 @@ export default function LoginPage() {
     error,
     clearError,
     preloadWallets,
+    wallets,
+    walletsLoading,
+    activeWalletId,
+    signInWithWallet,
     accounts,
     chooseAccount,
     cancelAccountSelection,
@@ -167,29 +171,104 @@ export default function LoginPage() {
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => void signIn()}
-            disabled={busy || nearAuthBusy}
-            className="group flex w-full items-center gap-4 rounded-2xl border border-line bg-white p-5 text-left transition hover:border-line-strong hover:shadow-[0_1px_2px_rgba(0,0,0,0.04)] disabled:cursor-wait disabled:opacity-70"
-          >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white">
-              {busy ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <NearProtocolIcon className="h-5 w-5" />
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-semibold">NEAR Wallets</span>
-              <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
-                {busy
-                  ? 'Opening wallet selector…'
-                  : 'HOT, Meteor, Nightly, MyNearWallet and more.'}
-              </span>
-            </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted transition group-hover:text-ink" />
-          </button>
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted">
+                NEAR wallets
+              </p>
+              {wallets.length > 0 ? (
+                <span className="font-num text-[10px] text-muted">{wallets.length}</span>
+              ) : null}
+            </div>
+
+            {walletsLoading ? (
+              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-white">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="flex items-center gap-3 px-4 py-3">
+                    <span className="h-9 w-9 animate-pulse rounded-lg bg-paper" />
+                    <span className="flex-1 space-y-1.5">
+                      <span className="block h-3 w-28 animate-pulse rounded bg-paper" />
+                      <span className="block h-2.5 w-40 animate-pulse rounded bg-paper" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : wallets.length === 0 ? (
+              <div className="rounded-2xl border border-line bg-white p-5">
+                <p className="text-[13px] font-semibold">No compatible wallet found</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted">
+                  No installed or web wallet supports NEP-413 message signing on this
+                  network. Open the wallet selector or install a NEAR wallet.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void signIn()}
+                  disabled={busy || nearAuthBusy}
+                  className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-brand hover:underline disabled:opacity-60"
+                >
+                  Open wallet selector
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-white">
+                {wallets.map((wallet) => {
+                  const connecting = busy && activeWalletId === wallet.id;
+                  return (
+                    <button
+                      key={wallet.id}
+                      type="button"
+                      onClick={() => void signInWithWallet(wallet.id)}
+                      disabled={busy || nearAuthBusy}
+                      className="group flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-paper disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={wallet.icon}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className="h-9 w-9 shrink-0 rounded-lg bg-paper object-contain"
+                        onError={(event) => {
+                          event.currentTarget.style.visibility = 'hidden';
+                        }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-[13px] font-semibold">
+                            {wallet.name}
+                          </span>
+                          <span className="shrink-0 rounded-full border border-line px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-muted">
+                            {wallet.type === 'injected' ? 'Extension' : 'Web'}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted">
+                          {connecting ? 'Connecting…' : wallet.description}
+                        </span>
+                      </span>
+                      {connecting ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 shrink-0 text-muted transition group-hover:text-ink" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {wallets.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => void signIn()}
+                disabled={busy || nearAuthBusy}
+                className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted underline decoration-line-strong underline-offset-2 transition hover:text-ink disabled:opacity-60"
+              >
+                More wallets / open selector
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
         )}
 
         {chainNetwork === 'testnet' ? (

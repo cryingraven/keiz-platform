@@ -30,6 +30,15 @@ export interface WalletAccount {
   publicKey?: string;
 }
 
+export interface WalletOption {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  website: string;
+  type: 'sandbox' | 'injected';
+}
+
 interface AuthContextValue {
   session: Session | null;
   loading: boolean;
@@ -44,6 +53,10 @@ interface AuthContextValue {
   clearError: () => void;
   sendTransactions: (transactions: unknown[]) => Promise<Array<{ hash: string }>>;
   preloadWallets: () => Promise<void>;
+  wallets: WalletOption[];
+  walletsLoading: boolean;
+  activeWalletId: string | null;
+  signInWithWallet: (walletId: string) => Promise<void>;
   accounts: WalletAccount[];
   chooseAccount: (accountId: string) => Promise<void>;
   cancelAccountSelection: () => void;
@@ -111,6 +124,28 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
   const connectorRef = useRef<any>(null);
   const connectorPromiseRef = useRef<Promise<any> | null>(null);
   const walletRef = useRef<WalletLike | null>(null);
+  const [wallets, setWallets] = useState<WalletOption[]>([]);
+  const [walletsLoading, setWalletsLoading] = useState(true);
+  const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
+
+  const publishWallets = useCallback(() => {
+    const connector = connectorRef.current;
+    if (!connector) {
+      setWallets([]);
+      return;
+    }
+    const list: WalletOption[] = (connector.availableWallets ?? []).map(
+      (wallet: { manifest: WalletOption }) => ({
+        id: wallet.manifest.id,
+        name: wallet.manifest.name,
+        description: wallet.manifest.description,
+        icon: wallet.manifest.icon,
+        website: wallet.manifest.website,
+        type: wallet.manifest.type,
+      }),
+    );
+    setWallets(Array.from(new Map(list.map((wallet) => [wallet.id, wallet])).values()));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -149,6 +184,8 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
           connector.on?.('wallet:signOut', () => {
             walletRef.current = null;
           });
+          connector.on?.('selector:walletsChanged', () => publishWallets());
+          connector.on?.('selector:manifestUpdated', () => publishWallets());
           connectorRef.current = connector;
           return connector;
         } catch {
@@ -157,7 +194,39 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       })();
     }
     return connectorPromiseRef.current;
-  }, []);
+  }, [publishWallets]);
+
+  const loadWallets = useCallback(async () => {
+    setWalletsLoading(true);
+    try {
+      const connector = await ensureConnector();
+      if (!connector) {
+        setWallets([]);
+        return;
+      }
+      await connector.whenManifestLoaded?.catch?.(() => undefined);
+      publishWallets();
+      if ((connector.availableWallets?.length ?? 0) === 0) {
+        // The manifest registers sandbox wallets asynchronously after the
+        // manifest promise resolves. Wait briefly for the first change event.
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 1500);
+          const done = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          if (typeof connector.once === 'function') {
+            connector.once('selector:walletsChanged', done);
+          } else {
+            setTimeout(done, 0);
+          }
+        });
+        publishWallets();
+      }
+    } finally {
+      setWalletsLoading(false);
+    }
+  }, [ensureConnector, publishWallets]);
 
   const completeSignIn = useCallback(
     async (wallet: WalletLike, accountId: string) => {
@@ -223,6 +292,36 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [completeSignIn, ensureConnector]);
 
+  const signInWithWallet = useCallback(
+    async (walletId: string) => {
+      setBusy(true);
+      setActiveWalletId(walletId);
+      setError(null);
+      setAccounts([]);
+      try {
+        const connector = await ensureConnector();
+        if (!connector) throw new Error('Wallet connector is unavailable');
+        const wallet = (await connector.connect({ walletId })) as WalletLike;
+        walletRef.current = wallet;
+        const walletAccounts = await wallet.getAccounts();
+        if (walletAccounts.length === 0) {
+          throw new Error('No account returned by the wallet');
+        }
+        if (walletAccounts.length > 1) {
+          setAccounts(walletAccounts);
+          return;
+        }
+        await completeSignIn(wallet, walletAccounts[0].accountId);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : friendlyWalletError(err));
+      } finally {
+        setBusy(false);
+        setActiveWalletId(null);
+      }
+    },
+    [completeSignIn, ensureConnector],
+  );
+
   const chooseAccount = useCallback(
     async (accountId: string) => {
       const wallet = walletRef.current;
@@ -260,10 +359,10 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const preloadWallets = useCallback(async () => {
-    // Warm the connector while the user is still on /login so connect() can
-    // open the selector inside the click gesture (popup blockers).
-    await ensureConnector();
-  }, [ensureConnector]);
+    // Warm the connector and load the wallet manifest while the user is still on
+    // /login, so a row click can connect inside the click gesture.
+    await loadWallets();
+  }, [loadWallets]);
 
   const ensureWallet = useCallback(async (): Promise<WalletLike> => {
     if (walletRef.current) return walletRef.current;
@@ -321,6 +420,10 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       clearError: () => setError(null),
       sendTransactions,
       preloadWallets,
+      wallets,
+      walletsLoading,
+      activeWalletId,
+      signInWithWallet,
       accounts,
       chooseAccount,
       cancelAccountSelection,
@@ -337,6 +440,10 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       refresh,
       sendTransactions,
       preloadWallets,
+      wallets,
+      walletsLoading,
+      activeWalletId,
+      signInWithWallet,
       accounts,
       chooseAccount,
       cancelAccountSelection,
