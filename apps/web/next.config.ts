@@ -79,7 +79,11 @@ const nextConfig: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
+          // The NEAR Auth / Auth0 flow needs the opener relationship while the
+          // popup is open. `same-origin-allow-popups` still isolates the popup in
+          // some browsers; `unsafe-none` keeps the standard popup postMessage flow
+          // working. Do not add Cross-Origin-Embedder-Policy here.
+          { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
         ],
       },
     ];

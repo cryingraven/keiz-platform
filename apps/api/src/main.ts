@@ -48,10 +48,20 @@ async function bootstrap() {
     next();
   });
   app.use(cookieParser());
-  app.use(helmet());
+  // The API serves JSON, not documents. Helmet's document-level cross-origin
+  // policies can leak through proxies and break browser popup/iframe flows, so
+  // leave COOP off and allow cross-origin resource reads for API consumers.
+  app.use(
+    helmet({
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.enableCors({
-    origin: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(','),
+    origin: allowedOrigins,
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['content-type', 'authorization'],
   });
   const { httpAdapter } = app.get(HttpAdapterHost);
   app.useGlobalFilters(new MongoExceptionFilter(httpAdapter));

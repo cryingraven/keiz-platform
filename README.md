@@ -218,6 +218,8 @@ The API verifies the same NEP-413 `SignedMessage` for both paths. The challenge 
 
 > **SDK caveat:** the docs describe `requestMessageSignature`, but the latest published packages (`@fast-auth-near/browser-sdk@1.4.2`, `@fast-auth-near/javascript-provider@1.4.1`) do not expose it yet. `apps/web/src/lib/near-auth.ts` feature-detects the method and falls back to the same `nep413` Auth0 authorization parameter the upstream SDK sends internally. Remove the fallback and the direct `@auth0/auth0-spa-js` dependency when the SDK ships it.
 
+> **Cross-origin troubleshooting:** the app uses a refresh-token Auth0 client (no hidden iframe) and `Cross-Origin-Opener-Policy: unsafe-none` so the login popup keeps its opener. If sign-in still fails, add the app origin to the Auth0 client's **Allowed Callback URLs** and **Allowed Web Origins** (`http://localhost:3000` and the deployed origin), enable the refresh-token grant, and open KEIZ in a top-level tab with popups allowed. Running the login inside an iframe is not supported.
+
 **Relayer:** `POST /auth/near-auth/relay` submits `sign` to the configured `fast-auth` contract. It only accepts that contract and the expected `jwt#https://<auth0-domain>/` guard id, caps gas, requires a 1 yoctoNEAR deposit, and fails closed when `NEAR_AUTH_RELAYER_*` is unset or the account is underfunded. Daily per-user and global relay limits bound gas abuse. Testnet uses the shared Auth0 client; mainnet needs an approved client id.
 
 `NEXT_PUBLIC_CHAIN_NETWORK` switches the frontend between `mainnet` and `testnet` and drives both login paths and the dashboard badge. The API's `CHAIN_NETWORK` and `NEAR_AUTH_NETWORK` must match it.

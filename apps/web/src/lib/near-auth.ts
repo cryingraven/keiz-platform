@@ -70,16 +70,46 @@ interface NearAuthClient {
 let clientPromise: Promise<NearAuthClient & any> | null = null;
 let auth0Promise: Promise<Auth0Client> | null = null;
 
+async function getAuth0Client(): Promise<Auth0Client> {
+  if (auth0Promise) return auth0Promise;
+  const promise = (async () => {
+    const { Auth0Client } = await import('@auth0/auth0-spa-js');
+    const redirectUri =
+      typeof window === 'undefined' ? undefined : window.location.origin;
+    return new Auth0Client({
+      domain: auth0Domain,
+      clientId,
+      // Auth0 normally uses a hidden iframe for silent auth, which fails in
+      // cross-origin-isolated contexts and when third-party cookies are blocked.
+      // Refresh tokens avoid the iframe entirely (memory + worker by default).
+      useRefreshTokens: true,
+      useRefreshTokensFallback: true,
+      cacheLocation: 'memory',
+      authorizationParams: redirectUri ? { redirect_uri: redirectUri } : {},
+    });
+  })();
+  auth0Promise = promise.catch((error) => {
+    auth0Promise = null;
+    throw error;
+  });
+  return auth0Promise;
+}
+
 async function getClient() {
   if (clientPromise) return clientPromise;
   const promise = (async () => {
-    const [{ FastAuthClient }, { JavascriptProvider }, nearApi] = await Promise.all([
+    const [{ FastAuthClient }, { JavascriptProvider }, nearApi, auth0] = await Promise.all([
       import('@fast-auth-near/browser-sdk'),
       import('@fast-auth-near/javascript-provider'),
       import('near-api-js'),
+      getAuth0Client(),
     ]);
 
     const provider = new JavascriptProvider({ network, clientId, domain: auth0Domain });
+    // The published provider creates its own Auth0Client with default options,
+    // so its getSignatureRequest() would still use the iframe path. Inject the
+    // configured refresh-token client before the provider is used.
+    (provider as unknown as { client: Auth0Client }).client = auth0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { connection } = await (nearApi as any).connect({
       networkId: network,
@@ -95,23 +125,6 @@ async function getClient() {
     throw error;
   });
   return clientPromise;
-}
-
-async function getAuth0Client(): Promise<Auth0Client> {
-  if (auth0Promise) return auth0Promise;
-  const promise = (async () => {
-    const { Auth0Client } = await import('@auth0/auth0-spa-js');
-    return new Auth0Client({
-      domain: auth0Domain,
-      clientId,
-      authorizationParams: {},
-    });
-  })();
-  auth0Promise = promise.catch((error) => {
-    auth0Promise = null;
-    throw error;
-  });
-  return auth0Promise;
 }
 
 interface Challenge {
@@ -229,6 +242,13 @@ async function requestMessageWithAuth0(challenge: Challenge): Promise<SignatureR
 
 function friendlyNearAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? '');
+  if (/cross[- ]origin|opener|isolated|\bcors\b/i.test(message)) {
+    return (
+      'NEAR Auth could not complete the cross-origin sign-in. Open KEIZ in a top-level tab, ' +
+      'allow popups for this site, and make sure this origin is allowed in the NEAR Auth Auth0 client. ' +
+      'Then retry.'
+    );
+  }
   if (/popup|blocked|window/i.test(message)) {
     return 'The sign-in popup was blocked. Allow popups for this site and try again.';
   }
