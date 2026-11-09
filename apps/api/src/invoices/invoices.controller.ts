@@ -19,9 +19,9 @@ export class InvoicesController {
   @Get()
   list(
     @CurrentUser() user: AuthUser,
-    @Query(new ZodBody(invoiceListQuerySchema)) query: { status?: string },
+    @Query(new ZodBody(invoiceListQuerySchema)) query: { status?: string; vendorId?: string },
   ) {
-    return this.invoices.list(user.orgId, query.status);
+    return this.invoices.list(user.orgId, query.status, query.vendorId);
   }
 
   @Get('summary')

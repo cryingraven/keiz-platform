@@ -100,6 +100,20 @@ async function main() {
     return data as T;
   }
 
+  async function approve(
+    cookie: string,
+    approval: { runId: string; threadId: string; toolCallId: string },
+    approved = true,
+  ): Promise<SseEvent[]> {
+    const response = await fetch(`${BASE}/chat/approvals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ ...approval, approved }),
+    });
+    assert(response.ok, `approval returned ${response.status}`);
+    return parseSse(await response.text());
+  }
+
   const pass = (label: string) => console.log(`  ok  ${label}`);
 
   try {
@@ -157,37 +171,60 @@ async function main() {
     assert(thread?.data.threadId, 'thread id emitted first');
     pass('SSE stream starts with a thread id');
 
-    const toolCall = events.find(
-      (event) => event.event === 'tool' && event.data.phase === 'call',
-    );
-    assert(toolCall, 'tool call emitted');
+    const plan = events.find((event) => event.event === 'plan')?.data.plan as
+      | { goal: string }
+      | undefined;
+    assert(plan?.goal, 'action plan emitted before any tool runs');
+    const planApproval = events.find((event) => event.event === 'approval')?.data
+      .approval as
+      | { runId: string; threadId: string; toolCallId: string; name: string }
+      | undefined;
+    assert(planApproval?.name === 'plan-actions', 'plan approval requested first');
     assert(
-      toolCall!.data.name === mock.toolName(),
-      `tool name matches the model request (${String(toolCall!.data.name)} vs ${mock.toolName()})`,
+      events.some((event) => event.event === 'done' && event.data.suspended === true),
+      'stream suspends for plan approval',
     );
-    pass(`tool call streamed live (${mock.toolName()})`);
+    pass('Mastra suspends for the action plan');
 
-    const toolResult = events.find(
-      (event) => event.event === 'tool' && event.data.phase === 'result',
+    const afterPlan = await approve(cookie, planApproval!);
+    assert(
+      !afterPlan.some((event) => event.event === 'approval'),
+      'read tool runs without another confirmation',
+    );
+    assert(
+      afterPlan.some((event) => event.event === 'card' && (event.data.card as { kind?: string } | undefined)?.kind === 'plan'),
+      'approved plan card emitted',
+    );
+    const toolResult = afterPlan.find(
+      (event) =>
+        event.event === 'tool' &&
+        event.data.phase === 'result' &&
+        event.data.name === 'listInvoices',
     );
     assert(toolResult, 'tool result emitted');
     assert(
       JSON.stringify(toolResult!.data.result).includes('INV-MASTRA-1'),
       'tool result is scoped to the caller org and contains the invoice',
     );
-    pass('tool executed with the request-scoped orgId');
+    assert(
+      afterPlan.some(
+        (event) => event.event === 'card' && (event.data.card as { kind?: string } | undefined)?.kind === 'invoice-list',
+      ),
+      'invoice list card emitted',
+    );
+    pass('read tool executed automatically after plan approval');
 
-    const text = events
+    const text = afterPlan
       .filter((event) => event.event === 'text')
       .map((event) => String(event.data.delta))
       .join('');
     assert(text.includes('invoices in the workspace'), `text assembled (got "${text}")`);
     pass('text deltas assemble into the final answer');
 
-    assert(events.some((event) => event.event === 'done'), 'done event emitted');
+    assert(afterPlan.some((event) => event.event === 'done'), 'done event emitted');
     pass('stream terminates with done');
 
-    assert(mock.requests.length >= 2, 'model was called again after the tool result');
+    assert(mock.requests.length >= 3, 'model was called again after each tool result');
     const second = mock.requests[1];
     const toolMessage = (second.messages ?? []).find((message) => message.role === 'tool');
     assert(toolMessage, 'tool result was sent back to the model');

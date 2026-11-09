@@ -1,4 +1,10 @@
 import { ChatStreamEvent } from './chat.types';
+import { describeToolCall, toolRisk } from './cards';
+
+interface ChunkMeta {
+  runId?: string;
+  threadId?: string;
+}
 
 function safeParse(value: string): unknown {
   try {
@@ -12,7 +18,7 @@ function safeParse(value: string): unknown {
  * Mastra wraps stream chunks as { type, from, payload }. Tests cover both the
  * wrapped and unwrapped shapes because field names have moved between minors.
  */
-export function mapChunk(chunk: unknown): ChatStreamEvent | null {
+export function mapChunk(chunk: unknown, meta: ChunkMeta = {}): ChatStreamEvent | null {
   if (!chunk || typeof chunk !== 'object') return null;
   const record = chunk as Record<string, unknown>;
   const payload = (record.payload ?? {}) as Record<string, unknown>;
@@ -38,6 +44,30 @@ export function mapChunk(chunk: unknown): ChatStreamEvent | null {
       phase: 'call',
       name,
       args: { ...args, ...(toolCallId ? { __toolCallId: String(toolCallId) } : {}) },
+    };
+  }
+
+  if (type === 'tool-call-approval') {
+    const name = payload.toolName ?? payload.name ?? record.toolName;
+    const toolCallId = payload.toolCallId ?? record.toolCallId;
+    const rawArgs = payload.args ?? payload.input ?? record.args ?? {};
+    if (typeof name !== 'string' || !name || typeof toolCallId !== 'string') return null;
+    const args =
+      typeof rawArgs === 'string'
+        ? (safeParse(rawArgs) as Record<string, unknown>)
+        : (rawArgs as Record<string, unknown>);
+    return {
+      type: 'approval',
+      approval: {
+        runId: meta.runId ?? '',
+        threadId: meta.threadId ?? '',
+        toolCallId,
+        name,
+        args,
+        summary: describeToolCall(name, args),
+        risk: toolRisk(name),
+        planId: name === 'plan-actions' ? toolCallId : undefined,
+      },
     };
   }
 

@@ -26,6 +26,11 @@ export class CustomersController {
     });
   }
 
+  @Get(':id')
+  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.receivables.findCustomer(user.orgId, id);
+  }
+
   @Post()
   create(
     @CurrentUser() user: AuthUser,

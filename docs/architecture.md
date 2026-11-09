@@ -145,9 +145,10 @@ Web routes (App Router, client-rendered):
 | `/dashboard` | Overview. |
 | `/dashboard/invoices`, `/dashboard/invoices/[id]` | AP bills and detail (approve, quote, pay). |
 | `/dashboard/receivables`, `/dashboard/receivables/[id]` | AR invoices, receipts and collection quote. |
-| `/dashboard/customers`, `/dashboard/vendors` | Counterparties. |
+| `/dashboard/customers`, `/dashboard/customers/[id]` | Customers and their receivables. |
+| `/dashboard/vendors`, `/dashboard/vendors/[id]` | Vendors, payout details and bills. |
 | `/dashboard/team` | Members and roles. |
-| `/dashboard/payments` | Payment history and open quotes. |
+| `/dashboard/payments`, `/dashboard/payments/[id]` | Payment history, open quotes and payment timeline. |
 | `/dashboard/accounting` | Journal, trial balance, aging, manual entry. |
 | `/dashboard/agent` | Agent wallet, policy, actions and custody handoff. |
 | `/dashboard/audit` | Append-only audit log (ADMIN/OWNER). |
@@ -482,6 +483,20 @@ The Mastra agent is server-side. Every tool receives `orgId` from the request
 context; the model never chooses the tenant. Chat can create proposals but has
 no path to move funds.
 
+The agent is plan-first and human-in-the-loop:
+
+1. `plan-actions` is the only tool allowed before a plan is approved. A
+   `beforeToolCall` hook blocks every other tool until `planApproved` is set.
+2. Read-only tools run automatically after plan approval. Write/drafting tools
+   (`propose-payment`, plus future `write`/`spend` tools) use
+   `requireApproval: true`; Mastra suspends and emits `tool-call-approval`, the API
+   maps it to an SSE `approval` event, and the UI renders a custom confirmation card.
+3. `POST /chat/approvals` verifies the suspended run belongs to the caller via
+   `listSuspendedRuns({ threadId, resourceId })`, then calls
+   `approveToolCall` / `declineToolCall` and streams the continuation.
+4. Tool results are validated against Zod `outputSchema`s and emitted as
+   `card` events. Every card has a link to the relevant detail page.
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -493,21 +508,34 @@ sequenceDiagram
   participant AI as NEAR AI Cloud
 
   W->>A: POST /chat/messages
-  A->>M: agent.stream(messages, requestContext)
-  M->>AI: chat completion with tools
-  AI-->>M: tool call
-  M->>T: execute tool
+  A->>M: agent.stream(requestContext, plan gate)
+  M->>AI: chat completion
+  AI-->>M: call plan-actions
+  M-->>A: tool-call-approval (suspended)
+  A-->>W: SSE plan + approval · done(suspended)
+  W->>A: POST /chat/approvals (approve plan)
+  A->>M: approveToolCall
+  M->>T: execute plan-actions
+  T-->>M: plan card (gate opens)
+  M->>AI: plan result
+  AI-->>M: call list-invoices (read)
+  M->>T: execute read tool
   T->>DB: scoped query by orgId
   DB-->>T: rows
-  T-->>M: result
+  T-->>M: typed card envelope
+  A-->>W: SSE card (hidden until final)
   M->>AI: tool result
   AI-->>M: final answer
   M-->>A: text + tool chunks
-  A-->>W: SSE meta · thread · text · tool · done
+  A-->>W: SSE card · text · tool · done
+
+  Note over W,A: Writes (propose-payment) still suspend for approval.
+
 ```
 
-Without `NEARAI_API_KEY`, the same tools run through the deterministic local
-provider, so the demo and tests stay offline.
+Without `NEARAI_API_KEY`, the deterministic local provider runs the same tools
+through an in-memory `LocalRunStore` and emits the same plan/approval/card
+protocol, so the demo and tests stay offline.
 
 ---
 
@@ -781,10 +809,10 @@ flowchart LR
 
 | Suite | Covers |
 |---|---|
-| `pnpm test` | 72 unit tests: money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, OutLayer status map |
-| `pnpm --filter @keiz/api smoke` | 48 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat, NEAR Auth relayer fencing |
+| `pnpm test` | 84 unit tests (69 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, OutLayer status map |
+| `pnpm --filter @keiz/api smoke` | 50 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, NEAR Auth relayer fencing |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
-| `pnpm --filter @keiz/api smoke:mastra` | Mastra stream chunks, request-scoped tools, memory, thread isolation |
+| `pnpm --filter @keiz/api smoke:mastra` | Mastra plan suspension, approve/resume, typed cards, request-scoped tools, memory, thread isolation |
 | `pnpm contracts:test` | collect message parsing and vault policy validation |
 | `pnpm typecheck` / `pnpm build` | TypeScript and production bundles |
 

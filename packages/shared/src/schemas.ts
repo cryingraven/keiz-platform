@@ -202,6 +202,14 @@ export const chatRequestSchema = z.object({
   threadId: z.string().optional(),
 });
 
+export const chatApprovalSchema = z.object({
+  runId: z.string().min(1).max(200),
+  threadId: z.string().min(1).max(200),
+  toolCallId: z.string().min(1).max(200),
+  approved: z.boolean(),
+  reason: z.string().max(500).optional(),
+});
+
 export type LoginChallengeInput = z.infer<typeof loginChallengeSchema>;
 export type LoginVerifyInput = z.infer<typeof loginVerifySchema>;
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
@@ -228,6 +236,7 @@ export const invoiceListQuerySchema = z.object({
   status: z
     .enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'PAYMENT_PENDING', 'PAID', 'VOID'])
     .optional(),
+  vendorId: z.string().min(1).max(64).optional(),
 });
 
 export const paymentListQuerySchema = z.object({

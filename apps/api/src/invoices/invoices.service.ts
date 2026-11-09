@@ -28,9 +28,10 @@ export class InvoicesService {
     private readonly accounting: AccountingService,
   ) {}
 
-  async list(orgId: string, status?: string) {
+  async list(orgId: string, status?: string, vendorId?: string) {
     const filter: Record<string, unknown> = { orgId };
     if (status) filter.status = status;
+    if (vendorId) filter.vendorId = vendorId;
     return this.invoices.find(filter).sort({ createdAt: -1 }).lean();
   }
 

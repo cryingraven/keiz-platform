@@ -6,6 +6,7 @@ Start here:
 |---|---|
 | [Architecture & diagrams](./architecture.md) | System context, module map, request lifecycle, auth/payment/agent/chat sequences, state machines, data model, trust boundaries |
 | [API reference](./api.md) | Every route with its role, request schema, and key status/error behavior |
+| [Chat cards & approvals](./chat-cards.md) | Tool output cards, plan-first flow, confirmation gates and detail links |
 | [Data model](./data-model.md) | Collections, fields, indexes and invariants (including Mastra storage) |
 | [Integration & contracts](./integrations.md) | On-chain AR collection, vault/policy contract, OutLayer custody policy, payout verification, queues |
 | [Contract README](../contracts/README.md) | Contract ABIs, message formats, event schemas, deployment |

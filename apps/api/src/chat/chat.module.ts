@@ -8,6 +8,8 @@ import { InvoicesModule } from '../invoices/invoices.module';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { PaymentsService } from '../payments/payments.service';
+import { ReceivablesModule } from '../receivables/receivables.module';
+import { ReceivablesService } from '../receivables/receivables.service';
 import { VendorsModule } from '../vendors/vendors.module';
 import { VendorsService } from '../vendors/vendors.service';
 import { ChatController } from './chat.controller';
@@ -24,7 +26,14 @@ export class MastraLifecycle implements OnModuleDestroy {
 }
 
 @Module({
-  imports: [AccountingModule, AgentModule, InvoicesModule, VendorsModule, PaymentsModule],
+  imports: [
+    AccountingModule,
+    AgentModule,
+    InvoicesModule,
+    VendorsModule,
+    PaymentsModule,
+    ReceivablesModule,
+  ],
   controllers: [ChatController],
   providers: [
     {
@@ -36,6 +45,7 @@ export class MastraLifecycle implements OnModuleDestroy {
         PaymentsService,
         AgentService,
         AccountingService,
+        ReceivablesService,
       ],
       useFactory: (
         config: ConfigService,
@@ -44,7 +54,17 @@ export class MastraLifecycle implements OnModuleDestroy {
         payments: PaymentsService,
         agent: AgentService,
         accounting: AccountingService,
-      ) => createKeizMastra({ config, invoices, vendors, payments, agent, accounting }),
+        receivables: ReceivablesService,
+      ) =>
+        createKeizMastra({
+          config,
+          invoices,
+          vendors,
+          payments,
+          agent,
+          accounting,
+          receivables,
+        }),
     },
     MastraLifecycle,
     ChatService,

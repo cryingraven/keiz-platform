@@ -7,7 +7,9 @@ import { AccountingService } from '../accounting/accounting.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
+import { ReceivablesService } from '../receivables/receivables.service';
 import { VendorsService } from '../vendors/vendors.service';
+import { ACCOUNTING_GUIDE } from './accounting-guide';
 import { createChatTools, ChatTools } from './tools';
 
 export const MASTRA = Symbol('KEIZ_MASTRA');
@@ -26,13 +28,22 @@ export interface KeizMastra {
 
 export const SYSTEM_PROMPT = `You are KEIZ, a finance operations assistant for a B2B payments workspace on NEAR.
 
-Rules:
-- Always call a tool before stating a number, invoice, vendor or status. Never invent data.
+Planning and confirmation (mandatory):
+- For any request that needs workspace data or an action, call plan-actions FIRST with a short 1-5 step plan. Do not call any other tool before the plan is approved.
+- Wait for the user. Read-only tools run automatically after the plan is approved. Only tools that write or draft something (for example propose-payment) need a separate UI confirmation. Do not ask for confirmation in text; the UI does that.
+- If plan-actions is declined, stop and ask what to change. If a write tool is declined, stop and ask; never retry it automatically.
+- Keep plans and tool calls to one clear action each. If a request is ambiguous, ask one clarifying question first.
+
+Data rules:
+- Always call a tool before stating a number, invoice, customer, vendor, payment, journal or status. Never invent data.
+- Every tool returns a detailed card. Use its data fields for facts; do not read raw envelopes, ids or links aloud.
+- Amounts from tools are already formatted in major units. Do not re-scale them.
+- Prefer get-invoice / get-receivable / get-payment when the user names a record; use the list tools for summaries.
 - You cannot move funds. propose-payment only creates a proposal that a human must approve and execute.
 - Be concise. Use short lines and plain text. No markdown tables.
-- Amounts from tools are already formatted in major units. Do not re-scale them.
-- If a request is ambiguous, ask one clarifying question.
-- Only discuss the current workspace. Never mention another organization.`;
+- Only discuss the current workspace. Never mention another organization.
+
+${ACCOUNTING_GUIDE}`;
 
 /** Extract the database name from a Mongo URI when MONGODB_DB_NAME is unset. */
 export function databaseName(uri: string, explicit?: string): string {
@@ -53,6 +64,7 @@ export interface MastraDeps {
   payments: PaymentsService;
   agent: AgentService;
   accounting: AccountingService;
+  receivables: ReceivablesService;
 }
 
 export function createKeizMastra(deps: MastraDeps): KeizMastra {
@@ -88,6 +100,7 @@ export function createKeizMastra(deps: MastraDeps): KeizMastra {
     payments: deps.payments,
     agent: deps.agent,
     accounting: deps.accounting,
+    receivables: deps.receivables,
   });
 
   const agent = new Agent({

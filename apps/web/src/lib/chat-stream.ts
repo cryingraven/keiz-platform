@@ -1,6 +1,10 @@
 'use client';
 
-import { createSseParser, type ChatStreamEvent } from '@keiz/shared';
+import {
+  createSseParser,
+  type ChatApprovalRequest,
+  type ChatStreamEvent,
+} from '@keiz/shared';
 
 export interface StreamChatOptions {
   message: string;
@@ -9,20 +13,10 @@ export interface StreamChatOptions {
   onEvent: (event: ChatStreamEvent) => void;
 }
 
-export async function streamChat({
-  message,
-  threadId,
-  signal,
-  onEvent,
-}: StreamChatOptions): Promise<void> {
-  const response = await fetch('/api/chat/messages', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message, threadId }),
-    signal,
-  });
-
+async function streamResponse(
+  response: Response,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || `Chat request failed (${response.status})`);
@@ -46,4 +40,62 @@ export async function streamChat({
   }
   parser.push(decoder.decode());
   parser.flush();
+}
+
+export async function streamChat({
+  message,
+  threadId,
+  signal,
+  onEvent,
+}: StreamChatOptions): Promise<void> {
+  const response = await fetch('/api/chat/messages', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message, threadId }),
+    signal,
+  });
+  await streamResponse(response, onEvent);
+}
+
+export interface StreamApprovalOptions {
+  approval: Pick<ChatApprovalRequest, 'runId' | 'threadId' | 'toolCallId'>;
+  approved: boolean;
+  reason?: string;
+  signal: AbortSignal;
+  onEvent: (event: ChatStreamEvent) => void;
+}
+
+export async function streamChatApproval({
+  approval,
+  approved,
+  reason,
+  signal,
+  onEvent,
+}: StreamApprovalOptions): Promise<void> {
+  const response = await fetch('/api/chat/approvals', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      runId: approval.runId,
+      threadId: approval.threadId,
+      toolCallId: approval.toolCallId,
+      approved,
+      reason,
+    }),
+    signal,
+  });
+  await streamResponse(response, onEvent);
+}
+
+export async function fetchPendingApprovals(
+  threadId: string,
+): Promise<ChatApprovalRequest[]> {
+  const response = await fetch(
+    `/api/chat/approvals?threadId=${encodeURIComponent(threadId)}`,
+    { credentials: 'include' },
+  );
+  if (!response.ok) return [];
+  return (await response.json()) as ChatApprovalRequest[];
 }

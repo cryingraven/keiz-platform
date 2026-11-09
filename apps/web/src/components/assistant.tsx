@@ -27,10 +27,21 @@ import {
 import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { shortAddress } from '@/lib/format';
-import { streamChat } from '@/lib/chat-stream';
+import {
+  fetchPendingApprovals,
+  streamChat,
+  streamChatApproval,
+} from '@/lib/chat-stream';
 import { Button, Spinner, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import type { ChatStreamEvent } from '@keiz/shared';
+import { ApprovalCard, ChatCardView, PlanCard } from '@/components/chat/cards';
+import {
+  chatCardSchema,
+  type ChatApprovalRequest,
+  type ChatCard,
+  type ChatPlan,
+  type ChatStreamEvent,
+} from '@keiz/shared';
 
 interface ToolCall {
   name: string;
@@ -39,10 +50,22 @@ interface ToolCall {
   status: 'calling' | 'done' | 'error';
 }
 
+interface ApprovalState {
+  request: ChatApprovalRequest;
+  busy?: boolean;
+  resolved?: { approved: boolean; reason?: string };
+}
+
+type MessagePhase = 'planning' | 'executing' | 'awaiting-approval' | 'final';
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: ToolCall[];
+  cards?: ChatCard[];
+  plan?: ChatPlan;
+  approvals?: ApprovalState[];
+  phase?: MessagePhase;
   at?: string;
 }
 
@@ -214,6 +237,22 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
     }
     if (event.type === 'done') {
       setStreaming(false);
+      setMessages((current) => {
+        if (current.length === 0) return current;
+        const next = [...current];
+        const last = next[next.length - 1];
+        if (last.role !== 'assistant') return current;
+        const waiting = (last.approvals ?? []).some((approval) => !approval.resolved);
+        next[next.length - 1] = {
+          ...last,
+          phase: event.suspended
+            ? waiting
+              ? 'awaiting-approval'
+              : 'executing'
+            : 'final',
+        };
+        return next;
+      });
       return;
     }
     setMessages((current) => {
@@ -224,7 +263,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
       if (last.role !== 'assistant') return current;
 
       if (event.type === 'text') {
-        next[index] = { ...last, content: last.content + event.delta };
+        next[index] = { ...last, content: last.content + event.delta, phase: 'final' };
       } else if (event.type === 'tool' && event.phase === 'call') {
         next[index] = {
           ...last,
@@ -242,6 +281,45 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
           }
         }
         next[index] = { ...last, toolCalls: calls };
+      } else if (event.type === 'plan') {
+        next[index] = { ...last, plan: event.plan, phase: 'planning' };
+      } else if (event.type === 'card') {
+        next[index] = { ...last, cards: [...(last.cards ?? []), event.card] };
+      } else if (event.type === 'approval') {
+        next[index] = {
+          ...last,
+          plan:
+            event.approval.name === 'plan-actions' && last.plan
+              ? { ...last.plan, id: event.approval.toolCallId, status: 'pending' }
+              : last.plan,
+          approvals: [
+            ...(last.approvals ?? []),
+            { request: event.approval },
+          ],
+          phase: 'awaiting-approval',
+        };
+      } else if (event.type === 'approval_result') {
+        const isPlan = last.plan?.id === event.toolCallId;
+        next[index] = {
+          ...last,
+          phase: isPlan ? (event.approved ? 'executing' : 'final') : 'executing',
+          plan:
+            last.plan?.id === event.toolCallId
+              ? {
+                  ...last.plan,
+                  status: event.approved ? 'approved' : 'declined',
+                }
+              : last.plan,
+          approvals: (last.approvals ?? []).map((approval) =>
+            approval.request.toolCallId === event.toolCallId
+              ? {
+                  ...approval,
+                  busy: false,
+                  resolved: { approved: event.approved, reason: event.reason },
+                }
+              : approval,
+          ),
+        };
       }
       return next;
     });
@@ -257,7 +335,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
     setMessages((current) => [
       ...current,
       { role: 'user', content: message },
-      { role: 'assistant', content: '', toolCalls: [] },
+      { role: 'assistant', content: '', toolCalls: [], phase: 'planning' },
     ]);
 
     const controller = new AbortController();
@@ -282,11 +360,68 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
         if (current.length === 0) return current;
         const next = [...current];
         const last = next[next.length - 1];
-        if (last.role === 'assistant' && !last.content && (last.toolCalls?.length ?? 0) === 0) {
+        if (
+          last.role === 'assistant' &&
+          !last.content &&
+          (last.toolCalls?.length ?? 0) === 0 &&
+          (last.cards?.length ?? 0) === 0 &&
+          !last.plan &&
+          (last.approvals?.length ?? 0) === 0
+        ) {
           next[next.length - 1] = { ...last, content: 'No response.' };
         }
         return next;
       });
+    }
+  }
+
+  async function respondToApproval(
+    approval: ChatApprovalRequest,
+    approved: boolean,
+    reason?: string,
+  ) {
+    if (streaming) return;
+    setError(null);
+    setStreaming(true);
+    setMessages((current) =>
+      current.map((message) => ({
+        ...message,
+        approvals: (message.approvals ?? []).map((item) =>
+          item.request.toolCallId === approval.toolCallId
+            ? { ...item, busy: true }
+            : item,
+        ),
+      })),
+    );
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      await streamChatApproval({
+        approval,
+        approved,
+        reason,
+        signal: controller.signal,
+        onEvent: applyEvent,
+      });
+      void threads.reload();
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setError(err instanceof Error ? err.message : 'The approval could not be applied');
+      }
+      setMessages((current) =>
+        current.map((message) => ({
+          ...message,
+          approvals: (message.approvals ?? []).map((item) =>
+            item.request.toolCallId === approval.toolCallId
+              ? { ...item, busy: false }
+              : item,
+          ),
+        })),
+      );
+    } finally {
+      setStreaming(false);
+      abortRef.current = null;
     }
   }
 
@@ -329,18 +464,82 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
       const detail = await api<ThreadDetail>(`/chat/threads/${id}`);
       setThreadId(id);
       setError(null);
-      setMessages(
-        (detail.messages ?? []).map((message) => ({
+      const loaded: Message[] = (detail.messages ?? []).map((message) => {
+        const toolCalls = (message.toolCalls ?? []).map((call) => ({
+          name: call.name,
+          args: call.args,
+          result: call.result,
+          status: 'done' as const,
+        }));
+        const cards: ChatCard[] = [];
+        for (const call of toolCalls) {
+          const parsed = chatCardSchema.safeParse(call.result);
+          if (parsed.success) cards.push(parsed.data);
+        }
+        const planCall = toolCalls.find((call) => call.name === 'plan-actions');
+        const plan = planCall
+          ? {
+              id: `history-${planCall.args.__toolCallId ?? message.role}`,
+              goal: String(planCall.args.goal ?? 'Action plan'),
+              summary:
+                typeof planCall.args.summary === 'string' ? planCall.args.summary : undefined,
+              steps: Array.isArray(planCall.args.steps)
+                ? (planCall.args.steps as ChatPlan['steps'])
+                : [],
+              status: 'approved' as const,
+            }
+          : undefined;
+        return {
           role: message.role,
           content: message.content,
-          toolCalls: (message.toolCalls ?? []).map((call) => ({
-            name: call.name,
-            args: call.args,
-            result: call.result,
-            status: 'done' as const,
-          })),
-        })),
-      );
+          toolCalls,
+          cards,
+          plan,
+          phase: 'final' as const,
+        };
+      });
+      setMessages(loaded);
+      const pending = await fetchPendingApprovals(id);
+      if (pending.length) {
+        const planRequest = pending.find((request) => request.name === 'plan-actions');
+        const pendingPlan: ChatPlan | undefined = planRequest
+          ? {
+              id: planRequest.toolCallId,
+              goal: String(planRequest.args.goal ?? 'Action plan'),
+              summary:
+                typeof planRequest.args.summary === 'string'
+                  ? planRequest.args.summary
+                  : undefined,
+              steps: Array.isArray(planRequest.args.steps)
+                ? (planRequest.args.steps as ChatPlan['steps'])
+                : [],
+              status: 'pending',
+            }
+          : undefined;
+        setMessages((current) => {
+          if (current.length === 0) {
+            return [
+              {
+                role: 'assistant',
+                content: '',
+                plan: pendingPlan,
+                approvals: pending.map((request) => ({ request })),
+                phase: 'awaiting-approval',
+              },
+            ];
+          }
+          const next = [...current];
+          const last = next[next.length - 1];
+          if (last.role !== 'assistant') return current;
+          next[next.length - 1] = {
+            ...last,
+            plan: pendingPlan ?? last.plan,
+            approvals: pending.map((request) => ({ request })),
+            phase: 'awaiting-approval',
+          };
+          return next;
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the thread');
     }
@@ -516,6 +715,16 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
           ) : (
             messages.map((message, index) => {
               const isLast = index === messages.length - 1;
+              const planApproval = message.approvals?.find(
+                (approval) => approval.request.name === 'plan-actions',
+              );
+              const phase = message.phase ?? 'final';
+              const isFinal = phase === 'final';
+              const showPlan = Boolean(message.plan) && !isFinal;
+              const pendingWrite = message.approvals?.find(
+                (approval) =>
+                  approval.request.name !== 'plan-actions' && !approval.resolved,
+              );
               return (
                 <div
                   key={index}
@@ -544,13 +753,67 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                           <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-ink align-middle" />
                         ) : null}
                       </div>
-                    ) : streaming && isLast ? (
+                    ) : streaming && isLast && !message.plan && phase !== 'final' ? (
                       <span className="flex items-center gap-2 text-[12px] text-muted">
-                        <Spinner className="h-3 w-3" /> thinking
+                        <Spinner className="h-3 w-3" /> Preparing…
                       </span>
                     ) : null}
 
-                    {message.toolCalls && message.toolCalls.length > 0 ? (
+                    {isFinal
+                      ? message.cards?.map((card, cardIndex) => (
+                          <ChatCardView key={`${card.kind}-${cardIndex}`} card={card} />
+                        ))
+                      : null}
+
+                    {showPlan ? (
+                      <PlanCard
+                        plan={message.plan!}
+                        busy={planApproval?.busy}
+                        onApprove={
+                          planApproval
+                            ? () => void respondToApproval(planApproval.request, true)
+                            : undefined
+                        }
+                        onDecline={
+                          planApproval
+                            ? () => void respondToApproval(planApproval.request, false)
+                            : undefined
+                        }
+                      />
+                    ) : null}
+
+                    {!isFinal ? (
+                      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted">
+                        <Spinner className="h-3 w-3" />
+                        {pendingWrite
+                          ? 'Waiting for your confirmation…'
+                          : planApproval && !planApproval.resolved
+                            ? 'Waiting for plan approval…'
+                            : 'Working through the plan…'}
+                      </div>
+                    ) : message.plan ? (
+                      <p className="mt-2 flex items-center gap-1.5 text-[10px] text-muted">
+                        <CheckCircle2 className="h-3 w-3 text-mint" /> Plan completed
+                      </p>
+                    ) : null}
+
+                    {message.approvals
+                      ?.filter((approval) => approval.request.name !== 'plan-actions')
+                      .filter((approval) => !approval.resolved)
+                      .map((approval) => (
+                        <ApprovalCard
+                          key={approval.request.toolCallId}
+                          approval={approval.request}
+                          busy={approval.busy}
+                          resolved={approval.resolved}
+                          onApprove={() => void respondToApproval(approval.request, true)}
+                          onDecline={(reason) =>
+                            void respondToApproval(approval.request, false, reason)
+                          }
+                        />
+                      ))}
+
+                    {isFinal && message.toolCalls && message.toolCalls.length > 0 ? (
                       <div className="mt-2 space-y-1.5 border-t border-line/70 pt-2">
                         {message.toolCalls.map((tool, toolIndex) => (
                           <details key={toolIndex} className="group">

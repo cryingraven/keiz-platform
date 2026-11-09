@@ -104,6 +104,21 @@ async function main() {
     return data as T;
   }
 
+  async function approve(
+    cookie: string,
+    approval: { runId: string; threadId: string; toolCallId: string },
+    approved = true,
+    reason?: string,
+  ): Promise<SseEvent[]> {
+    const response = await fetch(`${BASE}/chat/approvals`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ ...approval, approved, reason }),
+    });
+    assert(response.ok, `approval returned ${response.status}`);
+    return parseSse(await response.text());
+  }
+
   async function statusOf(
     path: string,
     options: { method?: string; body?: unknown; cookie?: string },
@@ -436,22 +451,52 @@ async function main() {
     const chatEvents = parseSse(await chatResponse.text());
     const meta = chatEvents.find((event) => event.event === 'meta');
     assert(meta?.data.provider === 'local', 'chat falls back without an API key');
-    const chatText = chatEvents
+    const chatThreadId = chatEvents.find((event) => event.event === 'thread')?.data
+      .threadId as string;
+    assert(chatThreadId, 'chat returned a thread id');
+    const plan = chatEvents.find((event) => event.event === 'plan')?.data.plan as
+      | { goal: string }
+      | undefined;
+    assert(plan?.goal, 'chat emitted an action plan');
+    const planApproval = chatEvents.find((event) => event.event === 'approval')?.data
+      .approval as
+      | { runId: string; threadId: string; toolCallId: string; name: string }
+      | undefined;
+    assert(planApproval?.name === 'plan-actions', 'plan approval requested first');
+    assert(
+      chatEvents.some((event) => event.event === 'done' && event.data.suspended === true),
+      'stream suspends for the plan approval',
+    );
+    pass('local chat emits a plan and suspends for approval');
+
+    const planEvents = await approve(aliceCookie, planApproval!);
+    assert(
+      !planEvents.some((event) => event.event === 'approval'),
+      'read tool runs without another confirmation',
+    );
+    assert(
+      planEvents.some((event) => event.event === 'card' && (event.data.card as { kind?: string } | undefined)?.kind === 'plan'),
+      'approved plan card emitted',
+    );
+    const chatText = planEvents
       .filter((event) => event.event === 'text')
       .map((event) => String(event.data.delta))
       .join('');
-    assert(chatText.includes('Spend by status'), 'chat returned a spend summary');
-    const chatTools = chatEvents.filter(
+    assert(chatText.includes('Spend by invoice status'), 'chat returned a spend summary');
+    const chatTools = planEvents.filter(
       (event) => event.event === 'tool' && event.data.phase === 'call',
     );
     assert(
       chatTools.some((event) => event.data.name === 'spendSummary'),
       'chat used the spend tool',
     );
-    const chatThreadId = chatEvents.find((event) => event.event === 'thread')?.data
-      .threadId as string;
-    assert(chatThreadId, 'chat returned a thread id');
-    pass('local chat streams through the same Mastra tools');
+    assert(
+      planEvents.some(
+        (event) => event.event === 'card' && (event.data.card as { kind?: string } | undefined)?.kind === 'spend-summary',
+      ),
+      'spend summary card emitted',
+    );
+    pass('read tool runs automatically after plan approval');
 
     const thread = await req<{ messages: Array<{ role: string }> }>(
       `/chat/threads/${chatThreadId}`,
@@ -470,7 +515,15 @@ async function main() {
       body: JSON.stringify({ message: 'books summary' }),
     });
     assert(booksResponse.ok, 'books chat stream opened');
-    const booksEvents = parseSse(await booksResponse.text());
+    const booksStart = parseSse(await booksResponse.text());
+    const booksPlanApproval = booksStart.find((event) => event.event === 'approval')?.data
+      .approval as { runId: string; threadId: string; toolCallId: string } | undefined;
+    assert(booksPlanApproval, 'books plan approval requested');
+    const booksEvents = await approve(aliceCookie, booksPlanApproval!);
+    assert(
+      !booksEvents.some((event) => event.event === 'approval'),
+      'books read runs without another confirmation',
+    );
     const booksText = booksEvents
       .filter((event) => event.event === 'text')
       .map((event) => String(event.data.delta))
@@ -482,7 +535,44 @@ async function main() {
       ),
       'chat used the books tool',
     );
-    pass('local chat reads the double-entry ledger');
+    assert(
+      booksEvents.some(
+        (event) => event.event === 'card' && (event.data.card as { kind?: string } | undefined)?.kind === 'books-summary',
+      ),
+      'books summary card emitted',
+    );
+    pass('local chat reads the double-entry ledger after plan approval');
+
+    const payResponse = await fetch(`${BASE}/chat/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: aliceCookie },
+      body: JSON.stringify({ message: 'pay INV-1042' }),
+    });
+    const payStart = parseSse(await payResponse.text());
+    const payPlanApproval = payStart.find((event) => event.event === 'approval')?.data
+      .approval as { runId: string; threadId: string; toolCallId: string } | undefined;
+    assert(payPlanApproval, 'pay plan approval requested');
+    const payAfterPlan = await approve(aliceCookie, payPlanApproval!);
+    const writeApproval = payAfterPlan.find((event) => event.event === 'approval')?.data
+      .approval as { runId: string; threadId: string; toolCallId: string; name: string } | undefined;
+    assert(writeApproval?.name === 'proposePayment', 'write tool requests confirmation');
+    assert(
+      payAfterPlan.some(
+        (event) => event.event === 'tool' && event.data.phase === 'call' && event.data.name === 'getInvoice',
+      ),
+      'read step ran before the write confirmation',
+    );
+    const declined = await approve(aliceCookie, writeApproval!, false, 'Not now');
+    assert(
+      declined.some(
+        (event) =>
+          event.event === 'approval_result' &&
+          event.data.approved === false &&
+          event.data.reason === 'Not now',
+      ),
+      'write decline recorded',
+    );
+    pass('write tool pauses for confirmation and can be declined');
 
     const carol = await tokenFor('carol.near');
     const carolCookie = `keiz_access=${carol.token}`;

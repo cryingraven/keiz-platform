@@ -1,12 +1,24 @@
-import type { ChatStreamEvent } from '@keiz/shared';
+import type {
+  ChatApprovalRequest,
+  ChatCard,
+  ChatPlan,
+  ChatStreamEvent,
+} from '@keiz/shared';
 
 export interface ChatRequestContext {
   orgId: string;
   userId: string;
   accountId: string;
+  planApproved: boolean;
 }
 
-export type { ChatStreamEvent } from '@keiz/shared';
+export type {
+  ChatApprovalRequest,
+  ChatCard,
+  ChatPlan,
+  ChatStreamEvent,
+} from '@keiz/shared';
+export { chatCardSchema } from '@keiz/shared';
 
 export interface ChatMessageView {
   _id: string;

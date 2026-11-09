@@ -70,7 +70,7 @@ with reuse detection).
 
 | Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
-| GET | `/` | Member | `?status=` | Org-scoped list. |
+| GET | `/` | Member | `?status=&vendorId=` | Org-scoped list. |
 | GET | `/summary` | Member | — | Counts/totals for the dashboard. |
 | GET | `/:id` | Member | — | One bill with approvals. |
 | POST | `/` | Member | `{ vendorId, number, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT; totals recomputed server-side. |
@@ -99,6 +99,7 @@ with reuse detection).
 | Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
 | GET | `/` | Member | `?includeArchived=true&q=` | Active by default. |
+| GET | `/:id` | Member | — | One customer with contact details. |
 | POST | `/` | Member | `{ name, email, taxId?, billingAddress? }` | |
 | PATCH | `/:id` | Admin | Same as create | |
 | DELETE | `/:id` | Admin | — | Archives. |
@@ -145,12 +146,21 @@ with reuse detection).
 
 ## Chat — `/api/chat`
 
-| Method | Path | Role | Body | Notes |
+| Method | Path | Role | Body / query | Notes |
 |---|---|---|---|---|
-| POST | `/messages` | Member | `{ message, threadId? }` | SSE stream. Events: `meta`, `thread`, `text`, `tool` (`phase: call\|result`), `done`, `error`. |
+| POST | `/messages` | Member | `{ message, threadId? }` | SSE stream. Events: `meta`, `thread`, `plan`, `card`, `approval`, `approval_result`, `text`, `tool` (`phase: call\|result`), `suspended` (via `done.suspended`), `done`, `error`. |
+| GET | `/approvals` | Member | `?threadId=` | Pending tool approvals for a thread; tenant-scoped. |
+| POST | `/approvals` | Member | `{ runId, threadId, toolCallId, approved, reason? }` | Approves or declines a suspended tool call and streams the continuation (SSE). |
 | GET | `/threads` | Member | — | Mastra threads for this user/org. |
 | GET | `/threads/:id` | Member | — | Thread with messages. |
 | DELETE | `/threads/:id` | Member | — | Deletes the thread. |
+
+Every request that needs tools first emits `plan-actions`, then suspends for the plan approval.
+After the plan is approved, read-only tools run automatically; only write/drafting tools
+(`propose-payment`, and any future `write`/`spend` tool) suspend for an explicit
+approve/decline. The stream ends with `done.suspended: true` while an approval is pending.
+`card` events carry the detailed `ChatCard` envelope used by the custom UI; every card has a
+`link` to the relevant detail page.
 
 Tool calls receive `orgId` from the request context, never from model output. Chat can create
 payment proposals but cannot execute them.

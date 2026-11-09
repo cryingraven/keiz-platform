@@ -27,7 +27,10 @@ export async function startMockOpenAi(port: number) {
     req.on('end', () => {
       const body = JSON.parse(raw) as ChatBody;
       requests.push(body);
-      const hasToolResult = (body.messages ?? []).some((message) => message.role === 'tool');
+      const toolResults = (body.messages ?? []).filter(
+        (message) => message.role === 'tool',
+      ).length;
+      const hasToolResult = toolResults >= 2;
       const declared = body.tools?.[0]?.function?.name;
       if (declared) toolName = declared;
 
@@ -50,6 +53,22 @@ export async function startMockOpenAi(port: number) {
       };
 
       if (!hasToolResult) {
+        const nextTool = toolResults === 0 ? 'plan-actions' : 'listInvoices';
+        const args =
+          toolResults === 0
+            ? JSON.stringify({
+                goal: 'Read the latest invoices',
+                summary: 'One read-only step.',
+                steps: [
+                  {
+                    title: 'List invoices',
+                    detail: 'Load the workspace bills.',
+                    tool: 'list-invoices',
+                    risk: 'read',
+                  },
+                ],
+              })
+            : '{}';
         send({
           ...base,
           choices: [
@@ -60,9 +79,9 @@ export async function startMockOpenAi(port: number) {
                 tool_calls: [
                   {
                     index: 0,
-                    id: 'call_1',
+                    id: `call_${toolResults + 1}`,
                     type: 'function',
-                    function: { name: toolName, arguments: '' },
+                    function: { name: nextTool, arguments: '' },
                   },
                 ],
               },
@@ -75,7 +94,9 @@ export async function startMockOpenAi(port: number) {
           choices: [
             {
               index: 0,
-              delta: { tool_calls: [{ index: 0, function: { arguments: '{}' } }] },
+              delta: {
+                tool_calls: [{ index: 0, function: { arguments: args } }],
+              },
               finish_reason: null,
             },
           ],

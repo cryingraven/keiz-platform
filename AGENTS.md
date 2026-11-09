@@ -31,7 +31,7 @@ pnpm --filter @keiz/api seed demo.near
 - `contracts/` — `keiz-collect` (AR receiver), `keiz-vault` (AP treasury) and `deploy/` scripts. See `contracts/README.md`.
 - `docs/architecture.md` — system context, request lifecycle, auth/payment/custody/chat sequences, state machines, data model, trust boundaries. Update the diagrams in the same change as the flow.
 - `docs/api.md` — full route/role reference; `docs/data-model.md` — collections, fields and indexes.
-- `.agents/skills/` — NEAR skills (near-intents, near-ai-cloud, near-dapp, near-kit). Read the relevant one before changing that integration.
+- `.agents/skills/` — NEAR skills (near-intents, near-ai-cloud, near-dapp, near-kit) plus `keiz-accounting`. Read the relevant one before changing that integration.
 - Every query is scoped by `orgId` from the JWT. Never read `orgId` from a body, query param, or model/tool output.
 
 ## Things that will bite you
@@ -66,6 +66,7 @@ pnpm --filter @keiz/api seed demo.near
 - **Queues are BullMQ.** `REDIS_URL` is required in dev/prod; run `pnpm worker`. `QUEUES_ENABLED=false` is for tests only — it makes producers no-ops and the NEAR Auth relay falls back inline. BullMQ job ids cannot contain `:`; use hyphens.
 - **Mastra owns chat history** in `mastra_threads` / `mastra_messages`, through a second Mongo client (`@mastra/mongodb`). Do not reintroduce `ChatThread`; duplicate stores drift. `MastraLifecycle` closes the store on shutdown — without it the process hangs.
 - **Chat tools must read `orgId` from `requestContext`**, never from model input. `createTool` tools are shared across all tenants; a tool that trusts `inputData` is a cross-tenant leak.
+- **Chat is plan-first and human-in-the-loop.** `plan-actions` must be the first tool; `beforeToolCall` blocks everything else until `planApproved` is set. Reads run automatically; only `write`/`spend` tools (currently `propose-payment`) use `requireApproval: true`. Approvals resume through `POST /chat/approvals` after `listSuspendedRuns` ownership checks. Tool results are Zod-validated `ChatCard` envelopes rendered by `apps/web/src/components/chat/cards.tsx`; the UI hides cards until the final answer and hides the plan once final. Keep `accounting-guide.ts` and `.agents/skills/keiz-accounting/SKILL.md` in sync.
 - **`/login` is the only sign-in entry.** It follows near.com's centered layout. Dashboard routes redirect there when unauthenticated; `ConnectButton` links there. Do not add a second login card.
 - **Both sign-in paths live on `/login`.** The NEAR Auth card is primary and the NEAR Wallets button sits below it. Both clients are preloaded there so their popups open inside the click gesture. Dashboard routes redirect to `/login` when unauthenticated; `ConnectButton` links there. Do not add another login page.
 - **Frontend deposits are signed in the wallet** (`useAuth().sendTransactions`). Mock mode uses the ADMIN-only simulation.
@@ -102,8 +103,8 @@ There is no impersonation endpoint in the app. This script is dev-only.
 
 ## Testing
 
-- `apps/api/test/smoke.ts` boots the real app against `mongodb-memory-server` and runs 48 checks: auth scoping + refresh reuse, totals, approval, tenant isolation, quote→deposit→settle, event log, agent policy + atomic daily cap, RBAC, duplicate quotes, address/amount validation, audit log, local chat streaming, demo seed, NEAR Auth relayer fencing, AP/AR recognition and settlement, receipts, trial balance, aging, rebuild, member management and org switching. Run it before touching payment code.
+- `apps/api/test/smoke.ts` boots the real app against `mongodb-memory-server` and runs 50 checks: auth scoping + refresh reuse, totals, approval, tenant isolation, quote→deposit→settle, event log, agent policy + atomic daily cap, RBAC, duplicate quotes, address/amount validation, audit log, local chat plan/approval/cards, demo seed, NEAR Auth relayer fencing, AP/AR recognition and settlement, receipts, trial balance, aging, rebuild, member management and org switching. Run it before touching payment code.
 - `apps/api/test/outlayer-smoke.ts` runs the custody flow against a mock OutLayer API: register, describe, token resolution, dry-run, withdraw, polling, invoice settlement.
 - `apps/api/test/mastra-smoke.ts` runs the real Mastra agent against a mock OpenAI-compatible server (`test/mock-openai.ts`), proving stream mapping, request-scoped tools, memory persistence and thread isolation without a NEAR AI key.
-- Unit tests are colocated `*.spec.ts` (57 API + 15 shared at the time of writing).
+- Unit tests are colocated `*.spec.ts` (69 API + 15 shared at the time of writing).
 - Mock payment: `POST /api/payments/:id/simulate?status=SUCCEEDED`, then `POST /api/payments/:id/refresh` (or wait for the 4s poller).

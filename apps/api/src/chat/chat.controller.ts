@@ -1,16 +1,22 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { chatRequestSchema, ChatRequestInput } from '@keiz/shared';
+import {
+  chatApprovalSchema,
+  chatRequestSchema,
+  ChatRequestInput,
+} from '@keiz/shared';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
 import { ZodBody } from '../common/zod-body';
 import { ChatService } from './chat.service';
@@ -35,6 +41,15 @@ export class ChatController {
     return this.chat.deleteThread(user.orgId, user.sub, id);
   }
 
+  @Get('approvals')
+  approvals(
+    @CurrentUser() user: AuthUser,
+    @Query('threadId') threadId?: string,
+  ) {
+    if (!threadId) throw new BadRequestException('threadId is required');
+    return this.chat.listPendingApprovals(user.orgId, user.sub, threadId);
+  }
+
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('messages')
   async send(
@@ -43,12 +58,7 @@ export class ChatController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-
+    this.prepare(res);
     const abort = new AbortController();
     const onClose = () => {
       if (!res.writableEnded) abort.abort();
@@ -75,6 +85,48 @@ export class ChatController {
       req.off('close', onClose);
       if (!res.writableEnded) res.end();
     }
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('approvals')
+  async approve(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(chatApprovalSchema))
+    body: {
+      runId: string;
+      threadId: string;
+      toolCallId: string;
+      approved: boolean;
+      reason?: string;
+    },
+    @Res() res: Response,
+  ) {
+    this.prepare(res);
+    try {
+      for await (const event of this.chat.streamApproval({
+        orgId: user.orgId,
+        userId: user.sub,
+        accountId: user.accountId,
+        ...body,
+      })) {
+        this.write(res, event);
+      }
+    } catch (error) {
+      this.write(res, {
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Approval failed',
+      });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  }
+
+  private prepare(res: Response) {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
   }
 
   private write(res: Response, event: ChatStreamEvent) {

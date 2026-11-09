@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Download, BookOpen, RefreshCw, Scale, Wallet } from 'lucide-react';
 import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
@@ -86,6 +87,8 @@ function rangeStart(range: Range): Date {
 }
 
 export default function AccountingPage() {
+  const searchParams = useSearchParams();
+  const highlightedEntry = searchParams.get('entry');
   const [currency, setCurrency] = useState('USD');
   const [range, setRange] = useState<Range>('all');
   const [manualOpen, setManualOpen] = useState(false);
@@ -366,7 +369,16 @@ export default function AccountingPage() {
                     0n,
                   );
                   return (
-                    <details key={entry._id} className="group">
+                    <details
+                      key={entry._id}
+                      id={`entry-${entry._id}`}
+                      open={highlightedEntry === entry._id}
+                      className={
+                        highlightedEntry === entry._id
+                          ? 'group bg-brand-soft/40'
+                          : 'group'
+                      }
+                    >
                       <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3.5 transition hover:bg-paper/60">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[13px] font-medium">{entry.memo}</p>

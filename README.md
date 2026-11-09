@@ -4,7 +4,7 @@ A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-ent
 
 ![KEIZ](https://img.shields.io/badge/NEAR-Intents-4f46e5) ![NEP-413](https://img.shields.io/badge/auth-NEP--413-0f9d76)
 
-**Docs:** [Architecture & diagrams](docs/architecture.md) · [API reference](docs/api.md) · [Data model](docs/data-model.md) · [Integrations & contracts](docs/integrations.md) · [Contract README](contracts/README.md) · [Docs index](docs/README.md) · [Agent instructions](AGENTS.md)
+**Docs:** [Architecture & diagrams](docs/architecture.md) · [API reference](docs/api.md) · [Data model](docs/data-model.md) · [Chat cards & approvals](docs/chat-cards.md) · [Integrations & contracts](docs/integrations.md) · [Contract README](contracts/README.md) · [Docs index](docs/README.md) · [Agent instructions](AGENTS.md)
 
 ## Stack
 
@@ -56,7 +56,7 @@ Open <http://localhost:3000>, sign in with NEAR Auth or a NEAR wallet, and press
 - **Agent wallet** — two providers:
   - **OutLayer custody** (when `OUTLAYER_ENABLED=true`): the agent gets an OutLayer wallet, API key, NEAR implicit account and Intents balance. Keys live in an Intel TDX enclave; spending policy is encrypted on-chain and enforced before signing. KEIZ stores only the encrypted API key.
   - **Local** (fallback): generated ed25519 keypair, AES-256-GCM at rest, local USD caps. Useful for the offline/mock demo.
-- **AI assistant** — a Mastra agent with six tools over your own invoices, vendors and spend (`list-invoices`, `get-invoice`, `spend-summary`, `books-summary`, `list-vendors`, `propose-payment`). It can create payment *proposals* but has no path to move funds. Streams tokens and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback that calls the same tools.
+- **AI assistant** — a Mastra agent over bills, receivables, customers, vendors, payments, agent actions, the journal, spend and the books. It must first emit an **action plan**; read-only tools then run automatically, while write/drafting tools request a **confirmation** in the UI. Both render as custom cards with Approve/Decline. Results are detailed typed cards with links to the relevant detail pages. It can create payment *proposals* but has no path to move funds. Streams tokens, plans, cards and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback with the same plan/approval protocol.
 - **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. The vault is operated separately from the app today. See `contracts/README.md`.
 - **Workspace operations** — team members and roles, org switching, vendor/customer edit + archive, draft-bill edit, and per-workspace AR collection settings that are validated against the deployed contract before activation.
 - **History indexing** — every payment transition is appended to `payment_events`; on-chain deposits are normalised into `chain_events` with a unique `(txHash, eventIndex)` index so re-polling cannot duplicate rows.
@@ -156,7 +156,9 @@ GET/POST /api/agent/actions
 POST /api/agent/actions/:id/decision
 POST /api/agent/actions/:id/execute
 
-POST /api/chat/messages          SSE: meta | thread | text | tool | done | error
+POST /api/chat/messages          SSE: meta | thread | plan | card | approval | text | tool | done | error
+GET  /api/chat/approvals?threadId=  pending approvals for a thread
+POST /api/chat/approvals         approve/decline a tool call and stream the continuation
 GET  /api/chat/threads
 GET  /api/chat/threads/:id
 DELETE /api/chat/threads/:id
@@ -258,8 +260,8 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test                              # 72 unit tests
-pnpm --filter @keiz/api smoke          # 48 end-to-end checks, in-memory Mongo
+pnpm test                              # 84 unit tests (69 API + 15 shared)
+pnpm --filter @keiz/api smoke          # 50 end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 pnpm contracts:test                    # Rust contract unit tests
