@@ -24,6 +24,7 @@ import { NearTxVerifier } from './near-tx-verifier';
 import { PaymentProviderFactory } from './payment-provider.factory';
 import { PaymentProvider, QuoteResult, StatusResult, TokenInfo } from './providers/provider';
 import { QueueProducer } from '../queues/queue-producer.service';
+import { PaymentIntentsService } from './payment-intents.service';
 
 @Injectable()
 export class PaymentsService {
@@ -37,6 +38,7 @@ export class PaymentsService {
     private readonly vendors: VendorsService,
     private readonly nearTx: NearTxVerifier,
     private readonly queue: QueueProducer,
+    private readonly intents: PaymentIntentsService,
   ) {}
 
   private get provider(): PaymentProvider {
@@ -151,6 +153,15 @@ export class PaymentsService {
       throw new BadGatewayException('Quote would underpay the invoice; try again');
     }
 
+    const intent = await this.intents.reserve({
+      orgId,
+      invoiceId: String(invoice._id),
+      amount: invoice.total,
+      currency: invoice.currency,
+      rail: 'oneclick',
+      createdByUserId: userId,
+    });
+
     try {
       const payment = await this.payments.create({
         orgId,
@@ -196,6 +207,7 @@ export class PaymentsService {
         payload: { depositAddress: committed.depositAddress },
       });
       await this.invoices.markPaymentPending(orgId, String(invoice._id), payment.id);
+      await this.intents.attachPayment(String(intent._id), payment.id, committed.correlationId);
       await this.queue.enqueuePaymentPoll(payment.id, 4_000);
 
       return {
@@ -205,6 +217,7 @@ export class PaymentsService {
         preview,
       };
     } catch (error) {
+      await this.intents.cancel(String(intent._id));
       if ((error as { code?: number }).code === 11000) {
         throw new ConflictException('An open payment already exists for this invoice');
       }
@@ -399,8 +412,10 @@ export class PaymentsService {
     });
 
     if (status === 'SUCCEEDED') {
+      await this.intents.setStatusForPayment(payment.id, 'SETTLED', rawStatus);
       await this.invoices.markPaid(payment.orgId, payment.invoiceId);
     } else if (['FAILED', 'REFUNDED', 'UNDERPAID', 'EXPIRED'].includes(status)) {
+      await this.intents.setStatusForPayment(payment.id, 'FAILED', rawStatus);
       await this.invoices.resetForRetry(payment.orgId, payment.invoiceId);
     }
   }

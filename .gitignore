@@ -9,4 +9,4 @@ coverage
 .DS_Store
 .turbo
 contracts/target
-target
+targetcontracts/deploy/out

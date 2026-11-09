@@ -220,6 +220,14 @@ a committed 1Click deposit address for cross-chain payouts. The API coordinates
 the 1Click quote/status; the contract only moves NEP-141 tokens. The NEAR Auth
 relayer remains restricted to `fast-auth.sign` and is not used for treasury calls.
 
+### 4.4 Payment intents and rails
+
+`PaymentIntent` is the single live payment obligation for an invoice. It records
+the chosen rail (`oneclick`, `outlayer`, `vault`) and is unique for
+`OPEN`/`EXECUTING` states. `PaymentAttempt` records each rail execution. A rail
+must reserve an intent before moving funds; terminal payment status updates the
+intent and attempts atomically. This is the cross-rail double-payment guard.
+
 ## 5. Invoice and 1Click settlement
 
 The invoice is approved first, then a quote is committed. The deposit is signed

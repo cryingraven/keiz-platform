@@ -59,6 +59,7 @@ Open <http://localhost:3000>, sign in with NEAR Auth or a NEAR wallet, and press
 - **AI assistant** — a Mastra agent with five tools over your own invoices, vendors and spend. It can create payment *proposals* but has no path to move funds. Streams tokens and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback that calls the same tools.
 - **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. See `contracts/README.md`.
 - **History indexing** — every payment transition is appended to `payment_events`; on-chain deposits are normalised into `chain_events` with a unique `(txHash, eventIndex)` index so re-polling cannot duplicate rows.
+- **PaymentIntent + PaymentAttempt** — one live payment obligation per invoice across `oneclick`, `outlayer`, and `vault`, with a reservation before execution to prevent cross-rail double payment.
 - **Audit log** — every mutating request is recorded append-only and readable by ADMIN/OWNER at `/dashboard/audit` with actor, path, status and IP.
 
 ## Demo without mainnet funds
@@ -244,7 +245,18 @@ pnpm test                              # 72 unit tests
 pnpm --filter @keiz/api smoke          # 48 end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
+pnpm contracts:test                    # Rust contract unit tests
+PATH="$HOME/.cargo/bin:$PATH" pnpm contracts:build  # wasm build
 ```
+
+Contract deployment (testnet/mainnet, dry-run first):
+
+```bash
+./contracts/deploy/testnet.sh
+CONFIRM_MAINNET=YES ./contracts/deploy/mainnet.sh
+```
+
+See `contracts/README.md` for required accounts, token ids, and policy limits.
 
 The main suite covers auth scoping and refresh reuse, integer totals, approval transitions, tenant isolation, quote → deposit → settlement, the append-only event log, agent policy (auto-approve, execute, hard block, atomic daily cap), RBAC, duplicate-quote rejection, address/amount validation, audit logging, local chat streaming and demo seeding. It also drives AP recognition and settlement, AR issue/partial/full receipt, void reversals, trial-balance balance, AP/AR aging, manual opening entries, idempotent rebuild and ledger tenant isolation. The custody suite drives registration, delegated policy, withdraw, polling and settlement against a mock OutLayer API. The Mastra suite drives the real agent through a mock OpenAI-compatible server and asserts live tool events, request-scoped org isolation and memory persistence.
 

@@ -24,6 +24,7 @@ import { InvoicesService } from '../invoices/invoices.service';
 import { VendorsService } from '../vendors/vendors.service';
 import { OutlayerService } from '../outlayer/outlayer.service';
 import { QueueProducer } from '../queues/queue-producer.service';
+import { PaymentIntentsService } from '../payments/payment-intents.service';
 import { PaymentsService } from '../payments/payments.service';
 import { walletNetwork } from '../common/network';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
@@ -51,6 +52,7 @@ export class AgentService {
     private readonly outlayer: OutlayerService,
     private readonly config: ConfigService,
     private readonly queue: QueueProducer,
+    private readonly intents: PaymentIntentsService,
   ) {}
 
   private masterKey(): Buffer {
@@ -293,14 +295,25 @@ export class AgentService {
       invoiceId,
       status: { $in: ['AWAITING_DEPOSIT', 'PROCESSING'] },
     });
-    if (!live) return;
-    if (options?.excludeActionId && String(live.agentActionId ?? '') === options.excludeActionId) {
-      return;
+    if (live) {
+      if (options?.excludeActionId && String(live.agentActionId ?? '') === options.excludeActionId) {
+        return;
+      }
+      throw new ConflictException(
+        `An open payment (${String(live._id)}) already exists for this invoice. ` +
+          'Wait for it to settle, expire or be cancelled before trying again.',
+      );
     }
-    throw new ConflictException(
-      `An open payment (${String(live._id)}) already exists for this invoice. ` +
-        'Wait for it to settle, expire or be cancelled before trying again.',
-    );
+    const openIntent = await this.intents.findOpenIntent(orgId, invoiceId);
+    if (openIntent) {
+      if (options?.excludeActionId) {
+        const ownAction = await this.actions.findOne({ _id: options.excludeActionId });
+        if (ownAction?.paymentIntentId === String(openIntent._id)) return;
+      }
+      throw new ConflictException(
+        'This invoice already has an open payment intent on another rail',
+      );
+    }
   }
 
   async propose(orgId: string, input: ProposeAgentPaymentInput) {
@@ -319,17 +332,31 @@ export class AgentService {
     // Custody wallets are governed by the OutLayer policy (TEE + on-chain).
     // The local USD caps would otherwise block legitimate custody payments.
     if (wallet.provider === 'outlayer') {
-      const action = await this.actions.create({
+      const intent = await this.intents.reserve({
         orgId,
-        walletId: wallet.id,
         invoiceId: String(invoice._id),
-        type: 'PAYMENT',
-        asset: input.asset,
-        amountUsd,
-        status: 'APPROVED',
-        reason: input.reason ?? 'OutLayer policy is enforced at execution',
-        policyDecision: { decision: 'delegated', provider: 'outlayer' },
+        amount: invoice.total,
+        currency: invoice.currency,
+        rail: 'outlayer',
       });
+      let action;
+      try {
+        action = await this.actions.create({
+          orgId,
+          walletId: wallet.id,
+          invoiceId: String(invoice._id),
+          type: 'PAYMENT',
+          asset: input.asset,
+          amountUsd,
+          status: 'APPROVED',
+          reason: input.reason ?? 'OutLayer policy is enforced at execution',
+          policyDecision: { decision: 'delegated', provider: 'outlayer' },
+          paymentIntentId: String(intent._id),
+        });
+      } catch (error) {
+        await this.intents.cancel(String(intent._id));
+        throw error;
+      }
       return action.toObject();
     }
 
@@ -375,6 +402,9 @@ export class AgentService {
     action.status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
     action.decidedByUserId = userId;
     await action.save();
+    if (decision === 'REJECT' && action.paymentIntentId) {
+      await this.intents.cancel(action.paymentIntentId);
+    }
     return action.toObject();
   }
 
@@ -435,6 +465,19 @@ export class AgentService {
         await this.invoices.resetForRetry(orgId, String(invoice._id));
       }
 
+      if (wallet.provider === 'outlayer' && !action.paymentIntentId) {
+        const intent = await this.intents.reserve({
+          orgId,
+          invoiceId: String(invoice._id),
+          amount: invoice.total,
+          currency: invoice.currency,
+          rail: 'outlayer',
+          createdByUserId: userId,
+        });
+        action.paymentIntentId = String(intent._id);
+        await action.save();
+      }
+
       const result =
         wallet.provider === 'outlayer'
           ? await this.executeWithCustody(orgId, userId, action, wallet, invoice)
@@ -449,6 +492,13 @@ export class AgentService {
         action.status =
           action.outlayerRequestId || action.paymentId ? 'NEEDS_REVIEW' : 'APPROVED';
         await action.save();
+      }
+      if (action.paymentIntentId && !action.paymentId) {
+        if (action.outlayerRequestId) {
+          await this.intents.setStatus(action.paymentIntentId, 'EXECUTING');
+        } else {
+          await this.intents.cancel(action.paymentIntentId);
+        }
       }
       throw error;
     }
@@ -583,6 +633,7 @@ export class AgentService {
     await action.save();
 
     if (paymentStatus === 'FAILED' || paymentStatus === 'REFUNDED') {
+      if (action.paymentIntentId) await this.intents.cancel(action.paymentIntentId);
       throw new BadRequestException(`Custody withdrawal ended as ${response.status}`);
     }
 
@@ -617,6 +668,12 @@ export class AgentService {
       action.executedAt = new Date();
     }
     await action.save();
+    if (action.paymentIntentId) {
+      await this.intents.attachPayment(action.paymentIntentId, payment.id, response.request_id);
+      if (paymentStatus === 'SUCCEEDED') {
+        await this.intents.setStatusForPayment(payment.id, 'SETTLED', response.status);
+      }
+    }
 
     await this.invoices.markPaymentPending(orgId, String(invoice._id), payment.id);
     if (paymentStatus === 'SUCCEEDED') {

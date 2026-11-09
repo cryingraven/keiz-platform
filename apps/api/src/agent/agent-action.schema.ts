@@ -44,6 +44,9 @@ export class AgentAction {
   paymentId?: string;
 
   @Prop()
+  paymentIntentId?: string;
+
+  @Prop()
   outlayerRequestId?: string;
 
   @Prop()

@@ -115,12 +115,66 @@ contract/method allowlist and threat model.
 
 ## Deploy
 
-See `deploy/testnet.sh`. Then set:
+Preview both networks first; no transactions are sent when `DRY_RUN=true`.
 
-```env
-KEIZ_COLLECT_CONTRACT_ID=keiz-collect.testnet
-KEIZ_COLLECT_ASSET_ID=nep141:usdc.testnet
+### Testnet
+
+```bash
+DRY_RUN=true \
+OWNER_ACCOUNT=owner.testnet \
+ORG_ID=<workspace-id> \
+COLLECT_ACCOUNT=keiz-collect.testnet \
+VAULT_ACCOUNT=keiz-vault.testnet \
+./contracts/deploy/testnet.sh
+
+# remove DRY_RUN=true to execute
 ```
+
+The testnet wrapper defaults to `usdc.testnet`, 6 decimals, and explicit policy
+limits in token minor units. Override `COLLECT_TOKEN_CONTRACT`,
+`COLLECT_ASSET_ID`, `PER_TX_LIMIT`, `DAILY_LIMIT`, `THRESHOLD`,
+`APPROVERS_JSON`, `ALLOWED_RECIPIENTS_JSON`, `TREASURY_ACCOUNT` as needed.
+
+### Mainnet
+
+```bash
+CONFIRM_MAINNET=YES \
+OWNER_ACCOUNT=owner.near \
+ORG_ID=<workspace-id> \
+COLLECT_ACCOUNT=keiz-collect.near \
+VAULT_ACCOUNT=keiz-vault.near \
+COLLECT_TOKEN_CONTRACT=usdc.near \
+COLLECT_ASSET_ID=nep141:usdc.near \
+PER_TX_LIMIT=1000000 \
+DAILY_LIMIT=5000000 \
+THRESHOLD=2 \
+APPROVERS_JSON='["alice.near","bob.near"]' \
+ALLOWED_RECIPIENTS_JSON='["vendor.near"]' \
+./contracts/deploy/mainnet.sh
+
+# review the dry-run output, then explicitly execute:
+DRY_RUN=false EXECUTE_MAINNET=YES CONFIRM_MAINNET=YES … ./contracts/deploy/mainnet.sh
+```
+
+Mainnet requires `CONFIRM_MAINNET=YES` and, for a real broadcast, both
+`DRY_RUN=false` and `EXECUTE_MAINNET=YES`. It also requires a non-empty
+`ALLOWED_RECIPIENTS_JSON`. `INTENTS_ENABLED` defaults to `true` on mainnet and
+`false` on testnet.
+
+After a real deploy the script verifies the contract org id, treasury, token
+allowlist, and deployed wasm hash, then writes
+`contracts/deploy/out/<network>-<orgId>.json`. Use that output in
+**Settings → AR collection**, and set `KEIZ_COLLECT_CODE_HASH` to the printed
+wasm hash so the API can verify future workspace contracts.
+
+Signer modes (`SIGN_WITH`): `legacy-keychain` (default), `access-key-file`
+(`SIGNER_KEY_FILE`), `ledger`, or `plaintext-key` (`SIGNER_PRIVATE_KEY`).
+Plaintext keys are for local operations only.
+
+Account creation and funding are intentionally not automated. Create and fund
+the collect/vault accounts first, import the signer (`near account
+import-account`), then deploy.
 
 1Click is mainnet-only. Testnet is for contract deployment and local tests;
 cross-chain quote/deposit flows must be tested on mainnet with approved assets.
+

@@ -7,6 +7,7 @@ import { decryptSecret, deriveMasterKey } from '../agent/agent-crypto';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentEvent, PaymentEventDocument } from '../payments/payment-event.schema';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
+import { PaymentIntentsService } from '../payments/payment-intents.service';
 import { QueueProducer } from '../queues/queue-producer.service';
 import { mapOutlayerStatus } from './outlayer.mapper';
 import { OutlayerService } from './outlayer.service';
@@ -25,6 +26,7 @@ export class OutlayerPoller {
     private readonly outlayer: OutlayerService,
     private readonly config: ConfigService,
     private readonly queue: QueueProducer,
+    private readonly intents: PaymentIntentsService,
   ) {}
 
   private masterKey(): Buffer {
@@ -126,8 +128,10 @@ export class OutlayerPoller {
     }
 
     if (status === 'SUCCEEDED') {
+      await this.intents.setStatusForPayment(payment.id, 'SETTLED', request.status);
       await this.invoices.markPaid(payment.orgId, payment.invoiceId);
     } else if (status === 'FAILED' || status === 'REFUNDED') {
+      await this.intents.setStatusForPayment(payment.id, 'FAILED', request.status);
       await this.invoices.resetForRetry(payment.orgId, payment.invoiceId);
     }
     // NEEDS_REVIEW is terminal but the fund state is unknown: leave the invoice
