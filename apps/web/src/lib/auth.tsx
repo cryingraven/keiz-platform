@@ -42,6 +42,12 @@ export interface WalletAccount {
   publicKey?: string;
 }
 
+function uniqueAccounts(accounts: WalletAccount[]): WalletAccount[] {
+  return Array.from(
+    new Map(accounts.map((account) => [account.accountId, account])).values(),
+  );
+}
+
 export interface WalletOption {
   id: string;
   name: string;
@@ -349,7 +355,7 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
       if (!connector) throw new Error('Wallet connector is unavailable');
       const wallet = (await connector.connect()) as WalletLike;
       walletRef.current = wallet;
-      const walletAccounts = await wallet.getAccounts();
+      const walletAccounts = uniqueAccounts(await wallet.getAccounts());
       if (walletAccounts.length === 0) {
         throw new Error('No account returned by the wallet');
       }
@@ -377,7 +383,7 @@ export function NearAuthProvider({ children }: { children: ReactNode }) {
         if (!connector) throw new Error('Wallet connector is unavailable');
         const wallet = (await connector.connect({ walletId })) as WalletLike;
         walletRef.current = wallet;
-        const walletAccounts = await wallet.getAccounts();
+        const walletAccounts = uniqueAccounts(await wallet.getAccounts());
         if (walletAccounts.length === 0) {
           throw new Error('No account returned by the wallet');
         }
