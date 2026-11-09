@@ -226,8 +226,7 @@ See `.env.example`. The important ones:
 | `NEAR_AUTH_RELAYER_ACCOUNT_ID` / `_PRIVATE_KEY` | Funded account that submits the `sign` call |
 | `NEAR_AUTH_RELAYER_MAX_GAS` / `NEAR_AUTH_GUARD_ID` | Relayer gas cap and the only Auth0 guard id it accepts |
 | `NEAR_AUTH_RELAYER_DAILY_LIMIT` / `_PER_USER` | Global and per-Auth0-user daily relay caps |
-| `KEIZ_COLLECT_CONTRACT_ID` / `KEIZ_COLLECT_ASSET_ID` | Deployed AR receiver and its allowlisted destination asset |
-| `KEIZ_COLLECT_ORG_ID` / `KEIZ_COLLECT_TOKEN_CONTRACT` / `KEIZ_COLLECT_ASSET_DECIMALS` | Workspace owner, accepted NEP-141 token, and token decimals for receipt indexing |
+| `KEIZ_COLLECT_CODE_HASH` | Canonical `keiz-collect` wasm hash; required in production to activate a workspace contract |
 | `REDIS_URL` / `QUEUES_ENABLED` | BullMQ connection and whether the API produces background jobs |
 | `QUEUE_PREFIX` | Redis key prefix shared by API and worker |
 | `AGENT_WALLET_MASTER_KEY` | 32-byte hex/base64 key for AES-256-GCM |

@@ -132,6 +132,15 @@ export const collectionQuoteSchema = z.object({
   refundTo: z.string().min(1).max(200),
 });
 
+export const orgCollectionSchema = z.object({
+  contractId: nearAccountId,
+  treasury: nearAccountId,
+  assetId: z.string().min(1).max(200),
+  tokenContract: nearAccountId,
+  decimals: z.number().int().min(0).max(18),
+  status: z.enum(['PENDING', 'ACTIVE', 'PAUSED', 'DISABLED']).default('ACTIVE'),
+});
+
 const journalAmount = z
   .string()
   .max(40)
@@ -207,6 +216,7 @@ export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
 export type CreateReceivableInput = z.infer<typeof createReceivableSchema>;
 export type RecordReceiptInput = z.infer<typeof recordReceiptSchema>;
 export type CollectionQuoteInput = z.infer<typeof collectionQuoteSchema>;
+export type OrgCollectionInput = z.infer<typeof orgCollectionSchema>;
 export type ManualJournalInput = z.infer<typeof manualJournalSchema>;
 export type JournalLineInput = z.infer<typeof journalLineSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;

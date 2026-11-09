@@ -8,6 +8,7 @@ import { Payment, PaymentDocument } from '../payments/payment.schema';
 import { ReceivablesService } from '../receivables/receivables.service';
 import { ChainEvent, ChainEventDocument } from './chain-event.schema';
 import { IndexerCursor, IndexerCursorDocument } from './indexer-cursor.schema';
+import { Organization, OrganizationDocument } from '../users/organization.schema';
 
 interface CollectReceipt {
   id: number;
@@ -28,6 +29,7 @@ export class IndexerService {
     @InjectModel(ChainEvent.name) private readonly events: Model<ChainEventDocument>,
     @InjectModel(Payment.name) private readonly payments: Model<PaymentDocument>,
     @InjectModel(IndexerCursor.name) private readonly cursors: Model<IndexerCursorDocument>,
+    @InjectModel(Organization.name) private readonly orgs: Model<OrganizationDocument>,
     private readonly receivables: ReceivablesService,
     private readonly config: ConfigService,
   ) {}
@@ -80,29 +82,67 @@ export class IndexerService {
    * key and the synthetic txHash used by chain_events.
    */
   async syncCollectReceipts(limit = 100): Promise<number> {
-    const contractId = this.config.get<string>('KEIZ_COLLECT_CONTRACT_ID');
-    const orgId = this.config.get<string>('KEIZ_COLLECT_ORG_ID');
-    if (!contractId || !orgId) return 0;
-    const tokenContract = this.config.get<string>('KEIZ_COLLECT_TOKEN_CONTRACT');
-    const tokenDecimals = Number(this.config.get<string>('KEIZ_COLLECT_ASSET_DECIMALS') || '6');
+    const orgs = await this.orgs
+      .find({ 'collection.status': 'ACTIVE' })
+      .select('_id collection')
+      .limit(100)
+      .lean();
+    let indexed = 0;
+    for (const org of orgs) {
+      const collection = org.collection as
+        | {
+            contractId: string;
+            network: 'mainnet' | 'testnet';
+            tokenContract: string;
+            decimals: number;
+          }
+        | undefined;
+      if (!collection?.contractId) continue;
+      try {
+        indexed += await this.syncCollectForOrg(String(org._id), collection, limit);
+      } catch (error) {
+        this.logger.warn(
+          `Collect index failed for org ${String(org._id)} (${collection.contractId}): ${(error as Error).message}`,
+        );
+      }
+    }
+    return indexed;
+  }
 
+  private async syncCollectForOrg(
+    orgId: string,
+    collection: {
+      contractId: string;
+      network: 'mainnet' | 'testnet';
+      tokenContract: string;
+      decimals: number;
+    },
+    limit: number,
+  ): Promise<number> {
+    const { contractId, tokenContract, decimals: tokenDecimals } = collection;
+    const rpcUrl = this.rpcFor(collection.network);
     const count = Number(
-      await this.viewContract<number>(contractId, 'get_receipt_count', {}),
+      await this.viewContract<number>(rpcUrl, contractId, 'get_receipt_count', {}),
     );
     if (!Number.isFinite(count) || count <= 0) return 0;
-    const cursorKey = `collect:${contractId}`;
+    const cursorKey = `collect:${orgId}:${contractId}`;
     const cursor = await this.cursors.findOne({ key: cursorKey }).lean();
     const from = cursor ? cursor.value + 1 : 0;
     if (from >= count) return 0;
-    const receipts = await this.viewContract<CollectReceipt[]>(contractId, 'get_receipts', {
-      from_index: from,
-      limit: Math.min(limit, count - from),
-    });
+    const receipts = await this.viewContract<CollectReceipt[]>(
+      rpcUrl,
+      contractId,
+      'get_receipts',
+      {
+        from_index: from,
+        limit: Math.min(limit, count - from),
+      },
+    );
 
     let indexed = 0;
     for (const receipt of receipts ?? []) {
       const reference = receipt.receivable_ref ?? receipt.receivableRef;
-      const chainEventId = `collect:${contractId}:${receipt.id}`;
+      const chainEventId = `collect:${orgId}:${contractId}:${receipt.id}`;
       const existing = await this.events.exists({
         orgId,
         txHash: chainEventId,
@@ -110,7 +150,7 @@ export class IndexerService {
       });
       if (existing) continue;
 
-      if (tokenContract && receipt.token !== tokenContract) {
+      if (receipt.token !== tokenContract) {
         await this.recordCollectEvent(orgId, chainEventId, receipt, 'IGNORED', {
           reason: `unexpected token ${receipt.token}`,
         });
@@ -197,13 +237,21 @@ export class IndexerService {
     );
   }
 
+  private rpcFor(network: 'mainnet' | 'testnet'): string {
+    if (network === 'testnet') {
+      return this.config.get<string>('NEAR_AUTH_RPC_URL') || 'https://rpc.testnet.near.org';
+    }
+    return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
+  }
+
   private async viewContract<T>(
+    rpcUrl: string,
     contractId: string,
     method: string,
     args: Record<string, unknown>,
   ): Promise<T> {
     const response = await fetchRpcWithRetry(
-      this.rpcUrl,
+      rpcUrl,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

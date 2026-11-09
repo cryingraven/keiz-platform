@@ -52,6 +52,8 @@ impl From<Receipt> for ReceiptView {
 struct ReceiptMsg {
     #[serde(alias = "receivableRef")]
     receivable_ref: String,
+    #[serde(default, alias = "orgId")]
+    org_id: Option<String>,
 }
 
 #[near(contract_state)]
@@ -59,6 +61,7 @@ struct ReceiptMsg {
 pub struct Contract {
     owner: AccountId,
     treasury: AccountId,
+    org_id: String,
     paused: bool,
     allowed_tokens: UnorderedSet<AccountId>,
     receipts: Vector<Receipt>,
@@ -68,11 +71,12 @@ pub struct Contract {
 #[near]
 impl Contract {
     #[init]
-    pub fn new(owner: AccountId, treasury: Option<AccountId>) -> Self {
+    pub fn new(owner: AccountId, treasury: Option<AccountId>, org_id: String) -> Self {
         let treasury = treasury.unwrap_or_else(|| owner.clone());
         Self {
             owner,
             treasury,
+            org_id,
             paused: false,
             allowed_tokens: UnorderedSet::new(b"t"),
             receipts: Vector::new(b"r"),
@@ -88,9 +92,14 @@ impl Contract {
         if self.paused || !self.allowed_tokens.contains(&token) {
             return PromiseOrValue::Value(amount);
         }
-        let Some(receivable_ref) = parse_receivable_ref(&msg) else {
+        let Some((receivable_ref, msg_org)) = parse_receipt_msg(&msg) else {
             return PromiseOrValue::Value(amount);
         };
+        if let Some(msg_org) = msg_org {
+            if !self.org_id.is_empty() && msg_org != self.org_id {
+                return PromiseOrValue::Value(amount);
+            }
+        }
 
         let id = self.receipts.len();
         let receipt = Receipt {
@@ -120,6 +129,7 @@ impl Contract {
                     "sender": receipt.sender,
                     "amount": amount.0.to_string(),
                     "receivableRef": receivable_ref,
+                    "orgId": self.org_id,
                     "blockHeight": receipt.block_height,
                     "observedAt": receipt.observed_at,
                 }
@@ -228,6 +238,10 @@ impl Contract {
         self.owner.clone()
     }
 
+    pub fn get_org_id(&self) -> String {
+        self.org_id.clone()
+    }
+
     pub fn get_treasury(&self) -> AccountId {
         self.treasury.clone()
     }
@@ -241,17 +255,16 @@ impl Contract {
     }
 }
 
-fn parse_receivable_ref(msg: &str) -> Option<String> {
+fn parse_receipt_msg(msg: &str) -> Option<(String, Option<String>)> {
     let value = msg.trim();
     if value.is_empty() {
         return None;
     }
-    let reference = if value.starts_with('{') {
-        serde_json::from_str::<ReceiptMsg>(value)
-            .ok()?
-            .receivable_ref
+    let (reference, org_id) = if value.starts_with('{') {
+        let parsed = serde_json::from_str::<ReceiptMsg>(value).ok()?;
+        (parsed.receivable_ref, parsed.org_id)
     } else {
-        value.to_string()
+        (value.to_string(), None)
     };
     let reference = reference.trim().to_string();
     if reference.len() < 4 || reference.len() > 64 {
@@ -266,7 +279,7 @@ fn parse_receivable_ref(msg: &str) -> Option<String> {
     {
         return None;
     }
-    Some(reference)
+    Some((reference, org_id))
 }
 
 #[cfg(test)]
@@ -275,22 +288,25 @@ mod tests {
 
     #[test]
     fn parses_plain_and_json_refs() {
-        assert_eq!(parse_receivable_ref("AR-2001"), Some("AR-2001".to_string()));
         assert_eq!(
-            parse_receivable_ref(r#"{"receivableRef":"AR-2002"}"#),
-            Some("AR-2002".to_string())
+            parse_receipt_msg("AR-2001"),
+            Some(("AR-2001".to_string(), None))
         );
         assert_eq!(
-            parse_receivable_ref(r#"{"receivable_ref":"AR-2003"}"#),
-            Some("AR-2003".to_string())
+            parse_receipt_msg(r#"{"receivableRef":"AR-2002"}"#),
+            Some(("AR-2002".to_string(), None))
+        );
+        assert_eq!(
+            parse_receipt_msg(r#"{"receivable_ref":"AR-2003","orgId":"org-1"}"#),
+            Some(("AR-2003".to_string(), Some("org-1".to_string())))
         );
     }
 
     #[test]
     fn rejects_invalid_refs() {
-        assert_eq!(parse_receivable_ref(""), None);
-        assert_eq!(parse_receivable_ref("INV-1"), None);
-        assert_eq!(parse_receivable_ref("AR-"), None);
-        assert_eq!(parse_receivable_ref("AR-1;drop"), None);
+        assert_eq!(parse_receipt_msg(""), None);
+        assert_eq!(parse_receipt_msg("INV-1"), None);
+        assert_eq!(parse_receipt_msg("AR-"), None);
+        assert_eq!(parse_receipt_msg("AR-1;drop"), None);
     }
 }

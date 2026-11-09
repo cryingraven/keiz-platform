@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Menu,
   ScrollText,
+  Settings,
   Sparkles,
   Users,
   Wallet,
@@ -40,6 +41,7 @@ const NAV = [
   { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
   { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
   { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {

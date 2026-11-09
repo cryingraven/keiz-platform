@@ -97,10 +97,11 @@ reliable way to attribute an incoming transfer to a receivable. Alternatives:
 - The indexer now reads `get_receipts` from the configured collect contract and
   records `ONCHAIN` receipts with a stable `chainEventId`
   (`collect:<contract>:<receiptId>`). It rejects overpayments and unknown refs.
-- Set `KEIZ_COLLECT_ORG_ID`, `KEIZ_COLLECT_TOKEN_CONTRACT` and
-  `KEIZ_COLLECT_ASSET_DECIMALS` alongside the contract id.
-- Per-workspace deployment is still manual; the current env config is one
-  collect contract per deployment.
+- Per-workspace contracts are configured in **Settings → AR collection** and
+  stored on the organization; the indexer polls every active org contract and
+  keeps a cursor per `(orgId, contractId)`.
+- Set `KEIZ_COLLECT_CODE_HASH` so the API can verify the deployed code hash
+  before activating a workspace contract.
 - Only the indexer creates `ONCHAIN` receipts; the browser cannot.
 
 ---

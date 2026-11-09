@@ -23,7 +23,7 @@ Homebrew, use `PATH="$HOME/.cargo/bin:$PATH" cargo ...`.
 Init:
 
 ```json
-{ "owner": "owner.testnet", "treasury": "treasury.testnet" }
+{ "owner": "owner.testnet", "treasury": "treasury.testnet", "org_id": "workspace-id" }
 ```
 
 Customers pay with `ft_transfer_call`:
@@ -32,11 +32,12 @@ Customers pay with `ft_transfer_call`:
 {
   "receiver_id": "keiz-collect.testnet",
   "amount": "25000000",
-  "msg": "{\"receivableRef\":\"AR-2001\"}"
+  "msg": "{\"receivableRef\":\"AR-2001\",\"orgId\":\"workspace-id\"}"
 }
 ```
 
-Plain `AR-2001` is also accepted. The token must be allowlisted; otherwise the
+Plain `AR-2001` is also accepted. When `orgId` is present it must match the contract's
+init `org_id`, otherwise the transfer is refunded. The token must be allowlisted; otherwise the
 contract returns the full amount (refund). Receipts are stored and emitted as:
 
 ```

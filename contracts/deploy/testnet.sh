@@ -22,6 +22,7 @@ WASM_DIR="$ROOT/contracts/target/wasm32-unknown-unknown/release"
 : "${COLLECT_ACCOUNT:?set COLLECT_ACCOUNT}"
 : "${VAULT_ACCOUNT:?set VAULT_ACCOUNT}"
 : "${OWNER_ACCOUNT:?set OWNER_ACCOUNT}"
+: "${ORG_ID:?set ORG_ID}"
 TREASURY_ACCOUNT="${TREASURY_ACCOUNT:-$OWNER_ACCOUNT}"
 APPROVERS_JSON="${APPROVERS_JSON:-[\"$OWNER_ACCOUNT\"]}"
 THRESHOLD="${THRESHOLD:-1}"
@@ -33,7 +34,7 @@ sign=(sign-with-key "$HOME/.near-credentials/testnet/$OWNER_ACCOUNT.json" send)
 
 near contract deploy "$COLLECT_ACCOUNT" \
   use-file "$WASM_DIR/keiz_collect.wasm" \
-  with-init-call new json-args "{\"owner\":\"$OWNER_ACCOUNT\",\"treasury\":\"$TREASURY_ACCOUNT\"}" \
+  with-init-call new json-args "{\"owner\":\"$OWNER_ACCOUNT\",\"treasury\":\"$TREASURY_ACCOUNT\",\"org_id\":\"$ORG_ID\"}" \
   with-attached-deposit 0 "${net[@]}" "${sign[@]}"
 
 # Register the receiver with each accepted NEP-141 token. Repeat for more tokens.

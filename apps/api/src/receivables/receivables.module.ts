@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AccountingModule } from '../accounting/accounting.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { UsersModule } from '../users/users.module';
 import { ArCollectionService } from './ar-collection.service';
 import { Customer, CustomerSchema } from './customer.schema';
 import { CustomersController } from './customers.controller';
@@ -13,6 +14,7 @@ import { ReceivablesService } from './receivables.service';
   imports: [
     AccountingModule,
     PaymentsModule,
+    UsersModule,
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
       { name: Receivable.name, schema: ReceivableSchema },
