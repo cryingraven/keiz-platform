@@ -111,7 +111,7 @@ export function NearCredit({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 text-[11px]',
+        'inline-flex items-center gap-1.5 text-meta',
         dark ? 'text-white/40' : 'text-muted',
         className,
       )}

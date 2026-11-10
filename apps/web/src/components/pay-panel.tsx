@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
-  TriangleAlert,
   Wallet,
   X,
 } from 'lucide-react';
@@ -19,7 +18,7 @@ import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatToken, safeExplorerUrl, timeLeft } from '@/lib/format';
-import { Badge, Button, Card, Input, SectionTitle, Select, Spinner, StatusPill } from './ui';
+import { Alert, Badge, Button, Card, Input, SectionTitle, Select, Spinner, StatusPill } from './ui';
 
 interface Payment {
   _id: string;
@@ -288,43 +287,32 @@ export function PayPanel({
 
       <div className="px-5 py-5">
         {isCustody ? (
-          <div className="mb-4 flex gap-2 rounded-xl border border-brand/20 bg-brand-soft px-3 py-2.5 text-[12px] leading-relaxed text-brand-deep">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              Paid by the agent's OutLayer custody wallet. No deposit address is needed from you;
-              the TEE signs and broadcasts the transfer.
-            </span>
-          </div>
+          <Alert tone="info" className="mb-4">
+            Paid by the agent&apos;s OutLayer custody wallet. No deposit address is needed from you;
+            the TEE signs and broadcasts the transfer.
+          </Alert>
         ) : isMock ? (
-          <div className="mb-4 flex gap-2 rounded-xl border border-amber/20 bg-amber-soft px-3 py-2.5 text-[12px] leading-relaxed text-amber">
-            <FlaskConical className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              1Click has no testnet, so this workspace uses a deterministic mock. Deposits are not
-              signed on-chain in mock mode.
-            </span>
-          </div>
+          <Alert tone="warning" className="mb-4">
+            1Click has no testnet, so this workspace uses a deterministic mock. Deposits are not
+            signed on-chain in mock mode.
+          </Alert>
         ) : (
-          <div className="mb-4 flex gap-2 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2.5 text-[12px] leading-relaxed text-rose">
-            <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>
-              Live mainnet mode. Your wallet signs the NEP-141 deposit; funds move to the 1Click
-              address. Check the amount before approving.
-            </span>
-          </div>
+          <Alert tone="danger" className="mb-4">
+            Live mainnet mode. Your wallet signs the NEP-141 deposit; funds move to the 1Click
+            address. Check the amount before approving.
+          </Alert>
         )}
 
         {!active ? (
           <>
-            <div className="space-y-2.5 text-[13px]">
+            <dl className="space-y-2.5 text-small">
               <Row label="Vendor receives" value="Exact invoice amount in a USD stablecoin" />
               <Row label="Quote window" value="10 minutes" />
               <Row label="Deposit" value="Signed in your NEAR wallet" />
-            </div>
+            </dl>
             {originTokens.length > 1 ? (
               <div className="mt-4">
-                <p className="mb-1.5 text-[11px] uppercase tracking-wider text-muted">
-                  Pay with
-                </p>
+                <p className="mb-1.5 text-small font-medium">Pay with</p>
                 <Select
                   value={originAssetId}
                   onChange={(event) => setOriginAssetId(event.target.value)}
@@ -339,7 +327,7 @@ export function PayPanel({
                 {originAssetId &&
                 originTokens.find((token) => token.assetId === originAssetId)?.symbol.toUpperCase() ===
                   'WNEAR' ? (
-                  <p className="mt-1.5 text-[11px] text-muted">
+                  <p className="mt-1.5 text-meta text-muted">
                     wNEAR wraps native NEAR in the same transaction.
                   </p>
                 ) : null}
@@ -354,8 +342,8 @@ export function PayPanel({
               Get a quote <ArrowRight className="h-4 w-4" />
             </Button>
             {disabled ? (
-              <p className="mt-2 text-center text-[12px] text-muted">
-                Invoice must be approved before a quote can be locked.
+              <p className="mt-2 text-center text-small text-muted">
+                The bill must be approved before a quote can be locked.
               </p>
             ) : null}
           </>
@@ -363,10 +351,10 @@ export function PayPanel({
           <>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] uppercase tracking-wider text-muted">Vendor receives</p>
-                <p className="font-num mt-1 text-[26px] font-semibold tracking-tight">
+                <p className="text-small text-muted">Vendor receives</p>
+                <p className="font-num mt-1 text-[24px] font-semibold tracking-tight">
                   {formatToken(active.amountOutFormatted)}{' '}
-                  <span className="text-sm font-normal text-muted">
+                  <span className="text-ui font-normal text-muted">
                     {active.destinationSymbol}
                   </span>
                 </p>
@@ -374,19 +362,19 @@ export function PayPanel({
               <StatusPill status={active.status} />
             </div>
 
-            <div className="mt-4 flex items-center gap-2 rounded-xl bg-paper px-3 py-2.5 text-[12px]">
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-control bg-surface-raised px-3 py-2.5 text-small">
               <span className="font-medium">{active.originSymbol ?? 'USDC'}</span>
               <span className="text-muted">on NEAR</span>
               <ArrowRight className="h-3 w-3 text-muted" />
               <span className="font-medium">{active.destinationSymbol ?? 'USDC'}</span>
               <span className="text-muted">on {active.destinationChain ?? 'near'}</span>
-              <span className="font-num ml-auto text-muted">
+              <span className="font-num ml-auto text-meta text-muted">
                 payer {formatToken(active.amountInFormatted)} {active.originSymbol ?? ''}
               </span>
             </div>
 
             {active.minAmountIn || active.maxAmountIn ? (
-              <p className="mt-2 text-[11px] text-muted">
+              <p className="mt-2 text-meta text-muted">
                 Accepted deposit range:{' '}
                 <span className="font-num">
                   {active.minAmountIn ? formatUnits(active.minAmountIn, originDecimals) : '—'} –{' '}
@@ -398,21 +386,19 @@ export function PayPanel({
             {!isCustody && active.depositAddress ? (
               <div className="mt-4">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-wider text-muted">
-                    Deposit address
-                  </p>
+                  <p className="text-small font-medium">Deposit address</p>
                   {isOpen ? (
-                    <p className="font-num text-[11px] text-muted">
+                    <p className="font-num text-meta text-muted">
                       {remaining === 'expired' ? 'expired' : `expires in ${remaining}`}
                     </p>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3 py-2.5">
-                  <code className="font-num min-w-0 flex-1 truncate text-[12px]">
+                <div className="flex items-center gap-2 rounded-control border border-line bg-surface-raised px-3 py-2.5">
+                  <code className="font-num min-w-0 flex-1 truncate text-small">
                     {active.depositAddress}
                   </code>
                   <button
-                    className="shrink-0 rounded-lg p-1.5 text-muted transition hover:bg-surface hover:text-ink"
+                    className="shrink-0 rounded p-1.5 text-muted transition hover:bg-surface hover:text-ink"
                     onClick={() => {
                       void navigator.clipboard.writeText(active.depositAddress ?? '');
                       setCopied(true);
@@ -428,7 +414,7 @@ export function PayPanel({
                   </button>
                 </div>
                 {active.depositMemo ? (
-                  <p className="mt-1.5 text-[12px] text-amber">
+                  <p className="mt-1.5 text-small text-amber">
                     Memo required: <span className="font-num">{active.depositMemo}</span>
                   </p>
                 ) : null}
@@ -447,7 +433,7 @@ export function PayPanel({
                     <FlaskConical className="h-3.5 w-3.5" /> Simulate settlement
                   </Button>
                 ) : isMock ? (
-                  <p className="rounded-xl bg-paper px-3 py-2 text-center text-[12px] text-muted">
+                  <p className="rounded-control bg-surface-raised px-3 py-2 text-center text-small text-muted">
                     Ask an admin to settle this mock payment.
                   </p>
                 ) : (
@@ -472,8 +458,8 @@ export function PayPanel({
                   ) : null}
                 </div>
 
-                <details className="rounded-xl border border-line px-3 py-2">
-                  <summary className="cursor-pointer text-[12px] text-muted">
+                <details className="rounded-control border border-line px-3 py-2">
+                  <summary className="cursor-pointer text-small text-muted">
                     Already sent it? Paste the transaction hash
                   </summary>
                   <div className="mt-2 flex gap-2">
@@ -491,7 +477,7 @@ export function PayPanel({
                       <Send className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-muted">
+                  <p className="mt-1.5 text-meta text-muted">
                     In mainnet mode the hash is verified against NEAR RPC before it is accepted.
                   </p>
                 </details>
@@ -499,7 +485,7 @@ export function PayPanel({
             ) : null}
 
             {active.status === 'PROCESSING' ? (
-              <div className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-brand-soft px-3 py-3 text-[13px] text-brand-deep">
+              <div className="mt-4 flex items-center justify-center gap-2 rounded-control bg-brand-soft px-3 py-3 text-small text-brand-deep">
                 <Spinner className="text-brand" />
                 {isCustody
                   ? 'Waiting for the custody wallet to settle'
@@ -508,23 +494,20 @@ export function PayPanel({
             ) : null}
 
             {active.status === 'NEEDS_REVIEW' ? (
-              <div className="mt-4 rounded-xl border border-amber/20 bg-amber-soft px-3 py-3 text-[13px] text-amber">
+              <Alert tone="warning" className="mt-4">
                 Needs manual review. The fund state is unknown, so this payment must not be retried
                 automatically.
-              </div>
+              </Alert>
             ) : null}
 
             {TERMINAL.includes(active.status) ? (
-              <div
-                className={
-                  active.status === 'SUCCEEDED'
-                    ? 'mt-4 rounded-xl border border-mint/20 bg-mint-soft px-3 py-3 text-[13px] text-mint'
-                    : 'mt-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-3 text-[13px] text-rose'
-                }
+              <Alert
+                tone={active.status === 'SUCCEEDED' ? 'success' : 'danger'}
+                className="mt-4"
               >
                 {active.status === 'SUCCEEDED'
-                  ? 'Settled. The invoice is marked paid.'
-                  : `Payment ended as ${active.status.toLowerCase()}. The invoice is payable again.`}
+                  ? 'Settled. The bill is marked paid.'
+                  : `Payment ended as ${active.status.toLowerCase()}. The bill is payable again.`}
                 {active.refundReason ? <p className="mt-1">Reason: {active.refundReason}</p> : null}
                 {explorer ? (
                   <a
@@ -536,24 +519,24 @@ export function PayPanel({
                     View on explorer <ExternalLink className="h-3 w-3" />
                   </a>
                 ) : null}
-              </div>
+              </Alert>
             ) : null}
 
             {error ? (
-              <p className="mt-3 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-[12px] text-rose">
+              <Alert tone="danger" className="mt-3" onDismiss={() => setError(null)}>
                 {error}
-              </p>
+              </Alert>
             ) : null}
 
             {events.data && events.data.length > 0 ? (
               <div className="mt-5 border-t border-line pt-4">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Timeline</p>
+                <p className="text-small font-medium">Timeline</p>
                 <ol className="mt-2.5 space-y-2">
                   {events.data.map((event) => (
                     <li key={event._id} className="flex items-center gap-2.5">
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink/40" />
-                      <span className="text-[12px] font-medium">{event.status}</span>
-                      <span className="font-num ml-auto text-[11px] text-muted">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink/30" />
+                      <span className="text-small">{event.status}</span>
+                      <span className="font-num ml-auto text-meta text-muted">
                         {new Date(event.createdAt).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -566,13 +549,13 @@ export function PayPanel({
               </div>
             ) : null}
 
-            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted">
+            <div className="mt-3 flex items-center gap-1.5 text-meta text-muted">
               <ShieldCheck className="h-3 w-3" />
               Payout: <span className="font-num">{active.destinationAddress}</span>
             </div>
 
             {active.correlationId ? (
-              <p className="font-num mt-2 truncate text-[11px] text-muted/70">
+              <p className="font-num mt-2 truncate text-meta text-muted">
                 quote {active.correlationId}
               </p>
             ) : null}
@@ -586,8 +569,8 @@ export function PayPanel({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <span className="text-muted">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+      <dt className="text-muted">{label}</dt>
+      <dd className="text-right font-medium">{value}</dd>
     </div>
   );
 }

@@ -100,7 +100,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         </Modal>
 
         <div
-          className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex flex-col items-center gap-2 px-4 sm:bottom-6 sm:left-auto sm:right-6 sm:items-end sm:px-0"
+          className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex flex-col items-center gap-2 px-4 pr-16 sm:bottom-6 sm:left-6 sm:right-auto sm:items-start sm:px-0 sm:pr-0"
           aria-live="polite"
           aria-atomic="false"
         >
@@ -109,9 +109,9 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               key={item.id}
               role="status"
               className={cn(
-                'pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-control border bg-surface px-3.5 py-3 text-[13px] shadow-lg',
-                item.tone === 'error' && 'border-rose/20 text-rose',
-                item.tone === 'success' && 'border-mint/20 text-ink',
+                'pointer-events-auto flex w-full max-w-sm items-start gap-2.5 rounded-control border border-line bg-surface px-3.5 py-3 text-small shadow-lg',
+                item.tone === 'error' && 'border-rose/25 text-ink',
+                item.tone === 'success' && 'border-line text-ink',
                 item.tone === 'info' && 'border-line text-ink',
               )}
             >

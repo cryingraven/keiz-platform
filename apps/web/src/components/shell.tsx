@@ -16,7 +16,6 @@ import {
   MessageSquare,
   ScrollText,
   Settings,
-  Sparkles,
   Users,
   Wallet,
   X,
@@ -24,25 +23,22 @@ import {
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
-import { isMainnet, networkLabel } from '@/lib/network';
+import { networkLabel } from '@/lib/network';
 import { cn } from '@/lib/utils';
 import { Logo } from './logo';
 import { NearCredit } from './landing/logos';
 import { ConnectButton } from './connect-button';
 import { Spinner } from './ui';
-import { AssistantProvider } from './assistant';
+import { AssistantProvider, useAssistant } from './assistant';
 import { FeedbackProvider } from './feedback';
 
 const NAV_GROUPS = [
   {
-    label: 'Overview',
-    items: [{ href: '/dashboard', label: 'Overview', icon: LayoutDashboard }],
-  },
-  {
-    label: 'Money',
+    label: 'Work',
     items: [
-      { href: '/dashboard/invoices', label: 'Bills (AP)', icon: FileText },
-      { href: '/dashboard/receivables', label: 'Receivables (AR)', icon: HandCoins },
+      { href: '/dashboard', label: 'Today', icon: LayoutDashboard },
+      { href: '/dashboard/invoices', label: 'Bills', icon: FileText },
+      { href: '/dashboard/receivables', label: 'Invoices', icon: HandCoins },
       { href: '/dashboard/payments', label: 'Payments', icon: ArrowLeftRight },
     ],
   },
@@ -50,22 +46,21 @@ const NAV_GROUPS = [
     label: 'Books',
     items: [
       { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
-      { href: '/dashboard/reporting', label: 'Reporting', icon: BarChart3 },
+      { href: '/dashboard/reporting', label: 'Reports', icon: BarChart3 },
     ],
   },
   {
-    label: 'Directory',
+    label: 'Contacts',
     items: [
-      { href: '/dashboard/customers', label: 'Customers', icon: Contact },
       { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
+      { href: '/dashboard/customers', label: 'Customers', icon: Contact },
     ],
   },
   {
     label: 'Workspace',
     items: [
-      { href: '/dashboard/chat', label: 'Chat', icon: MessageSquare },
-      { href: '/dashboard/team', label: 'Team', icon: Users },
       { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
+      { href: '/dashboard/team', label: 'Team', icon: Users },
       { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText },
       { href: '/dashboard/settings', label: 'Settings', icon: Settings },
     ],
@@ -74,8 +69,32 @@ const NAV_GROUPS = [
 
 const NAV = NAV_GROUPS.flatMap((group) => group.items);
 
+function isActive(pathname: string, href: string): boolean {
+  if (href === '/dashboard') return pathname === '/dashboard';
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function currentLabel(pathname: string): string {
+  if (pathname.startsWith('/dashboard/chat')) return 'Chat';
+  const match = NAV.filter((item) => item.href !== '/dashboard').find((item) =>
+    isActive(pathname, item.href),
+  );
+  return match?.label ?? 'Today';
+}
+
 export function Shell({ children }: { children: ReactNode }) {
+  return (
+    <FeedbackProvider>
+      <AssistantProvider>
+        <ShellFrame>{children}</ShellFrame>
+      </AssistantProvider>
+    </FeedbackProvider>
+  );
+}
+
+function ShellFrame({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
+  const { openAssistant } = useAssistant();
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -102,10 +121,14 @@ export function Shell({ children }: { children: ReactNode }) {
     };
   }, [open]);
 
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   if (loading || !session?.user) {
     return (
-      <div className="grid min-h-screen place-items-center bg-white">
-        <div className="flex items-center gap-3 text-sm text-muted">
+      <div className="grid min-h-screen place-items-center bg-canvas">
+        <div className="flex items-center gap-3 text-ui text-muted">
           <Spinner /> Redirecting to sign in
         </div>
       </div>
@@ -127,51 +150,37 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   const workspace = (
-    <>
-      <div className="flex items-center gap-2 text-[12px] text-white/50">
-        <Sparkles className="h-3.5 w-3.5" />
-        Workspace
-      </div>
+    <div className="px-1">
+      <p className="text-meta text-muted">Workspace</p>
       {(orgs.data?.length ?? 0) > 1 ? (
         <select
           value={session.org?.id ?? ''}
           disabled={switching}
           onChange={(event) => void switchOrg(event.target.value)}
-          className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.06] px-2 py-1.5 text-[13px] font-medium text-white outline-none"
+          className="mt-1 w-full rounded-control border border-line bg-surface px-2 py-1.5 text-small font-medium text-ink outline-none focus:border-brand/60"
           aria-label="Switch workspace"
         >
           {(orgs.data ?? []).map((org) => (
-            <option key={org.id} value={org.id} className="text-ink">
-              {org.id === session.org?.id ? session.org?.name ?? org.name : org.name}
+            <option key={org.id} value={org.id}>
+              {org.name}
             </option>
           ))}
         </select>
       ) : (
-        <p className="mt-1 truncate text-[14px] font-medium text-white">{session.org?.name}</p>
+        <p className="mt-1 truncate text-ui font-medium text-ink">{session.org?.name}</p>
       )}
-      <p className="mt-0.5 truncate font-num text-[12px] text-white/40">
-        {session.user.accountId}
-      </p>
-    </>
+      <p className="mt-0.5 truncate font-num text-meta text-muted">{session.user.accountId}</p>
+    </div>
   );
+
   const nav = (
-    <nav className="flex flex-col gap-5" aria-label="Workspace">
-      {NAV_GROUPS.map((group, groupIndex) => (
+    <nav className="flex flex-col gap-6" aria-label="Workspace">
+      {NAV_GROUPS.map((group) => (
         <div key={group.label}>
-          <p
-            className={cn(
-              'px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/35',
-              groupIndex === 0 && 'sr-only',
-            )}
-          >
-            {group.label}
-          </p>
-          <div className={cn('flex flex-col gap-0.5', groupIndex > 0 && 'mt-1.5')}>
+          <p className="px-2 text-meta font-medium text-muted">{group.label}</p>
+          <div className="mt-1 flex flex-col gap-0.5">
             {group.items.map((item) => {
-              const active =
-                item.href === '/dashboard'
-                  ? pathname === '/dashboard'
-                  : pathname.startsWith(item.href);
+              const active = isActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -179,13 +188,19 @@ export function Shell({ children }: { children: ReactNode }) {
                   onClick={() => setOpen(false)}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'group flex items-center gap-2.5 rounded-control px-3 py-2 text-[14px] font-medium transition',
+                    'group relative flex items-center gap-2.5 rounded-control px-2 py-2 text-ui transition-colors',
                     active
-                      ? 'bg-white/10 text-white'
-                      : 'text-white/60 hover:bg-white/5 hover:text-white',
+                      ? 'bg-surface font-medium text-ink shadow-panel ring-1 ring-line'
+                      : 'text-muted hover:bg-ink/[0.04] hover:text-ink',
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
+                  {active ? (
+                    <span
+                      className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-brand"
+                      aria-hidden
+                    />
+                  ) : null}
+                  <item.icon className={cn('h-4 w-4', active ? 'text-brand' : 'text-muted')} />
                   {item.label}
                 </Link>
               );
@@ -197,27 +212,34 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
-      <aside className="sticky top-0 hidden h-screen flex-col justify-between bg-ink px-4 py-5 lg:flex">
+    <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-control focus:bg-ink focus:px-3 focus:py-2 focus:text-small focus:text-white"
+      >
+        Skip to content
+      </a>
+
+      <aside className="sticky top-0 hidden h-screen flex-col justify-between border-r border-line bg-canvas px-3 py-4 lg:flex">
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="px-2">
-            <Logo light />
+            <Logo />
           </div>
-          <div className="mt-8 min-h-0 flex-1 overflow-y-auto pb-4 scroll-thin">{nav}</div>
+          <div className="mt-6 min-h-0 flex-1 overflow-y-auto pb-4 scroll-thin">{nav}</div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+        <div className="rounded-card border border-line bg-surface p-3">
           {workspace}
-          <div className="mt-3 border-t border-white/10 pt-2">
-            <NearCredit dark />
+          <div className="mt-3 border-t border-line pt-2">
+            <NearCredit />
           </div>
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-line bg-paper/85 px-4 backdrop-blur-md sm:px-6">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 backdrop-blur-sm sm:px-6">
+          <div className="flex min-w-0 items-center gap-2">
             <button
-              className="rounded-lg p-1.5 text-muted hover:bg-ink/5 lg:hidden"
+              className="rounded-control p-2 text-muted hover:bg-ink/[0.04] hover:text-ink lg:hidden"
               onClick={() => setOpen(true)}
               aria-label="Open menu"
               aria-expanded={open}
@@ -225,54 +247,56 @@ export function Shell({ children }: { children: ReactNode }) {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <span className="text-[14px] font-medium text-muted">
-              {NAV.find((item) =>
-                item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href),
-              )?.label ?? 'Workspace'}
-            </span>
+            <span className="truncate text-ui font-medium text-ink lg:hidden">{currentLabel(pathname)}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openAssistant()}
+              className="hidden h-8 items-center gap-1.5 rounded-control px-2.5 text-small font-medium text-muted transition hover:bg-ink/[0.04] hover:text-ink sm:inline-flex"
+            >
+              <MessageSquare className="h-3.5 w-3.5" /> Ask
+            </button>
             <span
-              className={cn(
-                'rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em]',
-                isMainnet ? 'bg-mint-soft text-mint' : 'bg-amber-soft text-amber',
-              )}
+              className="hidden text-meta font-medium text-muted sm:inline"
               title={`NEAR ${networkLabel}`}
             >
-              {networkLabel}
+              NEAR {networkLabel}
             </span>
             <ConnectButton compact />
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-          <FeedbackProvider>
-            <AssistantProvider>{children}</AssistantProvider>
-          </FeedbackProvider>
+        <main id="main-content" className="mx-auto w-full max-w-[1120px] flex-1 px-4 py-6 sm:px-6 sm:py-8">
+          {children}
         </main>
       </div>
 
       {open ? (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-ink/50" onClick={() => setOpen(false)} />
+          <div className="absolute inset-0 bg-ink/30" onClick={() => setOpen(false)} />
           <div
             id="mobile-navigation"
             role="dialog"
             aria-modal="true"
             aria-label="Workspace navigation"
-            className="absolute left-0 top-0 flex h-full w-72 flex-col bg-ink px-4 py-5"
+            className="absolute left-0 top-0 flex h-full w-72 flex-col border-r border-line bg-canvas px-3 py-4"
           >
             <div className="flex items-center justify-between px-2">
-              <Logo light />
-              <button onClick={() => setOpen(false)} className="p-1.5 text-white/60">
+              <Logo />
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded-control p-1.5 text-muted hover:bg-ink/[0.04] hover:text-ink"
+                aria-label="Close menu"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-8 min-h-0 flex-1 overflow-y-auto pb-4 scroll-thin">{nav}</div>
-            <div className="mt-auto border-t border-white/10 px-2 pt-4">
+            <div className="mt-6 min-h-0 flex-1 overflow-y-auto pb-4 scroll-thin">{nav}</div>
+            <div className="mt-auto border-t border-line px-1 pt-4">
               {workspace}
-              <div className="mt-3">
-                <NearCredit dark />
+              <div className="mt-3 px-1">
+                <NearCredit />
               </div>
             </div>
           </div>
@@ -286,18 +310,23 @@ export function PageHeader({
   title,
   description,
   actions,
+  breadcrumb,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
+  breadcrumb?: ReactNode;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
+      <div className="min-w-0">
+        {breadcrumb ? <div className="mb-2">{breadcrumb}</div> : null}
+        <h1 className="text-[22px] font-semibold leading-tight tracking-[-0.015em]">{title}</h1>
+        {description ? (
+          <p className="mt-1 max-w-2xl text-ui leading-relaxed text-muted">{description}</p>
+        ) : null}
       </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

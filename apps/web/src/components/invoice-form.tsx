@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from './feedback';
-import { Button, Input, Label, Modal, Select, Textarea } from './ui';
+import { Alert, Button, Field, Input, Label, Modal, Select, Textarea } from './ui';
 
 interface Vendor {
   _id: string;
@@ -57,12 +57,8 @@ export function InvoiceForm({
   const [number, setNumber] = useState(
     invoice?.number ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
   );
-  const [issueDate, setIssueDate] = useState(
-    invoice ? invoice.issueDate.slice(0, 10) : today(),
-  );
-  const [dueDate, setDueDate] = useState(
-    invoice ? invoice.dueDate.slice(0, 10) : inDays(14),
-  );
+  const [issueDate, setIssueDate] = useState(invoice ? invoice.issueDate.slice(0, 10) : today());
+  const [dueDate, setDueDate] = useState(invoice ? invoice.dueDate.slice(0, 10) : inDays(14));
   const [currency, setCurrency] = useState(invoice?.currency ?? 'USD');
   const [taxBps, setTaxBps] = useState(String(invoice?.taxBps ?? 0));
   const [notes, setNotes] = useState(invoice?.notes ?? '');
@@ -77,6 +73,7 @@ export function InvoiceForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempted, setAttempted] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -98,7 +95,19 @@ export function InvoiceForm({
         : [emptyLine()],
     );
     setError(null);
+    setAttempted(false);
   }, [open, invoice]);
+
+  const lineErrors = useMemo(
+    () =>
+      lines.map((line) => ({
+        description: !line.description.trim(),
+        quantity: !(Number(line.quantity) > 0),
+        unitPrice: !(Number(line.unitPrice) > 0),
+      })),
+    [lines],
+  );
+  const invalid = lineErrors.some((line) => line.description || line.quantity || line.unitPrice);
 
   const preview = useMemo(() => {
     const subtotal = lines.reduce((sum, line) => {
@@ -110,31 +119,19 @@ export function InvoiceForm({
     return { subtotal, tax, total: subtotal + tax };
   }, [lines, taxBps]);
 
-  const canSubmit =
-    Boolean(vendorId) &&
-    Boolean(number.trim()) &&
-    lines.length > 0 &&
-    lines.every(
-      (line) =>
-        line.description.trim().length > 0 &&
-        Number(line.quantity) > 0 &&
-        Number(line.unitPrice) > 0,
-    );
-
   function updateLine(index: number, patch: Partial<LineItem>) {
-    setLines((current) =>
-      current.map((line, i) => (i === index ? { ...line, ...patch } : line)),
-    );
+    setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   }
 
   async function submit() {
-    setBusy(true);
+    setAttempted(true);
     setError(null);
+    if (!vendorId || !number.trim() || invalid) {
+      setError('Check the highlighted fields before saving.');
+      return;
+    }
+    setBusy(true);
     try {
-      if (!vendorId) throw new Error('Select a vendor');
-      if (lines.some((line) => !line.description || !line.unitPrice)) {
-        throw new Error('Every line needs a description and unit price');
-      }
       await api(isEdit ? `/invoices/${invoice!._id}` : '/invoices', {
         method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify({
@@ -155,6 +152,7 @@ export function InvoiceForm({
         setLines([emptyLine()]);
         setNotes('');
         setNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
+        setAttempted(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the bill');
@@ -163,19 +161,36 @@ export function InvoiceForm({
     }
   }
 
+  const money = (value: number) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={isEdit ? 'Edit vendor bill' : 'New vendor bill'}
-      description="Totals are computed in integer minor units on the server."
+      description="Add the vendor, dates and line items. You can submit it for approval after saving."
       wide
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="vendor">Vendor</Label>
-            <Select id="vendor" value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+          <Field
+            id="vendor"
+            label="Vendor"
+            error={attempted && !vendorId ? 'Choose a vendor.' : null}
+          >
+            <Select
+              id="vendor"
+              value={vendorId}
+              aria-invalid={attempted && !vendorId}
+              aria-describedby={attempted && !vendorId ? 'vendor-error' : undefined}
+              onChange={(e) => setVendorId(e.target.value)}
+            >
               <option value="">Select a vendor…</option>
               {vendors.map((vendor) => (
                 <option key={vendor._id} value={vendor._id}>
@@ -183,11 +198,20 @@ export function InvoiceForm({
                 </option>
               ))}
             </Select>
-          </div>
-          <div>
-            <Label htmlFor="number">Invoice number</Label>
-            <Input id="number" value={number} onChange={(e) => setNumber(e.target.value)} />
-          </div>
+          </Field>
+          <Field
+            id="number"
+            label="Invoice number"
+            error={attempted && !number.trim() ? 'Enter the bill number.' : null}
+          >
+            <Input
+              id="number"
+              value={number}
+              aria-invalid={attempted && !number.trim()}
+              aria-describedby={attempted && !number.trim() ? 'number-error' : undefined}
+              onChange={(e) => setNumber(e.target.value)}
+            />
+          </Field>
           <div>
             <Label htmlFor="issue">Issue date</Label>
             <Input
@@ -219,60 +243,83 @@ export function InvoiceForm({
               min={0}
               max={100}
               value={(Number(taxBps || 0) / 100).toString()}
-              onChange={(e) =>
-                setTaxBps(String(Math.round(Number(e.target.value || 0) * 100)))
-              }
+              onChange={(e) => setTaxBps(String(Math.round(Number(e.target.value || 0) * 100)))}
             />
           </div>
         </div>
 
         <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <Label>Line items</Label>
-            <button
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-small font-medium">Line items</p>
+            <Button
               type="button"
+              size="sm"
+              variant="ghost"
               onClick={() => setLines((current) => [...current, emptyLine()])}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
             >
-              <Plus className="h-3 w-3" /> Add line
-            </button>
+              <Plus className="h-3.5 w-3.5" /> Add line
+            </Button>
           </div>
           <div className="space-y-2">
-            {lines.map((line, index) => (
-              <div
-                key={index}
-                className="grid grid-cols-[1fr_1fr_40px] items-center gap-2 rounded-control border border-line p-2 sm:grid-cols-[1fr_64px_96px_28px] sm:rounded-none sm:border-0 sm:p-0"
-              >
-                <Input
-                  className="col-span-3 sm:col-span-1"
-                  placeholder="Description"
-                  aria-label={`Line ${index + 1} description`}
-                  value={line.description}
-                  onChange={(e) => updateLine(index, { description: e.target.value })}
-                />
-                <Input
-                  placeholder="Qty"
-                  aria-label={`Line ${index + 1} quantity`}
-                  value={line.quantity}
-                  onChange={(e) => updateLine(index, { quantity: e.target.value })}
-                />
-                <Input
-                  placeholder="Unit price"
-                  aria-label={`Line ${index + 1} unit price`}
-                  value={line.unitPrice}
-                  onChange={(e) => updateLine(index, { unitPrice: e.target.value })}
-                />
-                <button
-                  type="button"
-                  onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
-                  className="justify-self-center rounded-lg p-2 text-muted transition hover:bg-rose-soft hover:text-rose disabled:opacity-40"
-                  aria-label={`Remove line ${index + 1}`}
-                  disabled={lines.length === 1}
+            {lines.map((line, index) => {
+              const lineError = lineErrors[index];
+              const showDescription = attempted && lineError.description;
+              const showQuantity = attempted && lineError.quantity;
+              const showPrice = attempted && lineError.unitPrice;
+              return (
+                <div
+                  key={index}
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px] gap-2 rounded-control border border-line p-3 sm:grid-cols-[minmax(0,1fr)_80px_120px_32px] sm:items-start sm:border-0 sm:p-0"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+                  <div className="col-span-3 sm:col-span-1">
+                    <Input
+                      placeholder="Description"
+                      aria-label={`Line ${index + 1} description`}
+                      aria-invalid={showDescription}
+                      className={showDescription ? 'border-rose/60' : undefined}
+                      value={line.description}
+                      onChange={(e) => updateLine(index, { description: e.target.value })}
+                    />
+                    {showDescription ? (
+                      <p className="mt-1 text-meta text-rose">Add a description.</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Input
+                      placeholder="Qty"
+                      inputMode="decimal"
+                      aria-label={`Line ${index + 1} quantity`}
+                      aria-invalid={showQuantity}
+                      className={showQuantity ? 'border-rose/60' : undefined}
+                      value={line.quantity}
+                      onChange={(e) => updateLine(index, { quantity: e.target.value })}
+                    />
+                    {showQuantity ? <p className="mt-1 text-meta text-rose">Qty &gt; 0.</p> : null}
+                  </div>
+                  <div>
+                    <Input
+                      placeholder="Unit price"
+                      inputMode="decimal"
+                      aria-label={`Line ${index + 1} unit price`}
+                      aria-invalid={showPrice}
+                      className={showPrice ? 'border-rose/60' : undefined}
+                      value={line.unitPrice}
+                      onChange={(e) => updateLine(index, { unitPrice: e.target.value })}
+                    />
+                    {showPrice ? <p className="mt-1 text-meta text-rose">Price &gt; 0.</p> : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
+                    className="justify-self-end rounded-control p-2 text-muted transition hover:bg-rose-soft hover:text-rose disabled:opacity-40 sm:justify-self-center"
+                    aria-label={`Remove line ${index + 1}`}
+                    disabled={lines.length === 1}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -286,34 +333,32 @@ export function InvoiceForm({
           />
         </div>
 
-        <div className="rounded-xl bg-paper px-4 py-3">
-          <div className="flex items-center justify-between text-[13px] text-muted">
-            <span>Subtotal</span>
-            <span className="font-num">{preview.subtotal.toFixed(2)}</span>
+        <dl className="rounded-control bg-surface-raised px-4 py-3 text-small">
+          <div className="flex items-center justify-between text-muted">
+            <dt>Subtotal</dt>
+            <dd className="font-num">{money(preview.subtotal)}</dd>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[13px] text-muted">
-            <span>Tax</span>
-            <span className="font-num">{preview.tax.toFixed(2)}</span>
+          <div className="mt-1 flex items-center justify-between text-muted">
+            <dt>Tax</dt>
+            <dd className="font-num">{money(preview.tax)}</dd>
           </div>
-          <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-sm font-semibold">
-            <span>Total</span>
-            <span className="font-num">
-              {currency} {preview.total.toFixed(2)}
-            </span>
+          <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-ui font-medium">
+            <dt>Total</dt>
+            <dd className="font-num">{money(preview.total)}</dd>
           </div>
-        </div>
+        </dl>
 
         {error ? (
-          <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+          <Alert tone="danger" onDismiss={() => setError(null)}>
             {error}
-          </p>
+          </Alert>
         ) : null}
 
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={busy} disabled={!canSubmit} onClick={() => void submit()}>
+          <Button loading={busy} onClick={() => void submit()}>
             {isEdit ? 'Save changes' : 'Create bill'}
           </Button>
         </div>

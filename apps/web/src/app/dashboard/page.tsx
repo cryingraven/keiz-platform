@@ -3,21 +3,20 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
-  ArrowUpRight,
-  Bot,
-  CircleDollarSign,
+  CheckCircle2,
   Clock,
   FileText,
   Plus,
-  Sparkles,
   Wallet,
 } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
-import { formatDate, formatDollars, formatMoney, humanize, timeLeft } from '@/lib/format';
+import { useAuth } from '@/lib/auth';
+import { formatDate, formatDollars, formatMoney, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
-import { Badge, Button, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { Alert, Button, ButtonLink, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface Invoice {
@@ -30,22 +29,37 @@ interface Invoice {
   dueDate: string;
   vendorId: string;
 }
+
 interface Payment {
   _id: string;
   status: string;
+  invoiceId?: string;
   amountOutFormatted?: string;
   deadline?: string;
 }
-interface AgentStats {
-  spentTodayUsd: string;
-  pendingApprovals: number;
-  accountId: string | null;
-  active: boolean;
+
+interface Receivable {
+  _id: string;
+  number: string;
+  status: string;
+  total: string;
+  paidAmount: string;
+  decimals: number;
+  currency: string;
+  dueDate: string;
+  customerId: string;
 }
+
 interface Vendor {
   _id: string;
   name: string;
 }
+
+interface Customer {
+  _id: string;
+  name: string;
+}
+
 interface Books {
   currency: string;
   decimals: number;
@@ -59,40 +73,148 @@ interface Books {
 
 const OPEN_STATUSES = ['SUBMITTED', 'APPROVED', 'PAYMENT_PENDING'];
 
-export default function OverviewPage() {
+function daysUntil(value: string): number {
+  const due = new Date(value);
+  due.setUTCHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+function dueLabel(value: string): string {
+  const days = daysUntil(value);
+  if (days < 0) return `Overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}`;
+  if (days === 0) return 'Due today';
+  if (days === 1) return 'Due tomorrow';
+  if (days <= 7) return `Due in ${days} days`;
+  return `Due ${formatDate(value)}`;
+}
+
+interface AttentionItem {
+  key: string;
+  title: string;
+  detail: string;
+  href: string;
+  tag: string;
+  tone: 'danger' | 'warning' | 'info';
+}
+
+export default function TodayPage() {
+  const { session } = useAuth();
   const invoices = useApi<Invoice[]>('/invoices');
   const payments = useApi<Payment[]>('/payments/open', { pollMs: 5000 });
+  const receivables = useApi<Receivable[]>('/receivables');
   const vendors = useApi<Vendor[]>('/vendors');
-  const agent = useApi<AgentStats>('/agent/stats');
+  const customers = useApi<Customer[]>('/customers');
   const books = useApi<Books>('/accounting/summary?currency=USD');
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
 
-  const stats = useMemo(() => {
-    const rows = invoices.data ?? [];
-    // Totals are only meaningful per currency. The overview is USD-denominated;
-    // mixing EUR/SGD/IDR into a dollar figure is misleading.
-    const usd = rows.filter((row) => row.currency === 'USD');
-    const open = usd.filter((row) => OPEN_STATUSES.includes(row.status));
-    const outstanding = open.reduce(
-      (sum, row) => sum + Number(row.total) / 10 ** row.decimals,
-      0,
-    );
-    const paid = usd
-      .filter((row) => row.status === 'PAID')
-      .reduce((sum, row) => sum + Number(row.total) / 10 ** row.decimals, 0);
-    const awaiting = rows.filter((row) => row.status === 'SUBMITTED').length;
-    const inFlight = (payments.data ?? []).filter((payment) =>
-      ['AWAITING_DEPOSIT', 'PROCESSING'].includes(payment.status),
-    );
-    return { outstanding, paid, awaiting, inFlight };
-  }, [invoices.data, payments.data]);
+  const canApprove = ['APPROVER', 'ADMIN', 'OWNER'].includes(session?.role ?? '');
 
-  const vendorNames = useMemo(() => {
-    const map = new Map<string, string>();
-    (vendors.data ?? []).forEach((vendor) => map.set(vendor._id, vendor.name));
-    return map;
-  }, [vendors.data]);
+  const names = useMemo(() => {
+    const vendorNames = new Map<string, string>();
+    (vendors.data ?? []).forEach((vendor) => vendorNames.set(vendor._id, vendor.name));
+    const customerNames = new Map<string, string>();
+    (customers.data ?? []).forEach((customer) => customerNames.set(customer._id, customer.name));
+    return { vendorNames, customerNames };
+  }, [vendors.data, customers.data]);
+
+  const waitingForApproval = useMemo(
+    () => (invoices.data ?? []).filter((invoice) => invoice.status === 'SUBMITTED'),
+    [invoices.data],
+  );
+
+  const attention = useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = [];
+    const rows = invoices.data ?? [];
+
+    rows
+      .filter((invoice) => invoice.status === 'APPROVED' && daysUntil(invoice.dueDate) < 0)
+      .forEach((invoice) => {
+        items.push({
+          key: `overdue-${invoice._id}`,
+          title: `${invoice.number} is approved and overdue`,
+          detail: `${names.vendorNames.get(invoice.vendorId) ?? 'Vendor'} · ${dueLabel(invoice.dueDate)}`,
+          href: `/dashboard/invoices/${invoice._id}`,
+          tag: 'Pay it',
+          tone: 'danger',
+        });
+      });
+
+    waitingForApproval.forEach((invoice) => {
+      items.push({
+        key: `approve-${invoice._id}`,
+        title: `${invoice.number} needs ${canApprove ? 'your approval' : 'an approver'}`,
+        detail: `${names.vendorNames.get(invoice.vendorId) ?? 'Vendor'} · ${formatMoney(
+          invoice.total,
+          invoice.decimals,
+          invoice.currency,
+        )}`,
+        href: `/dashboard/invoices/${invoice._id}`,
+        tag: canApprove ? 'Review' : 'View',
+        tone: 'warning',
+      });
+    });
+
+    (payments.data ?? [])
+      .filter((payment) => payment.status === 'AWAITING_DEPOSIT')
+      .forEach((payment) => {
+        items.push({
+          key: `deposit-${payment._id}`,
+          title: 'A payment is waiting for a deposit',
+          detail: payment.deadline ? `Quote ${timeLeft(payment.deadline)} left` : 'Deposit address issued',
+          href: '/dashboard/payments',
+          tag: 'Deposit',
+          tone: 'warning',
+        });
+      });
+
+    (receivables.data ?? [])
+      .filter(
+        (row) =>
+          ['ISSUED', 'PARTIALLY_PAID'].includes(row.status) && daysUntil(row.dueDate) < 0,
+      )
+      .forEach((row) => {
+        items.push({
+          key: `ar-${row._id}`,
+          title: `${row.number} is past due`,
+          detail: `${names.customerNames.get(row.customerId) ?? 'Customer'} · ${dueLabel(row.dueDate)}`,
+          href: `/dashboard/receivables/${row._id}`,
+          tag: 'Follow up',
+          tone: 'info',
+        });
+      });
+
+    return items.slice(0, 6);
+  }, [invoices.data, payments.data, receivables.data, names, canApprove]);
+
+  const summary = useMemo(() => {
+    const rows = invoices.data ?? [];
+    const usd = rows.filter((row) => row.currency === 'USD');
+    const outstanding = usd
+      .filter((row) => OPEN_STATUSES.includes(row.status))
+      .reduce((sum, row) => sum + Number(row.total) / 10 ** row.decimals, 0);
+    return {
+      outstanding,
+      awaiting: usd.filter((row) => row.status === 'SUBMITTED').length,
+    };
+  }, [invoices.data]);
+
+  const recent = useMemo(() => (invoices.data ?? []).slice(0, 6), [invoices.data]);
+
+  const dueSoon = useMemo(
+    () =>
+      (invoices.data ?? [])
+        .filter((invoice) => invoice.status === 'APPROVED')
+        .filter((invoice) => {
+          const days = daysUntil(invoice.dueDate);
+          return days >= 0 && days <= 7;
+        })
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 4),
+    [invoices.data],
+  );
 
   const demoEmpty = !invoices.loading && !invoices.error && (invoices.data?.length ?? 0) === 0;
 
@@ -105,116 +227,177 @@ export default function OverviewPage() {
         invoices.reload(),
         vendors.reload(),
         payments.reload(),
-        agent.reload(),
+        receivables.reload(),
+        customers.reload(),
         books.reload(),
       ]);
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : 'Could not seed demo data');
+      setSeedError(err instanceof Error ? err.message : 'Could not load the demo data');
     } finally {
       setSeeding(false);
     }
   }
 
+  const today = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date());
+
+  const money = (value?: string) =>
+    books.data && value !== undefined
+      ? formatMoney(value, books.data.decimals, books.data.currency)
+      : '—';
+
   return (
     <div>
       <PageHeader
-        title="Overview"
-        description="Cash out the door, approvals waiting, and agent activity."
+        title="Today"
+        description={today}
         actions={
           <>
             {demoEmpty ? (
-              <Button variant="secondary" size="md" loading={seeding} onClick={() => void seed()}>
-                <Sparkles className="h-3.5 w-3.5" /> Load demo data
+              <Button variant="secondary" loading={seeding} onClick={() => void seed()}>
+                Load demo data
               </Button>
             ) : null}
-            <Link href="/dashboard/invoices">
-              <Button size="md">
-                <Plus className="h-3.5 w-3.5" /> New bill
-              </Button>
-            </Link>
+            <ButtonLink href="/dashboard/invoices">
+              <Plus className="h-3.5 w-3.5" /> New bill
+            </ButtonLink>
           </>
         }
       />
 
       {seedError ? (
-        <p className="mb-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+        <Alert tone="danger" className="mb-4" onDismiss={() => setSeedError(null)}>
           {seedError}
-        </p>
+        </Alert>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.35fr_1fr_1fr_1fr]">
-        <HeroStat
-          label="Outstanding"
-          value={formatDollars(stats.outstanding)}
-          meta={`${stats.awaiting} awaiting approval · USD bills`}
-          icon={<CircleDollarSign className="h-4 w-4" />}
-        />
-        <Stat
-          label="Paid to date"
-          value={formatDollars(stats.paid)}
-          meta={`USD · ${invoices.data?.filter((row) => row.status === 'PAID' && row.currency === 'USD').length ?? 0} settled bills`}
-          icon={<FileText className="h-4 w-4" />}
-        />
-        <Stat
-          label="In flight"
-          value={`${stats.inFlight.length} quotes`}
-          meta={
-            stats.inFlight[0]?.deadline
-              ? `next deadline ${timeLeft(stats.inFlight[0].deadline)}`
-              : 'no open quotes'
-          }
-          icon={<Clock className="h-4 w-4" />}
-        />
-        <Stat
-          label="Agent spend today"
-          value={formatDollars(agent.data?.spentTodayUsd ?? '0')}
-          meta={
-            agent.data?.pendingApprovals
-              ? `${agent.data.pendingApprovals} proposal(s) waiting`
-              : 'within policy'
-          }
-          icon={<Wallet className="h-4 w-4" />}
-        />
-      </div>
+      <section aria-labelledby="attention-heading">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 id="attention-heading" className="text-ui font-semibold">
+              Needs attention
+            </h2>
+            <p className="mt-0.5 text-small text-muted">
+              {attention.length === 0
+                ? 'Nothing is waiting on you right now.'
+                : `${attention.length} item${attention.length === 1 ? '' : 's'} worth a look.`}
+            </p>
+          </div>
+          {summary.awaiting > 0 ? (
+            <Link
+              href="/dashboard/invoices?status=SUBMITTED"
+              className="inline-flex items-center gap-1 text-small font-medium text-brand hover:underline"
+            >
+              All approvals <ArrowRight className="h-3 w-3" />
+            </Link>
+          ) : null}
+        </div>
 
-      <div className="mt-6 flex items-end justify-between">
-        <SectionTitle
-          title="Books"
-          hint="Cash, receivables and payables from the double-entry ledger"
-        />
-        <Link
-          href="/dashboard/accounting"
-          className="inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
-        >
-          Open accounting <ArrowUpRight className="h-3 w-3" />
-        </Link>
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          label="Cash"
-          value={books.data ? formatMoney(books.data.cash, books.data.decimals, books.data.currency) : '—'}
-          meta="1010 · asset"
-          icon={<CircleDollarSign className="h-4 w-4" />}
-        />
-        <Stat
-          label="Receivables"
-          value={books.data ? formatMoney(books.data.receivable, books.data.decimals, books.data.currency) : '—'}
-          meta="Customer invoices outstanding"
-          icon={<FileText className="h-4 w-4" />}
-        />
-        <Stat
-          label="Payables"
-          value={books.data ? formatMoney(books.data.payable, books.data.decimals, books.data.currency) : '—'}
-          meta="Approved bills unpaid"
-          icon={<Clock className="h-4 w-4" />}
-        />
-        <Stat
-          label="Net income"
-          value={books.data ? formatMoney(books.data.netIncome, books.data.decimals, books.data.currency) : '—'}
-          meta={books.data ? `Revenue ${formatMoney(books.data.revenue, books.data.decimals, books.data.currency)}` : 'This month'}
-          icon={<Wallet className="h-4 w-4" />}
-        />
-      </div>
+        <Card className="overflow-hidden">
+          {invoices.loading && !invoices.data ? (
+            <div className="flex items-center gap-2 px-5 py-8 text-ui text-muted">
+              <Spinner /> Looking for work
+            </div>
+          ) : invoices.error ? (
+            <ErrorState message={invoices.error} onRetry={() => void invoices.reload()} />
+          ) : attention.length === 0 ? (
+            <div className="flex items-center gap-3 px-5 py-6">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-mint-soft text-mint">
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-ui font-medium">You are caught up</p>
+                <p className="mt-0.5 text-small text-muted">
+                  New approvals, deposits and overdue invoices will show up here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <ul className="divide-y divide-line">
+              {attention.map((item) => (
+                <li key={item.key}>
+                  <Link
+                    href={item.href}
+                    className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-surface-raised"
+                  >
+                    <span
+                      className={cn(
+                        'grid h-8 w-8 shrink-0 place-items-center rounded-full',
+                        item.tone === 'danger'
+                          ? 'bg-rose-soft text-rose'
+                          : item.tone === 'warning'
+                            ? 'bg-amber-soft text-amber'
+                            : 'bg-brand-soft text-brand',
+                      )}
+                    >
+                      {item.tone === 'danger' ? (
+                        <AlertCircle className="h-4 w-4" />
+                      ) : item.tone === 'warning' ? (
+                        <Clock className="h-4 w-4" />
+                      ) : (
+                        <FileText className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-ui font-medium text-ink">{item.title}</p>
+                      <p className="truncate text-small text-muted">{item.detail}</p>
+                    </div>
+                    <span className="hidden shrink-0 text-small font-medium text-brand sm:inline">
+                      {item.tag}
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </section>
+
+      <section className="mt-6" aria-labelledby="money-heading">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 id="money-heading" className="text-ui font-semibold">
+              Money
+            </h2>
+            <p className="mt-0.5 text-small text-muted">
+              {summary.awaiting > 0
+                ? `${formatDollars(summary.outstanding)} USD outstanding · ${summary.awaiting} awaiting approval`
+                : 'From the double-entry ledger'}
+            </p>
+          </div>
+          <Link
+            href="/dashboard/accounting"
+            className="inline-flex items-center gap-1 text-small font-medium text-brand hover:underline"
+          >
+            Open accounting <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+        <Card className="grid grid-cols-2 gap-px overflow-hidden bg-line sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line">
+          <MoneyCell label="Cash" value={money(books.data?.cash)} hint="1010 · asset" loading={books.loading} />
+          <MoneyCell
+            label="Receivables"
+            value={money(books.data?.receivable)}
+            hint="Customer invoices open"
+            loading={books.loading}
+          />
+          <MoneyCell
+            label="Payables"
+            value={money(books.data?.payable)}
+            hint="Approved bills unpaid"
+            loading={books.loading}
+          />
+          <MoneyCell
+            label="Net income"
+            value={money(books.data?.netIncome)}
+            hint={books.data ? `Revenue ${formatMoney(books.data.revenue, books.data.decimals, books.data.currency)}` : 'This period'}
+            loading={books.loading}
+          />
+        </Card>
+      </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <Card className="self-start overflow-hidden">
@@ -222,190 +405,145 @@ export default function OverviewPage() {
             <SectionTitle title="Recent bills" hint="Newest first" />
             <Link
               href="/dashboard/invoices"
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
+              className="inline-flex items-center gap-1 text-small font-medium text-brand hover:underline"
             >
-              All invoices <ArrowRight className="h-3 w-3" />
+              All bills <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-          {invoices.loading ? (
-            <div className="flex items-center gap-2 px-5 py-8 text-sm text-muted">
-              <Spinner /> Loading bills
-            </div>
-          ) : invoices.error ? (
-            <ErrorState message={invoices.error} onRetry={() => void invoices.reload()} />
-          ) : demoEmpty ? (
+          {demoEmpty ? (
             <EmptyState
               icon={<FileText className="h-5 w-5" />}
               title="No bills yet"
-              body="Load demo data to explore the approval and payment flow, or create your first vendor bill."
+              body="Add your first vendor bill, or load demo data to walk through approvals and payments."
               action={
-                <Button variant="secondary" loading={seeding} onClick={() => void seed()}>
-                  Load demo data
-                </Button>
+                <div className="flex gap-2">
+                  <ButtonLink href="/dashboard/invoices" size="sm">
+                    <Plus className="h-3.5 w-3.5" /> New bill
+                  </ButtonLink>
+                  <Button size="sm" variant="secondary" loading={seeding} onClick={() => void seed()}>
+                    Load demo data
+                  </Button>
+                </div>
               }
             />
           ) : (
-            <div className="divide-y divide-line">
-              {(invoices.data ?? []).slice(0, 6).map((invoice) => {
+            <ul className="divide-y divide-line">
+              {recent.map((invoice) => {
                 const overdue =
                   !['PAID', 'DRAFT', 'VOID'].includes(invoice.status) &&
-                  new Date(invoice.dueDate).getTime() < Date.now();
+                  daysUntil(invoice.dueDate) < 0;
                 return (
-                  <Link
-                    key={invoice._id}
-                    href={`/dashboard/invoices/${invoice._id}`}
-                    className="flex items-center gap-3 px-5 py-3.5 transition hover:bg-paper/70"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-num text-[14px] font-medium">{invoice.number}</p>
-                      <p className="truncate text-[12px] text-muted">
-                        {vendorNames.get(invoice.vendorId) ?? 'Vendor'}
-                        <span className={overdue ? ' text-rose' : ''}>
-                          {' '}· due {formatDate(invoice.dueDate)}
-                        </span>
+                  <li key={invoice._id}>
+                    <Link
+                      href={`/dashboard/invoices/${invoice._id}`}
+                      className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-surface-raised"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-num text-ui font-medium">{invoice.number}</p>
+                        <p className="truncate text-small text-muted">
+                          {names.vendorNames.get(invoice.vendorId) ?? 'Vendor'}
+                          <span className={overdue ? ' text-rose' : ''}>
+                            {' '}
+                            · {overdue ? dueLabel(invoice.dueDate) : `due ${formatDate(invoice.dueDate)}`}
+                          </span>
+                        </p>
+                      </div>
+                      <p className="font-num shrink-0 text-ui">
+                        {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
                       </p>
-                    </div>
-                    <p className="font-num text-[14px]">
-                      {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
-                    </p>
-                    <StatusPill status={invoice.status} />
-                  </Link>
+                      <span className="hidden shrink-0 sm:inline">
+                        <StatusPill status={invoice.status} />
+                      </span>
+                    </Link>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </Card>
 
         <div className="space-y-4">
-          <Card className="p-5">
-            <SectionTitle title="Status mix" hint="Across all invoices" />
-            <div className="mt-4 space-y-2.5">
-              {['DRAFT', 'SUBMITTED', 'APPROVED', 'PAYMENT_PENDING', 'PAID'].map((status) => {
-                const count = (invoices.data ?? []).filter((row) => row.status === status).length;
-                const total = invoices.data?.length || 1;
-                const pct = Math.round((count / total) * 100);
-                return (
-                  <div key={status}>
-                    <div className="mb-1 flex items-center justify-between text-[12px]">
-                      <span className="text-muted">{humanize(status)}</span>
-                      <span className="font-num text-muted">{count}</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-paper">
-                      <div
-                        className={cn(
-                          'h-full rounded-full',
-                          status === 'PAID'
-                            ? 'bg-mint'
-                            : status === 'APPROVED'
-                              ? 'bg-brand'
-                              : status === 'SUBMITTED' || status === 'PAYMENT_PENDING'
-                                ? 'bg-amber'
-                                : 'bg-line-strong',
-                        )}
-                        style={{ width: `${Math.max(pct, count > 0 ? 6 : 0)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+          <Card className="overflow-hidden">
+            <div className="border-b border-line px-5 py-4">
+              <SectionTitle title="Due this week" hint="Approved bills" />
             </div>
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-brand" />
-              <p className="text-sm font-semibold">Ask the assistant</p>
-            </div>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-              &ldquo;What is waiting for approval?&rdquo; or &ldquo;pay INV-1001&rdquo; — it drafts
-              proposals, never moves funds.
-            </p>
-            <Link
-              href="/dashboard/chat"
-              className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
-            >
-              Open assistant <ArrowUpRight className="h-3 w-3" />
-            </Link>
-          </Card>
-
-          {agent.data?.accountId ? (
-            <Card className="p-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Agent wallet</p>
-                <Badge
-                  className={
-                    agent.data.active
-                      ? 'border-mint/20 bg-mint-soft text-mint'
-                      : 'border-line bg-paper text-muted'
-                  }
-                  dot
+            {dueSoon.length === 0 ? (
+              <div className="px-5 py-5">
+                <p className="text-small text-muted">Nothing is due in the next seven days.</p>
+                <Link
+                  href="/dashboard/invoices?status=APPROVED"
+                  className="mt-2 inline-flex items-center gap-1 text-small font-medium text-brand hover:underline"
                 >
-                  {agent.data.active ? 'Active' : 'Paused'}
-                </Badge>
+                  Review approved bills <ArrowRight className="h-3 w-3" />
+                </Link>
               </div>
-              <p className="font-num mt-2 truncate text-[13px] text-muted">{agent.data.accountId}</p>
-              <Link
-                href="/dashboard/agent"
-                className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
-              >
-                Manage policy <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            </Card>
-          ) : null}
+            ) : (
+              <ul className="divide-y divide-line">
+                {dueSoon.map((invoice) => (
+                  <li key={invoice._id}>
+                    <Link
+                      href={`/dashboard/invoices/${invoice._id}`}
+                      className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-surface-raised"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-small font-medium">
+                          {names.vendorNames.get(invoice.vendorId) ?? invoice.number}
+                        </p>
+                        <p className={cn('text-meta', daysUntil(invoice.dueDate) < 0 ? 'text-rose' : 'text-muted')}>
+                          {dueLabel(invoice.dueDate)}
+                        </p>
+                      </div>
+                      <p className="font-num shrink-0 text-small">
+                        {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
+                      </p>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card className="px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-muted" />
+              <p className="text-ui font-medium">Cash position</p>
+            </div>
+            <p className="mt-1 text-small leading-relaxed text-muted">
+              {books.data
+                ? `${formatMoney(books.data.cash, books.data.decimals, books.data.currency)} in cash, ${formatMoney(
+                    books.data.payable,
+                    books.data.decimals,
+                    books.data.currency,
+                  )} in approved payables.`
+                : 'Loading the ledger summary.'}
+            </p>
+          </Card>
         </div>
       </div>
     </div>
   );
 }
 
-function HeroStat({
+function MoneyCell({
   label,
   value,
-  meta,
-  icon,
+  hint,
+  loading,
 }: {
   label: string;
   value: string;
-  meta: string;
-  icon: React.ReactNode;
+  hint: string;
+  loading?: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-card border border-ink bg-ink p-5 text-white sm:col-span-2 lg:col-span-1">
-      <div
-        className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/[0.06]"
-        aria-hidden
-      />
-      <div className="relative flex items-center justify-between text-white/60">
-        <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
-        <span className="rounded-lg bg-white/10 p-1.5 text-white">{icon}</span>
-      </div>
-      <p className="font-num relative mt-4 text-[32px] font-semibold leading-none tracking-tight">
-        {value}
-      </p>
-      <p className="relative mt-2 text-[12px] text-white/55">{meta}</p>
+    <div className="bg-surface px-5 py-4">
+      <p className="text-small text-muted">{label}</p>
+      {loading ? (
+        <div className="mt-2 h-7 w-24 animate-pulse rounded bg-ink/[0.06]" />
+      ) : (
+        <p className="font-num mt-1 text-[20px] font-semibold tracking-tight">{value}</p>
+      )}
+      <p className="mt-0.5 truncate text-meta text-muted">{hint}</p>
     </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  meta,
-  icon,
-}: {
-  label: string;
-  value: string;
-  meta: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between text-muted">
-        <span className="text-[12px] font-medium uppercase tracking-wider">{label}</span>
-        <span className="rounded-lg bg-paper p-1.5">{icon}</span>
-      </div>
-      <p className="font-num mt-3 text-[26px] font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-[12px] text-muted">{meta}</p>
-    </Card>
   );
 }

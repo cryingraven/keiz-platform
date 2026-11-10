@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
-import { AlertTriangle, Check, Loader2, X } from 'lucide-react';
+import { AlertTriangle, Check, CircleAlert, Info, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { humanize, toneFor } from '@/lib/format';
 
@@ -10,17 +11,17 @@ type ButtonSize = 'sm' | 'md' | 'lg';
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary:
-    'bg-ink text-white hover:bg-ink-soft disabled:bg-ink/40 shadow-[0_1px_0_rgba(255,255,255,0.15)_inset]',
+    'bg-ink text-white hover:bg-ink-soft disabled:bg-ink/40',
   secondary:
-    'bg-surface text-ink border border-line-strong hover:border-ink/30 hover:bg-paper',
-  ghost: 'text-muted hover:text-ink hover:bg-ink/5',
+    'bg-surface text-ink border border-line-strong hover:border-ink/30 hover:bg-surface-raised',
+  ghost: 'text-muted hover:text-ink hover:bg-ink/[0.04]',
   danger: 'bg-rose text-white hover:bg-rose/90',
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-xs gap-1.5',
-  md: 'h-10 px-4 text-sm gap-2',
-  lg: 'h-12 px-6 text-sm gap-2',
+  sm: 'h-8 px-2.5 text-small gap-1.5',
+  md: 'h-10 px-3.5 text-ui gap-2',
+  lg: 'h-11 px-5 text-ui gap-2',
 };
 
 export function Button({
@@ -38,7 +39,7 @@ export function Button({
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center rounded-control font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40',
+        'inline-flex items-center justify-center whitespace-nowrap rounded-control font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40',
         buttonVariants[variant],
         buttonSizes[size],
         className,
@@ -59,7 +60,36 @@ export function Card({
   className?: string;
   children: ReactNode;
 }) {
-  return <div className={cn('card', className)}>{children}</div>;
+  return <div className={cn('panel', className)}>{children}</div>;
+}
+
+/** A link that looks like a button, without nesting a button inside an anchor. */
+export function ButtonLink({
+  href,
+  variant = 'primary',
+  size = 'md',
+  className,
+  children,
+}: {
+  href: string;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'inline-flex items-center justify-center whitespace-nowrap rounded-control font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40',
+        buttonVariants[variant],
+        buttonSizes[size],
+        className,
+      )}
+    >
+      {children}
+    </Link>
+  );
 }
 
 export function Badge({
@@ -74,7 +104,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] font-medium',
+        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-meta font-medium',
         className,
       )}
     >
@@ -92,27 +122,28 @@ export function StatusPill({ status }: { status: string }) {
   );
 }
 
-export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+export function Label({ children, htmlFor, hint }: { children: ReactNode; htmlFor?: string; hint?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-xs font-medium text-muted">
+    <label htmlFor={htmlFor} className="mb-1.5 block text-small font-medium text-ink">
       {children}
+      {hint ? <span className="ml-1.5 font-normal text-muted">{hint}</span> : null}
     </label>
   );
 }
 
 const fieldClasses =
-  'w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-muted/60 outline-none transition focus:border-brand/50 focus:ring-2 focus:ring-brand/10 disabled:bg-paper';
+  'w-full rounded-control border border-line bg-surface px-3 py-2 text-ui text-ink placeholder:text-muted outline-none transition focus:border-brand/60 focus:ring-[3px] focus:ring-brand/10 disabled:bg-surface-raised disabled:text-muted';
 
 export function Input({
   className,
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
-  return <input className={cn(fieldClasses, className)} {...props} />;
+  return <input className={cn(fieldClasses, 'h-10', className)} {...props} />;
 }
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={cn(fieldClasses, 'select-chevron pr-10', className)} {...props}>
+    <select className={cn(fieldClasses, 'select-chevron h-10 pr-10', className)} {...props}>
       {children}
     </select>
   );
@@ -123,6 +154,87 @@ export function Textarea({
   ...props
 }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> }) {
   return <textarea className={cn(fieldClasses, 'min-h-24 resize-y', className)} {...props} />;
+}
+
+/**
+ * One field wrapper: label, hint, error and the aria wiring that goes with them.
+ * Prefer this over a bare Label + Input pair so validation reads the same everywhere.
+ */
+export function Field({
+  id,
+  label,
+  hint,
+  error,
+  children,
+  className,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  error?: string | null;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <Label htmlFor={id} hint={hint}>
+        {label}
+      </Label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} className="mt-1.5 text-small text-rose">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+type AlertTone = 'info' | 'success' | 'warning' | 'danger';
+
+const alertTones: Record<AlertTone, { wrap: string; icon: ReactNode }> = {
+  info: { wrap: 'border-line bg-surface-raised text-ink', icon: <Info className="h-4 w-4 text-muted" /> },
+  success: { wrap: 'border-mint/25 bg-mint-soft text-ink', icon: <Check className="h-4 w-4 text-mint" /> },
+  warning: { wrap: 'border-amber/25 bg-amber-soft text-ink', icon: <CircleAlert className="h-4 w-4 text-amber" /> },
+  danger: { wrap: 'border-rose/25 bg-rose-soft text-ink', icon: <AlertTriangle className="h-4 w-4 text-rose" /> },
+};
+
+export function Alert({
+  tone = 'info',
+  title,
+  children,
+  onDismiss,
+  className,
+}: {
+  tone?: AlertTone;
+  title?: string;
+  children?: ReactNode;
+  onDismiss?: () => void;
+  className?: string;
+}) {
+  const styles = alertTones[tone];
+  return (
+    <div
+      role={tone === 'danger' ? 'alert' : 'status'}
+      className={cn('flex items-start gap-2.5 rounded-control border px-3.5 py-3 text-small leading-relaxed', styles.wrap, className)}
+    >
+      <span className="mt-px shrink-0">{styles.icon}</span>
+      <div className="min-w-0 flex-1">
+        {title ? <p className="font-medium text-ink">{title}</p> : null}
+        {children ? <div className={cn('text-ink/80', title && 'mt-0.5')}>{children}</div> : null}
+      </div>
+      {onDismiss ? (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="shrink-0 rounded p-0.5 text-muted transition hover:text-ink"
+          aria-label="Dismiss"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 export function Modal({
@@ -141,11 +253,13 @@ export function Modal({
   wide?: boolean;
 }) {
   const titleId = useId();
+  const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     const focusable = panel?.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     );
@@ -176,33 +290,40 @@ export function Modal({
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
     };
   }, [open, onClose]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/35 p-4 sm:p-8">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         className={cn(
-          'relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-2xl sm:max-h-[calc(100dvh-4rem)]',
-          wide ? 'max-w-2xl' : 'max-w-lg',
+          'relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-xl sm:max-h-[calc(100dvh-4rem)]',
+          wide ? 'max-w-2xl' : 'max-w-md',
         )}
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
           <div>
-            <h2 id={titleId} className="text-base font-semibold">
+            <h2 id={titleId} className="text-[15px] font-semibold">
               {title}
             </h2>
-            {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
+            {description ? (
+              <p id={descriptionId} className="mt-1 text-small leading-relaxed text-muted">
+                {description}
+              </p>
+            ) : null}
           </div>
           <button
             onClick={onClose}
-            className="rounded-full p-1.5 text-muted transition hover:bg-paper hover:text-ink"
+            type="button"
+            className="rounded-control p-1.5 text-muted transition hover:bg-surface-raised hover:text-ink"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -229,10 +350,10 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">
-      {icon ? <div className="rounded-2xl bg-paper p-3 text-muted">{icon}</div> : null}
+      {icon ? <div className="rounded-full bg-surface-raised p-3 text-muted">{icon}</div> : null}
       <div>
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-muted">{body}</p>
+        <p className="text-ui font-medium text-ink">{title}</p>
+        <p className="mx-auto mt-1 max-w-sm text-small leading-relaxed text-muted">{body}</p>
       </div>
       {action}
     </div>
@@ -244,7 +365,7 @@ export function Spinner({ className }: { className?: string }) {
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('skeleton rounded-lg', className)} aria-hidden />;
+  return <div className={cn('skeleton rounded-control', className)} aria-hidden />;
 }
 
 export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
@@ -278,7 +399,7 @@ export function ProgressSteps({
 }) {
   const active = Math.max(0, Math.min(current, labels.length - 1));
   return (
-    <ol className="flex items-center gap-1.5 sm:gap-2" aria-label="Progress">
+    <ol className="flex items-center gap-1.5 sm:gap-3" aria-label="Progress">
       {labels.map((label, index) => {
         const done = index < active;
         const isCurrent = index === active;
@@ -286,10 +407,10 @@ export function ProgressSteps({
           <li key={label} className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none sm:gap-2">
             <span
               className={cn(
-                'grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[11px] font-semibold transition',
+                'grid h-5 w-5 shrink-0 place-items-center rounded-full border text-meta font-semibold transition',
                 done && 'border-mint bg-mint text-white',
                 isCurrent && 'border-ink bg-ink text-white',
-                !done && !isCurrent && 'border-line bg-surface text-muted',
+                !done && !isCurrent && 'border-line-strong bg-surface text-muted',
               )}
               aria-current={isCurrent ? 'step' : undefined}
             >
@@ -297,18 +418,15 @@ export function ProgressSteps({
             </span>
             <span
               className={cn(
-                'truncate text-[12px] font-medium',
-                isCurrent ? 'text-ink' : done ? 'text-muted' : 'text-muted/70',
+                'truncate text-small',
+                isCurrent ? 'font-medium text-ink' : 'text-muted',
               )}
             >
               {label}
             </span>
             {index < labels.length - 1 ? (
               <span
-                className={cn(
-                  'mx-0.5 hidden h-px flex-1 sm:block sm:w-8',
-                  done ? 'bg-mint/40' : 'bg-line',
-                )}
+                className={cn('mx-0.5 hidden h-px flex-1 sm:block sm:w-10', done ? 'bg-mint/40' : 'bg-line')}
               />
             ) : null}
           </li>
@@ -330,12 +448,12 @@ export function ErrorState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-      <div className="rounded-2xl bg-rose-soft p-3 text-rose">
+      <div className="rounded-full bg-rose-soft p-3 text-rose">
         <AlertTriangle className="h-5 w-5" />
       </div>
       <div>
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+        <p className="text-ui font-medium">{title}</p>
+        <p className="mx-auto mt-1 max-w-sm text-small leading-relaxed text-muted">
           {message ?? 'The request failed. Check your connection and try again.'}
         </p>
       </div>
@@ -360,8 +478,8 @@ export function SectionTitle({
   return (
     <div className="flex items-end justify-between gap-4">
       <div>
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        {hint ? <p className="mt-0.5 text-xs text-muted">{hint}</p> : null}
+        <h2 className="text-ui font-semibold tracking-tight">{title}</h2>
+        {hint ? <p className="mt-0.5 text-small text-muted">{hint}</p> : null}
       </div>
       {action}
     </div>

@@ -171,10 +171,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           aria-label="Open assistant"
           aria-haspopup="dialog"
           aria-expanded="false"
-          className="group fixed bottom-5 right-5 z-40 grid h-13 w-13 place-items-center rounded-full bg-ink text-white shadow-xl shadow-ink/25 ring-1 ring-white/10 transition hover:scale-105 hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 sm:bottom-6 sm:right-6"
+          className="group fixed bottom-5 right-5 z-40 grid h-11 w-11 place-items-center rounded-full border border-line bg-surface text-ink shadow-panel transition hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:bottom-6 sm:right-6"
         >
-          <Bot className="h-5 w-5" />
-          <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-[12px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100 sm:block">
+          <MessageSquare className="h-4 w-4" />
+          <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-control border border-line bg-surface px-2 py-1 text-meta font-medium text-ink opacity-0 shadow-panel transition group-hover:opacity-100 sm:block">
             Ask KEIZ
           </span>
         </button>

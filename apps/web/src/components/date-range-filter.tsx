@@ -73,7 +73,7 @@ export function DateRangeFilter({
             onChange={(event) => onChange({ ...value, preset: 'custom', from: event.target.value })}
             className="w-auto"
           />
-          <span className="text-[12px] text-muted">to</span>
+          <span className="text-small text-muted">to</span>
           <Input
             type="date"
             aria-label="To date"

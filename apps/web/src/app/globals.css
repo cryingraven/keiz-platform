@@ -1,47 +1,67 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #0b0d12;
-  --color-ink-soft: #1a1d26;
-  --color-paper: #f6f6f2;
+  /* Surfaces */
+  --color-canvas: #f7f7f5;
+  --color-paper: #f7f7f5;
   --color-surface: #ffffff;
-  --color-line: #e5e5df;
-  --color-line-strong: #d3d3ca;
-  --color-muted: #6b6f76;
-  --color-brand: #4f46e5;
-  --color-brand-deep: #3730a3;
-  --color-brand-soft: #eef0ff;
-  --color-mint: #0f9d76;
-  --color-mint-soft: #e6f7f1;
-  --color-amber: #b45309;
-  --color-amber-soft: #fdf3e6;
-  --color-rose: #be123c;
-  --color-rose-soft: #fdeef2;
+  --color-surface-raised: #fbfbfa;
+  --color-ink: #14161a;
+  --color-ink-soft: #23262d;
+  --color-line: #e5e4df;
+  --color-line-strong: #d2d1cb;
+  --color-muted: #5b6068;
+
+  /* One accent. Used for links, focus and selection — not decoration. */
+  --color-brand: #2856d9;
+  --color-brand-deep: #1e3fa6;
+  --color-brand-soft: #eef2fc;
+
+  /* Status. Text tones only, never decorative fills. */
+  --color-mint: #0b7a5c;
+  --color-mint-soft: #e7f5ef;
+  --color-amber: #8a4b08;
+  --color-amber-soft: #fbf1e4;
+  --color-rose: #b01c3f;
+  --color-rose-soft: #fbeef1;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 
-  --radius-control: 12px;
-  --radius-card: 18px;
-  --radius-panel: 20px;
+  /* Controls 8px, panels 12px, dialogs 16px. */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
 
-  --text-caption: 0.75rem;
-  --text-caption--line-height: 1rem;
-  --text-body: 0.875rem;
-  --text-body--line-height: 1.45;
-  --text-subtitle: 0.9375rem;
-  --text-subtitle--line-height: 1.4;
+  /* Type scale. 14px is the UI floor; 12px is metadata only. */
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1rem;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.125rem;
+  --text-ui: 0.875rem;
+  --text-ui--line-height: 1.35;
+  --text-copy: 1rem;
+  --text-copy--line-height: 1.6;
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.4;
+  --text-title: 1.625rem;
+  --text-title--line-height: 1.2;
+
+  --shadow-panel: 0 1px 2px rgba(20, 22, 26, 0.04);
 }
 
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
   }
   body {
-    background: var(--color-paper);
+    background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
   }
   ::selection {
     background: var(--color-brand);
@@ -51,7 +71,7 @@
     border-color: var(--color-line);
   }
   :where(a, button, [role='button'], input, select, textarea, summary, [tabindex]):focus-visible {
-    outline: 2px solid color-mix(in oklab, var(--color-brand) 70%, transparent);
+    outline: 2px solid color-mix(in oklab, var(--color-brand) 75%, transparent);
     outline-offset: 2px;
   }
   summary::-webkit-details-marker {
@@ -71,56 +91,36 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.02em;
   }
+  /* Panels group real records. No shadow by default. */
+  .panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+  }
   .card {
     background: var(--color-surface);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
-    box-shadow: 0 1px 2px rgba(11, 13, 18, 0.03);
-  }
-  .card-interactive {
-    transition:
-      border-color 160ms ease,
-      box-shadow 160ms ease,
-      transform 160ms ease;
-  }
-  .card-interactive:hover {
-    border-color: var(--color-line-strong);
-    box-shadow: 0 8px 24px -18px rgba(11, 13, 18, 0.35);
   }
   .select-chevron {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b6f76' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235b6068' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.75rem center;
     background-size: 1rem;
   }
   .skeleton {
-    background:
-      linear-gradient(
-        90deg,
-        rgba(11, 13, 18, 0.045) 25%,
-        rgba(11, 13, 18, 0.08) 37%,
-        rgba(11, 13, 18, 0.045) 63%
-      );
-    background-size: 400% 100%;
-    animation: skeleton-shimmer 1.4s ease infinite;
+    background: rgba(20, 22, 26, 0.06);
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
   }
-  @keyframes skeleton-shimmer {
-    0% {
-      background-position: 100% 50%;
-    }
+  @keyframes skeleton-pulse {
+    0%,
     100% {
-      background-position: 0 50%;
+      opacity: 1;
     }
-  }
-  .grid-lines {
-    background-image:
-      linear-gradient(to right, rgba(11, 13, 18, 0.045) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(11, 13, 18, 0.045) 1px, transparent 1px);
-    background-size: 44px 44px;
-  }
-  .hero-fade {
-    mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+    50% {
+      opacity: 0.55;
+    }
   }
   .scroll-thin::-webkit-scrollbar {
     width: 6px;

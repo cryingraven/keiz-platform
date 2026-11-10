@@ -20,7 +20,7 @@ import { api } from '@/lib/api';
 import { downloadApiFile } from '@/lib/download';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { useConfirm, useToast } from '@/components/feedback';
-import { Button, Card, ProgressSteps, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { Alert, Button, Card, ProgressSteps, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 import { InvoiceForm } from '@/components/invoice-form';
 import { ShareDocumentDialog } from '@/components/documents/share-dialog';
 import { PayPanel } from '@/components/pay-panel';
@@ -147,8 +147,8 @@ export default function InvoiceDetailPage() {
 
   if (invoice.loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted">
-        <Spinner /> Loading invoice
+      <div className="flex items-center gap-2 text-ui text-muted">
+        <Spinner /> Loading bill
       </div>
     );
   }
@@ -156,10 +156,10 @@ export default function InvoiceDetailPage() {
   if (!invoice.data) {
     return (
       <Card className="p-8 text-center">
-        <p className="text-sm font-semibold">Invoice not found</p>
-        <p className="mt-1 text-sm text-muted">It may belong to another workspace.</p>
+        <p className="text-ui font-medium">Bill not found</p>
+        <p className="mt-1 text-small text-muted">It may belong to another workspace.</p>
         <Button className="mt-4" variant="secondary" onClick={() => router.push('/dashboard/invoices')}>
-          Back to invoices
+          Back to bills
         </Button>
       </Card>
     );
@@ -170,8 +170,7 @@ export default function InvoiceDetailPage() {
   const canEdit = data.status === 'DRAFT';
   const canDecide = data.status === 'SUBMITTED' && canApprove;
   const canPay = data.status === 'APPROVED';
-  const canVoid =
-    canAdmin && !['PAID', 'VOID', 'PAYMENT_PENDING'].includes(data.status);
+  const canVoid = canAdmin && !['PAID', 'VOID', 'PAYMENT_PENDING'].includes(data.status);
   const canShare =
     canApprove && ['SUBMITTED', 'APPROVED', 'PAYMENT_PENDING', 'PAID'].includes(data.status);
   const stepIndex =
@@ -186,9 +185,9 @@ export default function InvoiceDetailPage() {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[12px] text-muted">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-small text-muted">
           <Link href="/dashboard" className="transition hover:text-ink">
-            Workspace
+            Today
           </Link>
           <ChevronRight className="h-3 w-3" />
           <Link href="/dashboard/invoices" className="transition hover:text-ink">
@@ -215,19 +214,21 @@ export default function InvoiceDetailPage() {
       </div>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="font-num text-2xl font-semibold tracking-tight">{data.number}</h1>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="font-num text-[26px] font-semibold leading-none tracking-tight">
+              {data.number}
+            </h1>
             <StatusPill status={data.status} />
           </div>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-2 text-ui text-muted">
             {vendor?.name ?? 'Unknown vendor'} · issued {formatDate(data.issueDate)} · due{' '}
             {formatDate(data.dueDate)}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[11px] uppercase tracking-wider text-muted">Total</p>
-          <p className="font-num text-2xl font-semibold">
+          <p className="text-small text-muted">Total</p>
+          <p className="font-num mt-0.5 text-[26px] font-semibold tracking-tight">
             {formatMoney(data.total, data.decimals, data.currency)}
           </p>
         </div>
@@ -238,69 +239,65 @@ export default function InvoiceDetailPage() {
       </Card>
 
       {error ? (
-        <p className="mb-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+        <Alert tone="danger" className="mb-4" onDismiss={() => setError(null)}>
           {error}
-        </p>
+        </Alert>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <div className="space-y-4">
           <Card className="overflow-hidden">
             <div className="border-b border-line px-5 py-4">
-              <SectionTitle title="Line items" hint={`${data.lineItems.length} item(s)`} />
+              <SectionTitle title="Line items" hint={`${data.lineItems.length} item${data.lineItems.length === 1 ? '' : 's'}`} />
             </div>
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
-                  <th className="px-5 py-2.5 font-medium">Description</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Qty</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Unit</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {data.lineItems.map((line, index) => (
-                  <tr key={index}>
-                    <td className="px-5 py-3 text-[14px]">{line.description}</td>
-                    <td className="font-num px-5 py-3 text-right text-[13px] text-muted">
-                      {line.quantity}
-                    </td>
-                    <td className="font-num px-5 py-3 text-right text-[13px] text-muted">
-                      {line.unitPrice}
-                    </td>
-                    <td className="font-num px-5 py-3 text-right text-[14px]">
-                      {formatMoney(line.lineTotal, data.decimals, data.currency)}
-                    </td>
+            <div className="overflow-x-auto scroll-thin">
+              <table className="w-full min-w-[480px] text-left">
+                <thead>
+                  <tr className="border-b border-line text-meta text-muted">
+                    <th className="px-5 py-2.5 font-medium">Description</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Qty</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Unit</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="space-y-1.5 border-t border-line px-5 py-4 text-[13px]">
-              <div className="flex justify-between text-muted">
-                <span>Subtotal</span>
-                <span className="font-num">
-                  {formatMoney(data.subtotal, data.decimals, data.currency)}
-                </span>
-              </div>
-              <div className="flex justify-between text-muted">
-                <span>Tax ({(data.taxBps / 100).toFixed(2)}%)</span>
-                <span className="font-num">
-                  {formatMoney(data.taxAmount, data.decimals, data.currency)}
-                </span>
-              </div>
-              <div className="flex justify-between border-t border-line pt-2 text-[14px] font-semibold">
-                <span>Total</span>
-                <span className="font-num">
-                  {formatMoney(data.total, data.decimals, data.currency)}
-                </span>
-              </div>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {data.lineItems.map((line, index) => (
+                    <tr key={index}>
+                      <td className="px-5 py-3 text-ui">{line.description}</td>
+                      <td className="font-num px-5 py-3 text-right text-small text-muted">
+                        {line.quantity}
+                      </td>
+                      <td className="font-num px-5 py-3 text-right text-small text-muted">
+                        {line.unitPrice}
+                      </td>
+                      <td className="font-num px-5 py-3 text-right text-ui">
+                        {formatMoney(line.lineTotal, data.decimals, data.currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+            <dl className="space-y-1.5 border-t border-line px-5 py-4 text-small">
+              <div className="flex justify-between text-muted">
+                <dt>Subtotal</dt>
+                <dd className="font-num">{formatMoney(data.subtotal, data.decimals, data.currency)}</dd>
+              </div>
+              <div className="flex justify-between text-muted">
+                <dt>Tax ({(data.taxBps / 100).toFixed(2)}%)</dt>
+                <dd className="font-num">{formatMoney(data.taxAmount, data.decimals, data.currency)}</dd>
+              </div>
+              <div className="flex justify-between border-t border-line pt-2 text-ui font-medium">
+                <dt>Total</dt>
+                <dd className="font-num">{formatMoney(data.total, data.decimals, data.currency)}</dd>
+              </div>
+            </dl>
           </Card>
 
           {data.notes ? (
             <Card className="p-5">
               <SectionTitle title="Notes" />
-              <p className="mt-2 whitespace-pre-wrap text-[14px] leading-relaxed text-muted">
+              <p className="mt-2 whitespace-pre-wrap text-ui leading-relaxed text-muted">
                 {data.notes}
               </p>
             </Card>
@@ -309,16 +306,19 @@ export default function InvoiceDetailPage() {
           <Card className="p-5">
             <SectionTitle title="Approval trail" hint="Append-only record" />
             {data.approvals.length === 0 ? (
-              <p className="mt-3 text-[13px] text-muted">No decisions recorded yet.</p>
+              <p className="mt-3 text-small text-muted">No decisions recorded yet.</p>
             ) : (
-              <ul className="mt-3 space-y-2.5">
+              <ol className="mt-4 space-y-0">
                 {data.approvals.map((approval, index) => (
-                  <li key={index} className="flex items-start gap-2.5">
+                  <li key={index} className="relative flex gap-3 pb-4 last:pb-0">
+                    {index < data.approvals.length - 1 ? (
+                      <span className="absolute left-[7px] top-4 h-full w-px bg-line" aria-hidden />
+                    ) : null}
                     <span
                       className={
                         approval.decision === 'APPROVE'
-                          ? 'mt-0.5 grid h-4 w-4 place-items-center rounded-full bg-mint text-white'
-                          : 'mt-0.5 grid h-4 w-4 place-items-center rounded-full bg-rose text-white'
+                          ? 'relative z-10 mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-mint text-white'
+                          : 'relative z-10 mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-rose text-white'
                       }
                     >
                       {approval.decision === 'APPROVE' ? (
@@ -327,21 +327,21 @@ export default function InvoiceDetailPage() {
                         <X className="h-2.5 w-2.5" />
                       )}
                     </span>
-                    <div>
-                      <p className="text-[13px] font-medium">
-                        {humanize(approval.decision)} ·{' '}
-                        <span className="font-num text-muted">{approval.accountId}</span>
+                    <div className="min-w-0">
+                      <p className="text-small font-medium">
+                        {humanize(approval.decision)}{' '}
+                        <span className="font-num font-normal text-muted">{approval.accountId}</span>
                       </p>
-                      <p className="text-[11px] text-muted">
+                      <p className="text-meta text-muted">
                         {new Date(approval.at).toLocaleString('en-US')}
                       </p>
                       {approval.comment ? (
-                        <p className="mt-0.5 text-[12px] text-muted">{approval.comment}</p>
+                        <p className="mt-1 text-small leading-relaxed text-muted">{approval.comment}</p>
                       ) : null}
                     </div>
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
           </Card>
         </div>
@@ -349,14 +349,10 @@ export default function InvoiceDetailPage() {
         <div className="space-y-4">
           {canSubmit || canDecide || canVoid || canEdit ? (
             <Card className="p-5">
-              <SectionTitle title="Next action" hint="Role-checked server-side" />
+              <SectionTitle title="Next action" hint="Checked against your role" />
               <div className="mt-3 space-y-2">
                 {canEdit ? (
-                  <Button
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => setEditOpen(true)}
-                  >
+                  <Button variant="secondary" className="w-full" onClick={() => setEditOpen(true)}>
                     <Pencil className="h-3.5 w-3.5" /> Edit draft
                   </Button>
                 ) : null}
@@ -376,7 +372,7 @@ export default function InvoiceDetailPage() {
                       loading={busy === 'approve'}
                       onClick={() => void act('approve')}
                     >
-                      <Check className="h-3.5 w-3.5" /> Approve
+                      <Check className="h-3.5 w-3.5" /> Approve bill
                     </Button>
                     <Button
                       variant="secondary"
@@ -395,11 +391,11 @@ export default function InvoiceDetailPage() {
                     loading={busy === 'void'}
                     onClick={() => void act('void')}
                   >
-                    <CircleSlash className="h-3.5 w-3.5" /> Void invoice
+                    <CircleSlash className="h-3.5 w-3.5" /> Void bill
                   </Button>
                 ) : null}
                 {data.status === 'PAID' ? (
-                  <p className="flex items-center gap-1.5 text-[13px] text-mint">
+                  <p className="flex items-center gap-1.5 text-small text-mint">
                     <ShieldCheck className="h-3.5 w-3.5" /> Paid
                     {data.paidAt ? ` on ${formatDate(data.paidAt)}` : ''}
                   </p>
@@ -411,15 +407,15 @@ export default function InvoiceDetailPage() {
           {vendor ? (
             <Card className="p-5">
               <SectionTitle title="Vendor" />
-              <p className="mt-2 text-[14px] font-medium">{vendor.name}</p>
-              <p className="text-[12px] text-muted">{vendor.email}</p>
-              <div className="mt-3 rounded-xl bg-paper px-3 py-2.5">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Payout</p>
-                <p className="mt-0.5 text-[13px] font-medium capitalize">{vendor.payoutChain}</p>
-                <p className="font-num mt-0.5 truncate text-[12px] text-muted">
+              <p className="mt-2 text-ui font-medium">{vendor.name}</p>
+              <p className="text-small text-muted">{vendor.email}</p>
+              <dl className="mt-3 rounded-control bg-surface-raised px-3 py-2.5">
+                <dt className="text-meta text-muted">Payout</dt>
+                <dd className="mt-0.5 text-small font-medium capitalize">{vendor.payoutChain}</dd>
+                <dd className="font-num mt-0.5 truncate text-meta text-muted">
                   {vendor.payoutAddress}
-                </p>
-              </div>
+                </dd>
+              </dl>
             </Card>
           ) : null}
 
@@ -430,13 +426,11 @@ export default function InvoiceDetailPage() {
               onChanged={() => void invoice.reload()}
             />
           ) : (
-            <Card className="p-5">
-              <div className="flex items-center gap-2 text-muted">
-                <FileText className="h-4 w-4" />
-                <p className="text-[13px]">
-                  Settlement unlocks once the invoice is approved.
-                </p>
-              </div>
+            <Card className="flex items-center gap-2.5 p-5 text-muted">
+              <FileText className="h-4 w-4 shrink-0" />
+              <p className="text-small leading-relaxed">
+                Payment unlocks once the bill is approved.
+              </p>
             </Card>
           )}
         </div>
