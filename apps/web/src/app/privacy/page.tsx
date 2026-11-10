@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-white text-ink">
       <div className="mx-auto w-full max-w-[640px] px-5 py-16">
-        <Link href="/login" className="text-[13px] text-muted underline underline-offset-4 hover:text-ink">
+        <Link href="/login" className="text-[14px] text-muted underline underline-offset-4 hover:text-ink">
           ← Back to sign in
         </Link>
         <h1 className="mt-8 text-3xl font-semibold tracking-tight">Privacy Policy</h1>
@@ -12,7 +12,7 @@ export default function PrivacyPage() {
           KEIZ stores the minimum needed to run your workspace: your NEAR account id, vendor bills,
           customer invoices, customers, vendors, payments, journal entries and an audit log.
         </p>
-        <div className="mt-8 space-y-5 text-[13px] leading-relaxed text-muted">
+        <div className="mt-8 space-y-5 text-[14px] leading-relaxed text-muted">
           <p>
             Wallet sign-in asks your wallet to sign a NEP-413 message; that signature is verified
             server-side. KEIZ never receives a private key.

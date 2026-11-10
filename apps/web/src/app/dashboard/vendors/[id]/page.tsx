@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Building2, Mail } from 'lucide-react';
+import { Building2, ChevronRight, Mail } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { Card, SectionTitle, Spinner, StatusPill } from '@/components/ui';
@@ -63,12 +63,17 @@ export default function VendorDetailPage() {
   const data = vendor.data;
   return (
     <div>
-      <Link
-        href="/dashboard/vendors"
-        className="mb-5 inline-flex items-center gap-1.5 text-[12px] text-muted transition hover:text-ink"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Vendors
-      </Link>
+      <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1.5 text-[12px] text-muted">
+        <Link href="/dashboard" className="transition hover:text-ink">
+          Workspace
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <Link href="/dashboard/vendors" className="transition hover:text-ink">
+          Vendors
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="truncate font-medium text-ink">{data.name}</span>
+      </nav>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
@@ -88,7 +93,7 @@ export default function VendorDetailPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_1.5fr]">
         <Card className="p-5">
           <SectionTitle title="Payout details" />
-          <dl className="mt-3 space-y-2 text-[12px]">
+          <dl className="mt-3 space-y-2 text-[13px]">
             <Row label="Chain" value={data.payoutChain} />
             <Row label="Address" value={data.payoutAddress} mono />
             {data.nearAccountId ? <Row label="NEAR account" value={data.nearAccountId} mono /> : null}
@@ -106,7 +111,7 @@ export default function VendorDetailPage() {
               <Spinner />
             </div>
           ) : (bills.data?.length ?? 0) === 0 ? (
-            <p className="px-5 py-6 text-[12px] text-muted">No bills for this vendor yet.</p>
+            <p className="px-5 py-6 text-[13px] text-muted">No bills for this vendor yet.</p>
           ) : (
             <div className="divide-y divide-line">
               {(bills.data ?? []).map((invoice) => (
@@ -116,12 +121,12 @@ export default function VendorDetailPage() {
                   className="flex items-center justify-between gap-3 px-5 py-3 transition hover:bg-paper"
                 >
                   <div className="min-w-0">
-                    <p className="font-num text-[12px] font-medium">{invoice.number}</p>
-                    <p className="text-[10px] text-muted">due {formatDate(invoice.dueDate)}</p>
+                    <p className="font-num text-[13px] font-medium">{invoice.number}</p>
+                    <p className="text-[11px] text-muted">due {formatDate(invoice.dueDate)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <StatusPill status={invoice.status} />
-                    <span className="font-num text-[12px]">
+                    <span className="font-num text-[13px]">
                       {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
                     </span>
                   </div>

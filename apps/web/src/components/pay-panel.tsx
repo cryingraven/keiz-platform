@@ -288,7 +288,7 @@ export function PayPanel({
 
       <div className="px-5 py-5">
         {isCustody ? (
-          <div className="mb-4 flex gap-2 rounded-xl border border-brand/20 bg-brand-soft px-3 py-2.5 text-[11px] leading-relaxed text-brand-deep">
+          <div className="mb-4 flex gap-2 rounded-xl border border-brand/20 bg-brand-soft px-3 py-2.5 text-[12px] leading-relaxed text-brand-deep">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Paid by the agent's OutLayer custody wallet. No deposit address is needed from you;
@@ -296,7 +296,7 @@ export function PayPanel({
             </span>
           </div>
         ) : isMock ? (
-          <div className="mb-4 flex gap-2 rounded-xl border border-amber/20 bg-amber-soft px-3 py-2.5 text-[11px] leading-relaxed text-amber">
+          <div className="mb-4 flex gap-2 rounded-xl border border-amber/20 bg-amber-soft px-3 py-2.5 text-[12px] leading-relaxed text-amber">
             <FlaskConical className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               1Click has no testnet, so this workspace uses a deterministic mock. Deposits are not
@@ -304,7 +304,7 @@ export function PayPanel({
             </span>
           </div>
         ) : (
-          <div className="mb-4 flex gap-2 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2.5 text-[11px] leading-relaxed text-rose">
+          <div className="mb-4 flex gap-2 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2.5 text-[12px] leading-relaxed text-rose">
             <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Live mainnet mode. Your wallet signs the NEP-141 deposit; funds move to the 1Click
@@ -315,14 +315,14 @@ export function PayPanel({
 
         {!active ? (
           <>
-            <div className="space-y-2.5 text-[12px]">
+            <div className="space-y-2.5 text-[13px]">
               <Row label="Vendor receives" value="Exact invoice amount in a USD stablecoin" />
               <Row label="Quote window" value="10 minutes" />
               <Row label="Deposit" value="Signed in your NEAR wallet" />
             </div>
             {originTokens.length > 1 ? (
               <div className="mt-4">
-                <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted">
+                <p className="mb-1.5 text-[11px] uppercase tracking-wider text-muted">
                   Pay with
                 </p>
                 <Select
@@ -339,7 +339,7 @@ export function PayPanel({
                 {originAssetId &&
                 originTokens.find((token) => token.assetId === originAssetId)?.symbol.toUpperCase() ===
                   'WNEAR' ? (
-                  <p className="mt-1.5 text-[10px] text-muted">
+                  <p className="mt-1.5 text-[11px] text-muted">
                     wNEAR wraps native NEAR in the same transaction.
                   </p>
                 ) : null}
@@ -354,7 +354,7 @@ export function PayPanel({
               Get a quote <ArrowRight className="h-4 w-4" />
             </Button>
             {disabled ? (
-              <p className="mt-2 text-center text-[11px] text-muted">
+              <p className="mt-2 text-center text-[12px] text-muted">
                 Invoice must be approved before a quote can be locked.
               </p>
             ) : null}
@@ -363,7 +363,7 @@ export function PayPanel({
           <>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted">Vendor receives</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Vendor receives</p>
                 <p className="font-num mt-1 text-[26px] font-semibold tracking-tight">
                   {formatToken(active.amountOutFormatted)}{' '}
                   <span className="text-sm font-normal text-muted">
@@ -374,7 +374,7 @@ export function PayPanel({
               <StatusPill status={active.status} />
             </div>
 
-            <div className="mt-4 flex items-center gap-2 rounded-xl bg-paper px-3 py-2.5 text-[11px]">
+            <div className="mt-4 flex items-center gap-2 rounded-xl bg-paper px-3 py-2.5 text-[12px]">
               <span className="font-medium">{active.originSymbol ?? 'USDC'}</span>
               <span className="text-muted">on NEAR</span>
               <ArrowRight className="h-3 w-3 text-muted" />
@@ -386,7 +386,7 @@ export function PayPanel({
             </div>
 
             {active.minAmountIn || active.maxAmountIn ? (
-              <p className="mt-2 text-[10px] text-muted">
+              <p className="mt-2 text-[11px] text-muted">
                 Accepted deposit range:{' '}
                 <span className="font-num">
                   {active.minAmountIn ? formatUnits(active.minAmountIn, originDecimals) : '—'} –{' '}
@@ -398,17 +398,17 @@ export function PayPanel({
             {!isCustody && active.depositAddress ? (
               <div className="mt-4">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <p className="text-[10px] uppercase tracking-wider text-muted">
+                  <p className="text-[11px] uppercase tracking-wider text-muted">
                     Deposit address
                   </p>
                   {isOpen ? (
-                    <p className="font-num text-[10px] text-muted">
+                    <p className="font-num text-[11px] text-muted">
                       {remaining === 'expired' ? 'expired' : `expires in ${remaining}`}
                     </p>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3 py-2.5">
-                  <code className="font-num min-w-0 flex-1 truncate text-[11px]">
+                  <code className="font-num min-w-0 flex-1 truncate text-[12px]">
                     {active.depositAddress}
                   </code>
                   <button
@@ -428,7 +428,7 @@ export function PayPanel({
                   </button>
                 </div>
                 {active.depositMemo ? (
-                  <p className="mt-1.5 text-[11px] text-amber">
+                  <p className="mt-1.5 text-[12px] text-amber">
                     Memo required: <span className="font-num">{active.depositMemo}</span>
                   </p>
                 ) : null}
@@ -447,7 +447,7 @@ export function PayPanel({
                     <FlaskConical className="h-3.5 w-3.5" /> Simulate settlement
                   </Button>
                 ) : isMock ? (
-                  <p className="rounded-xl bg-paper px-3 py-2 text-center text-[11px] text-muted">
+                  <p className="rounded-xl bg-paper px-3 py-2 text-center text-[12px] text-muted">
                     Ask an admin to settle this mock payment.
                   </p>
                 ) : (
@@ -473,7 +473,7 @@ export function PayPanel({
                 </div>
 
                 <details className="rounded-xl border border-line px-3 py-2">
-                  <summary className="cursor-pointer text-[11px] text-muted">
+                  <summary className="cursor-pointer text-[12px] text-muted">
                     Already sent it? Paste the transaction hash
                   </summary>
                   <div className="mt-2 flex gap-2">
@@ -491,7 +491,7 @@ export function PayPanel({
                       <Send className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                  <p className="mt-1.5 text-[10px] text-muted">
+                  <p className="mt-1.5 text-[11px] text-muted">
                     In mainnet mode the hash is verified against NEAR RPC before it is accepted.
                   </p>
                 </details>
@@ -499,7 +499,7 @@ export function PayPanel({
             ) : null}
 
             {active.status === 'PROCESSING' ? (
-              <div className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-brand-soft px-3 py-3 text-[12px] text-brand-deep">
+              <div className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-brand-soft px-3 py-3 text-[13px] text-brand-deep">
                 <Spinner className="text-brand" />
                 {isCustody
                   ? 'Waiting for the custody wallet to settle'
@@ -508,7 +508,7 @@ export function PayPanel({
             ) : null}
 
             {active.status === 'NEEDS_REVIEW' ? (
-              <div className="mt-4 rounded-xl border border-amber/20 bg-amber-soft px-3 py-3 text-[12px] text-amber">
+              <div className="mt-4 rounded-xl border border-amber/20 bg-amber-soft px-3 py-3 text-[13px] text-amber">
                 Needs manual review. The fund state is unknown, so this payment must not be retried
                 automatically.
               </div>
@@ -518,8 +518,8 @@ export function PayPanel({
               <div
                 className={
                   active.status === 'SUCCEEDED'
-                    ? 'mt-4 rounded-xl border border-mint/20 bg-mint-soft px-3 py-3 text-[12px] text-mint'
-                    : 'mt-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-3 text-[12px] text-rose'
+                    ? 'mt-4 rounded-xl border border-mint/20 bg-mint-soft px-3 py-3 text-[13px] text-mint'
+                    : 'mt-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-3 text-[13px] text-rose'
                 }
               >
                 {active.status === 'SUCCEEDED'
@@ -540,20 +540,20 @@ export function PayPanel({
             ) : null}
 
             {error ? (
-              <p className="mt-3 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-[11px] text-rose">
+              <p className="mt-3 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-[12px] text-rose">
                 {error}
               </p>
             ) : null}
 
             {events.data && events.data.length > 0 ? (
               <div className="mt-5 border-t border-line pt-4">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Timeline</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Timeline</p>
                 <ol className="mt-2.5 space-y-2">
                   {events.data.map((event) => (
                     <li key={event._id} className="flex items-center gap-2.5">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink/40" />
-                      <span className="text-[11px] font-medium">{event.status}</span>
-                      <span className="font-num ml-auto text-[10px] text-muted">
+                      <span className="text-[12px] font-medium">{event.status}</span>
+                      <span className="font-num ml-auto text-[11px] text-muted">
                         {new Date(event.createdAt).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -566,13 +566,13 @@ export function PayPanel({
               </div>
             ) : null}
 
-            <div className="mt-3 flex items-center gap-1.5 text-[10px] text-muted">
+            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted">
               <ShieldCheck className="h-3 w-3" />
               Payout: <span className="font-num">{active.destinationAddress}</span>
             </div>
 
             {active.correlationId ? (
-              <p className="font-num mt-2 truncate text-[9px] text-muted/70">
+              <p className="font-num mt-2 truncate text-[11px] text-muted/70">
                 quote {active.correlationId}
               </p>
             ) : null}

@@ -324,15 +324,35 @@ export const reportQuerySchema = z.object({
   to: isoDateQuery,
 });
 
+export const reportStatementSchema = z.enum([
+  'cash-flow',
+  'profit-and-loss',
+  'balance-sheet',
+  'all',
+]);
+
 export const reportExportQuerySchema = reportQuerySchema.extend({
-  format: z.enum(['pdf', 'xlsx']),
+  format: z.enum(['pdf', 'xlsx', 'csv']).default('pdf'),
+  report: reportStatementSchema.default('all'),
 });
 
 export const journalQuerySchema = accountingQuerySchema.extend({
   accountCode: z.string().min(1).max(20).optional(),
   sourceType: z.enum(['invoice', 'receivable', 'receipt', 'manual', 'opening']).optional(),
   sourceId: z.string().min(1).max(64).optional(),
+  q: z.string().trim().max(120).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  // Kept for older clients; pageSize takes precedence.
   limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+export const journalExportQuerySchema = accountingQuerySchema.extend({
+  accountCode: z.string().min(1).max(20).optional(),
+  sourceType: z.enum(['invoice', 'receivable', 'receipt', 'manual', 'opening']).optional(),
+  sourceId: z.string().min(1).max(64).optional(),
+  q: z.string().trim().max(120).optional(),
+  format: z.enum(['csv']).default('csv'),
 });
 
 export const agingQuerySchema = z.object({
@@ -354,9 +374,11 @@ export type InvoiceListQuery = z.infer<typeof invoiceListQuerySchema>;
 export type PaymentListQuery = z.infer<typeof paymentListQuerySchema>;
 export type AccountingQuery = z.infer<typeof accountingQuerySchema>;
 export type JournalQuery = z.infer<typeof journalQuerySchema>;
+export type JournalExportQuery = z.infer<typeof journalExportQuerySchema>;
 export type AgingQuery = z.infer<typeof agingQuerySchema>;
 export type TrialBalanceQuery = z.infer<typeof trialBalanceQuerySchema>;
 export type ReportQuery = z.infer<typeof reportQuerySchema>;
+export type ReportStatement = z.infer<typeof reportStatementSchema>;
 export type ReportExportQuery = z.infer<typeof reportExportQuerySchema>;
 
 export const simulateQuerySchema = z.object({

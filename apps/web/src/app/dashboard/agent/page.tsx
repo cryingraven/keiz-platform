@@ -19,6 +19,7 @@ import { api } from '@/lib/api';
 import { formatDollars, formatMoney, humanize, shortAddress } from '@/lib/format';
 import { formatUnits } from '@keiz/shared';
 import { PageHeader } from '@/components/shell';
+import { useConfirm, useToast } from '@/components/feedback';
 import {
   NearIntentsLogo,
   NearProtocolIcon,
@@ -199,24 +200,24 @@ export default function AgentPage() {
           {isCustody ? (
             <div className="grid gap-3 sm:grid-cols-3">
               <Card className="p-5">
-                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted">
+                <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted">
                   <NearProtocolIcon className="h-3 w-3" /> Native NEAR
                 </p>
                 <p className="font-num mt-1 text-2xl font-semibold">{nativeNear}</p>
-                <p className="mt-0.5 text-[10px] text-muted">on the custody account</p>
+                <p className="mt-0.5 text-[11px] text-muted">on the custody account</p>
               </Card>
               <Card className="p-5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Intents USDC</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Intents USDC</p>
                 <p className="font-num mt-1 text-2xl font-semibold">{intentsUsdc}</p>
                 <NearIntentsLogo className="mt-2 h-3.5 w-auto" />
-                <p className="mt-0.5 text-[10px] text-muted">available for gasless payouts</p>
+                <p className="mt-0.5 text-[11px] text-muted">available for gasless payouts</p>
               </Card>
               <Card className="p-5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Waiting approval</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Waiting approval</p>
                 <p className="font-num mt-1 text-2xl font-semibold">
                   {stats.data?.pendingApprovals ?? 0}
                 </p>
-                <p className="mt-0.5 text-[10px] text-muted">
+                <p className="mt-0.5 text-[11px] text-muted">
                   {custody?.frozen ? 'wallet frozen in OutLayer' : 'multisig / policy queue'}
                 </p>
               </Card>
@@ -224,27 +225,27 @@ export default function AgentPage() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
               <Card className="p-5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Spent today</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Spent today</p>
                 <p className="font-num mt-1 text-2xl font-semibold">
                   {formatDollars(stats.data?.spentTodayUsd ?? '0')}
                 </p>
-                <p className="mt-0.5 text-[10px] text-muted">
+                <p className="mt-0.5 text-[11px] text-muted">
                   limit {formatDollars(wallet.data.policy.dailyLimitUsd)} / day
                 </p>
               </Card>
               <Card className="p-5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Per transaction</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Per transaction</p>
                 <p className="font-num mt-1 text-2xl font-semibold">
                   {formatDollars(wallet.data.policy.perTxLimitUsd)}
                 </p>
-                <p className="mt-0.5 text-[10px] text-muted">hard block above this</p>
+                <p className="mt-0.5 text-[11px] text-muted">hard block above this</p>
               </Card>
               <Card className="p-5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Auto-approve</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Auto-approve</p>
                 <p className="font-num mt-1 text-2xl font-semibold">
                   {formatDollars(wallet.data.policy.approvalThresholdUsd)}
                 </p>
-                <p className="mt-0.5 text-[10px] text-muted">
+                <p className="mt-0.5 text-[11px] text-muted">
                   {stats.data?.pendingApprovals ?? 0} above threshold
                 </p>
               </Card>
@@ -279,21 +280,21 @@ export default function AgentPage() {
                 ) : null}
                 <div className="mt-3 space-y-2.5">
                   <div className="rounded-xl bg-paper px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-wider text-muted">Account</p>
-                    <p className="font-num mt-0.5 truncate text-[12px]">
+                    <p className="text-[11px] uppercase tracking-wider text-muted">Account</p>
+                    <p className="font-num mt-0.5 truncate text-[13px]">
                       {wallet.data.accountId}
                     </p>
                   </div>
                   <div className="rounded-xl bg-paper px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-wider text-muted">Public key</p>
-                    <p className="font-num mt-0.5 break-all text-[11px]">
+                    <p className="text-[11px] uppercase tracking-wider text-muted">Public key</p>
+                    <p className="font-num mt-0.5 break-all text-[12px]">
                       {shortAddress(wallet.data.publicKey ?? custody?.publicKey ?? '', 14) || '—'}
                     </p>
                   </div>
                   {isCustody ? (
                     <div className="rounded-xl bg-paper px-3 py-2.5">
-                      <p className="text-[10px] uppercase tracking-wider text-muted">Network</p>
-                      <p className="mt-0.5 text-[12px] font-medium capitalize">
+                      <p className="text-[11px] uppercase tracking-wider text-muted">Network</p>
+                      <p className="mt-0.5 text-[13px] font-medium capitalize">
                         {wallet.data.outlayerNetwork ?? stats.data?.network ?? 'testnet'}
                       </p>
                     </div>
@@ -302,14 +303,14 @@ export default function AgentPage() {
 
                 {isCustody ? (
                   <>
-                    <div className="mt-3 flex gap-2 rounded-xl border border-line px-3 py-2.5 text-[10px] leading-relaxed text-muted">
+                    <div className="mt-3 flex gap-2 rounded-xl border border-line px-3 py-2.5 text-[11px] leading-relaxed text-muted">
                       <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span>
                         The private key lives inside an Intel TDX enclave. KEIZ stores only an
                         encrypted API key and never sees a wallet secret.
                       </span>
                     </div>
-                    <div className="mt-3 rounded-xl border border-line px-3 py-2.5 text-[10px] leading-relaxed text-muted">
+                    <div className="mt-3 rounded-xl border border-line px-3 py-2.5 text-[11px] leading-relaxed text-muted">
                       <p className="font-medium text-ink">Fund this wallet</p>
                       <p className="mt-1">
                         Send USDC/USDT to the custody account, or fund its Intents balance from
@@ -321,22 +322,22 @@ export default function AgentPage() {
                         href={wallet.data.handoffUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-[12px] font-medium text-white transition hover:bg-ink-soft"
+                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-ink-soft"
                       >
                         Manage custody policy <Play className="h-3 w-3" />
                       </a>
                     ) : (
-                      <p className="mt-3 text-[10px] text-muted">
+                      <p className="mt-3 text-[11px] text-muted">
                         Only the workspace owner can open the custody policy handoff.
                       </p>
                     )}
-                    <p className="mt-2 text-[9px] leading-relaxed text-muted">
+                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
                       The handoff URL contains the agent API key. Open it only on a trusted device.
                     </p>
                   </>
                 ) : (
                   <>
-                    <div className="mt-3 flex gap-2 rounded-xl border border-line px-3 py-2.5 text-[10px] leading-relaxed text-muted">
+                    <div className="mt-3 flex gap-2 rounded-xl border border-line px-3 py-2.5 text-[11px] leading-relaxed text-muted">
                       <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span>
                         The secret is AES-256-GCM encrypted with{' '}
@@ -344,7 +345,7 @@ export default function AgentPage() {
                         every query by default.
                       </span>
                     </div>
-                    <p className="mt-2 text-[10px] leading-relaxed text-muted">
+                    <p className="mt-2 text-[11px] leading-relaxed text-muted">
                       Local mode cannot sign on-chain. Execution delegates settlement to the
                       configured payment provider; enable OutLayer custody for TEE signing.
                     </p>
@@ -380,7 +381,7 @@ export default function AgentPage() {
               ) : (
                 <Card className="p-5">
                   <SectionTitle title="Policy" hint="Owner-managed spending rules" />
-                  <p className="mt-3 text-[12px] leading-relaxed text-muted">
+                  <p className="mt-3 text-[13px] leading-relaxed text-muted">
                     Only the workspace owner can change agent limits. Current per-transaction limit:{' '}
                     <span className="font-num text-ink">
                       {formatDollars(wallet.data.policy.perTxLimitUsd)}
@@ -438,8 +439,8 @@ export default function AgentPage() {
         <div className="flex items-start gap-3">
           <ShieldCheck className="mt-0.5 h-4 w-4 text-mint" />
           <div>
-            <p className="text-[13px] font-medium">How the leash works</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            <p className="text-[14px] font-medium">How the leash works</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
               {isCustody
                 ? 'OutLayer decrypts the on-chain policy inside Intel TDX and enforces it before every signature. This workspace delegates policy to the custody wallet: set per-transaction and velocity limits in the handoff before funding it. A custody wallet with no policy is unrestricted.'
                 : 'Proposals are checked when created and re-checked at execution time, so tightening a limit instantly invalidates stale approvals. Assets outside the allowlist are blocked before a quote is ever requested. Pausing the wallet blocks everything.'}
@@ -465,13 +466,13 @@ function CustodyPolicyCard({
   return (
     <Card className="p-5">
       <SectionTitle title="Custody policy" hint="Encrypted on-chain, enforced inside Intel TDX" />
-      <div className="mt-4 space-y-2.5 text-[12px]">
+      <div className="mt-4 space-y-2.5 text-[13px]">
         <Row label="Network" value={network === 'mainnet' ? 'Mainnet' : 'Testnet'} />
         <Row label="Wallet" value={custody?.frozen ? 'Frozen' : 'Active'} />
         <Row label="Rules" value={configured ? 'Configured' : 'No policy (unrestricted)'} />
       </div>
       {!configured ? (
-        <p className="mt-3 rounded-xl border border-amber/20 bg-amber-soft px-3 py-2 text-[11px] leading-relaxed text-amber">
+        <p className="mt-3 rounded-xl border border-amber/20 bg-amber-soft px-3 py-2 text-[12px] leading-relaxed text-amber">
           A wallet with no policy is unrestricted inside OutLayer. Set per-transaction and daily
           limits before funding it.
         </p>
@@ -481,12 +482,12 @@ function CustodyPolicyCard({
           href={handoffUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+          className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
         >
           Open custody policy <Play className="h-3 w-3" />
         </a>
       ) : (
-        <p className="mt-3 text-[11px] text-muted">
+        <p className="mt-3 text-[12px] text-muted">
           The workspace owner can open the custody policy handoff.
         </p>
       )}
@@ -588,8 +589,8 @@ function PolicyForm({
                 }
                 className={
                   checked
-                    ? 'rounded-full border border-brand/30 bg-brand-soft px-3 py-1.5 text-[11px] font-medium text-brand-deep'
-                    : 'rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] text-muted hover:border-line-strong'
+                    ? 'rounded-full border border-brand/30 bg-brand-soft px-3 py-1.5 text-[12px] font-medium text-brand-deep'
+                    : 'rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-muted hover:border-line-strong'
                 }
               >
                 USDC · {token.blockchain}
@@ -599,7 +600,7 @@ function PolicyForm({
         </div>
       </div>
 
-      <label className="mt-4 flex items-center gap-2 text-[12px]">
+      <label className="mt-4 flex items-center gap-2 text-[13px]">
         <input
           type="checkbox"
           checked={active}
@@ -610,7 +611,7 @@ function PolicyForm({
       </label>
 
       {error ? (
-        <p className="mt-3 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-[11px] text-rose">
+        <p className="mt-3 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-[12px] text-rose">
           {error}
         </p>
       ) : null}
@@ -625,7 +626,7 @@ function PolicyForm({
           Save policy
         </Button>
         {saved ? (
-          <span className="text-[11px] text-mint">
+          <span className="text-[12px] text-mint">
             <Check className="mr-1 inline h-3 w-3" />
             saved
           </span>
@@ -688,7 +689,7 @@ function ProposeForm({
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />
-        {error ? <p className="text-[11px] text-rose">{error}</p> : null}
+        {error ? <p className="text-[12px] text-rose">{error}</p> : null}
         <Button
           size="sm"
           className="w-full"
@@ -714,15 +715,18 @@ function ActionRow({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function run(kind: 'approve' | 'reject' | 'execute') {
-    if (
-      kind === 'execute' &&
-      !window.confirm(
-        `Execute this $${action.amountUsd} payment?\n\nFunds leave the agent wallet immediately.`,
-      )
-    ) {
-      return;
+    if (kind === 'execute') {
+      const ok = await confirm({
+        title: 'Execute this payment?',
+        body: `$${action.amountUsd} leaves the agent wallet immediately and cannot be recalled.`,
+        confirmLabel: 'Execute payment',
+        tone: 'danger',
+      });
+      if (!ok) return;
     }
     setBusy(kind);
     setError(null);
@@ -736,6 +740,14 @@ function ActionRow({
         );
       }
       await onChanged();
+      toast(
+        kind === 'execute'
+          ? 'Payment execution started'
+          : kind === 'approve'
+            ? 'Proposal approved'
+            : 'Proposal rejected',
+        kind === 'reject' ? 'info' : 'success',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
@@ -747,20 +759,20 @@ function ActionRow({
     <li className="px-5 py-3.5">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="font-num text-[12px] font-medium">{invoiceNumber}</p>
-          <p className="truncate text-[10px] text-muted">{action.reason ?? '—'}</p>
+          <p className="font-num text-[13px] font-medium">{invoiceNumber}</p>
+          <p className="truncate text-[11px] text-muted">{action.reason ?? '—'}</p>
         </div>
-        <span className="font-num text-[12px]">${action.amountUsd}</span>
+        <span className="font-num text-[13px]">${action.amountUsd}</span>
         <StatusPill status={action.status} />
       </div>
-      {error ? <p className="mt-1.5 text-[10px] text-rose">{error}</p> : null}
+      {error ? <p className="mt-1.5 text-[11px] text-rose">{error}</p> : null}
       <div className="mt-2 flex items-center gap-1.5">
         {action.outlayerApprovalId ? (
           <a
             href="https://app.outlayer.ai/wallet/approvals"
             target="_blank"
             rel="noreferrer"
-            className="text-[11px] font-medium text-brand hover:underline"
+            className="text-[12px] font-medium text-brand hover:underline"
           >
             Approve in OutLayer ({action.outlayerApproved ?? 0}/{action.outlayerRequired ?? '?'})
           </a>
@@ -787,16 +799,16 @@ function ActionRow({
         {action.status === 'EXECUTED' && action.paymentId ? (
           <Link
             href={`/dashboard/invoices/${action.invoiceId}`}
-            className="text-[11px] font-medium text-brand hover:underline"
+            className="text-[12px] font-medium text-brand hover:underline"
           >
             View settlement →
           </Link>
         ) : null}
         {action.status === 'BLOCKED' ? (
-          <span className="text-[10px] text-rose">{humanize(action.status)} by policy</span>
+          <span className="text-[11px] text-rose">{humanize(action.status)} by policy</span>
         ) : null}
         {action.status === 'NEEDS_REVIEW' ? (
-          <span className="text-[10px] text-amber">
+          <span className="text-[11px] text-amber">
             Needs manual review — do not retry
           </span>
         ) : null}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
-import { AlertTriangle, Loader2, X } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { humanize, toneFor } from '@/lib/format';
 
@@ -38,7 +38,7 @@ export function Button({
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center rounded-full font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40',
+        'inline-flex items-center justify-center rounded-control font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40',
         buttonVariants[variant],
         buttonSizes[size],
         className,
@@ -74,7 +74,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] font-medium',
         className,
       )}
     >
@@ -109,7 +109,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={cn(fieldClasses, 'appearance-none', className)} {...props}>
+    <select className={cn(fieldClasses, 'select-chevron pr-10', className)} {...props}>
       {children}
     </select>
   );
@@ -186,11 +186,11 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          'relative w-full rounded-[22px] border border-line bg-surface shadow-2xl',
+          'relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-panel border border-line bg-surface shadow-2xl sm:max-h-[calc(100dvh-4rem)]',
           wide ? 'max-w-2xl' : 'max-w-lg',
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
           <div>
             <h2 id={titleId} className="text-base font-semibold">
               {title}
@@ -205,7 +205,9 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin sm:px-6 sm:py-5">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -236,6 +238,81 @@ export function EmptyState({
 
 export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cn('h-4 w-4 animate-spin text-muted', className)} />;
+}
+
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('skeleton rounded-lg', className)} aria-hidden />;
+}
+
+export function TableSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
+  return (
+    <div role="status" aria-label="Loading" className="divide-y divide-line">
+      <div className="flex items-center gap-4 px-5 py-3">
+        {Array.from({ length: cols }).map((_, index) => (
+          <Skeleton key={index} className={cn('h-2.5', index === 0 ? 'w-24' : 'w-16')} />
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, row) => (
+        <div key={row} className="flex items-center gap-4 px-5 py-4">
+          {Array.from({ length: cols }).map((_, col) => (
+            <Skeleton
+              key={col}
+              className={cn('h-3.5', col === 0 ? 'w-28' : col === cols - 1 ? 'ml-auto w-16' : 'w-20')}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ProgressSteps({
+  labels,
+  current,
+}: {
+  labels: string[];
+  current: number;
+}) {
+  const active = Math.max(0, Math.min(current, labels.length - 1));
+  return (
+    <ol className="flex items-center gap-1.5 sm:gap-2" aria-label="Progress">
+      {labels.map((label, index) => {
+        const done = index < active;
+        const isCurrent = index === active;
+        return (
+          <li key={label} className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none sm:gap-2">
+            <span
+              className={cn(
+                'grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[11px] font-semibold transition',
+                done && 'border-mint bg-mint text-white',
+                isCurrent && 'border-ink bg-ink text-white',
+                !done && !isCurrent && 'border-line bg-surface text-muted',
+              )}
+              aria-current={isCurrent ? 'step' : undefined}
+            >
+              {done ? <Check className="h-3 w-3" /> : index + 1}
+            </span>
+            <span
+              className={cn(
+                'truncate text-[12px] font-medium',
+                isCurrent ? 'text-ink' : done ? 'text-muted' : 'text-muted/70',
+              )}
+            >
+              {label}
+            </span>
+            {index < labels.length - 1 ? (
+              <span
+                className={cn(
+                  'mx-0.5 hidden h-px flex-1 sm:block sm:w-8',
+                  done ? 'bg-mint/40' : 'bg-line',
+                )}
+              />
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 /** A load failure must never be mistaken for an empty workspace. */

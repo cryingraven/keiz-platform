@@ -373,11 +373,11 @@ export function createChatTools(deps: ChatToolDeps) {
     requestContextSchema,
     execute: async (input, context) => {
       const orgId = requireOrg(context as ToolContext);
-      const rows = (await deps.accounting.journal(orgId, {
+      const journal = await deps.accounting.journal(orgId, {
         ...input,
         limit: input.limit ?? 20,
-      })) as JournalEntryLike[];
-      return journalListCard(rows);
+      });
+      return journalListCard(journal.items as JournalEntryLike[]);
     },
   });
 

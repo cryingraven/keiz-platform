@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowUpRight, CreditCard } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, CreditCard } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
-import { formatDate, humanize } from '@/lib/format';
+import { formatDate, humanize, shortAddress } from '@/lib/format';
 import { Card, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 
 interface Payment {
@@ -67,12 +67,17 @@ export default function PaymentDetailPage() {
   const data = payment.data;
   return (
     <div>
-      <Link
-        href="/dashboard/payments"
-        className="mb-5 inline-flex items-center gap-1.5 text-[12px] text-muted transition hover:text-ink"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Payments
-      </Link>
+      <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1.5 text-[12px] text-muted">
+        <Link href="/dashboard" className="transition hover:text-ink">
+          Workspace
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <Link href="/dashboard/payments" className="transition hover:text-ink">
+          Payments
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="font-num font-medium text-ink">{shortAddress(data._id, 6)}</span>
+      </nav>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
@@ -91,7 +96,7 @@ export default function PaymentDetailPage() {
         </div>
         <Link
           href={`/dashboard/invoices/${data.invoiceId}`}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[11px] font-medium transition hover:bg-paper"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-[12px] font-medium transition hover:bg-paper"
         >
           View invoice <ArrowUpRight className="h-3 w-3" />
         </Link>
@@ -100,7 +105,7 @@ export default function PaymentDetailPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <Card className="p-5">
           <SectionTitle title="Transfer" />
-          <dl className="mt-3 space-y-2 text-[12px]">
+          <dl className="mt-3 space-y-2 text-[13px]">
             <Row label="Provider" value={data.provider} />
             <Row label="Status" value={humanize(data.status)} />
             {data.rawStatus ? <Row label="Provider status" value={data.rawStatus} /> : null}
@@ -133,18 +138,18 @@ export default function PaymentDetailPage() {
               <Spinner />
             </div>
           ) : (events.data?.length ?? 0) === 0 ? (
-            <p className="px-5 py-6 text-[12px] text-muted">No events recorded yet.</p>
+            <p className="px-5 py-6 text-[13px] text-muted">No events recorded yet.</p>
           ) : (
             <ol className="divide-y divide-line">
               {(events.data ?? []).map((event) => (
                 <li key={event._id} className="flex items-center justify-between gap-3 px-5 py-3">
                   <div>
-                    <p className="text-[12px] font-medium">{humanize(event.status)}</p>
+                    <p className="text-[13px] font-medium">{humanize(event.status)}</p>
                     {event.rawStatus ? (
-                      <p className="text-[10px] text-muted">{event.rawStatus}</p>
+                      <p className="text-[11px] text-muted">{event.rawStatus}</p>
                     ) : null}
                   </div>
-                  <span className="text-[10px] text-muted">{formatDate(event.createdAt)}</span>
+                  <span className="text-[11px] text-muted">{formatDate(event.createdAt)}</span>
                 </li>
               ))}
             </ol>

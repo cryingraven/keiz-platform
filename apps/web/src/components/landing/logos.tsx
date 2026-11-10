@@ -91,7 +91,7 @@ export function OutLayerLogo({ dark = false }: { dark?: boolean }) {
         />
       </span>
       <span
-        className={`text-[13px] font-semibold tracking-tight ${
+        className={`text-[14px] font-semibold tracking-tight ${
           dark ? 'text-white' : 'text-ink'
         }`}
       >
@@ -111,7 +111,7 @@ export function NearCredit({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 text-[10px]',
+        'inline-flex items-center gap-1.5 text-[11px]',
         dark ? 'text-white/40' : 'text-muted',
         className,
       )}
@@ -148,7 +148,7 @@ export function LogoStrip() {
   return (
     <section className="border-b border-line bg-surface">
       <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:justify-between">
-        <p className="text-center text-[10px] font-medium uppercase tracking-[0.18em] text-muted lg:text-left">
+        <p className="text-center text-[11px] font-medium uppercase tracking-[0.18em] text-muted lg:text-left">
           Built on infrastructure you can verify
         </p>
         <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-4 sm:gap-x-9">

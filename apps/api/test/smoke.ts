@@ -834,13 +834,57 @@ async function main() {
     assert(noopRebuildAgain.created === 0, 'rebuild is idempotent');
     pass('ledger rebuild is idempotent');
 
-    const journal = await req<Array<{ sourceType: string; lines: unknown[] }>>(
-      '/accounting/journal-entries?currency=USD&limit=200',
-      { cookie: bobCookie },
+    const journal = await req<{
+      items: Array<{ sourceType: string; lines: unknown[] }>;
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    }>('/accounting/journal-entries?currency=USD&page=1&pageSize=100', { cookie: bobCookie });
+    assert(
+      journal.items.some((entry) => entry.sourceType === 'invoice'),
+      'invoice postings are listed',
     );
-    assert(journal.some((entry) => entry.sourceType === 'invoice'), 'invoice postings are listed');
-    assert(journal.some((entry) => entry.sourceType === 'receipt'), 'receipt postings are listed');
-    pass('journal exposes both AP and AR postings');
+    assert(
+      journal.items.some((entry) => entry.sourceType === 'receipt'),
+      'receipt postings are listed',
+    );
+    assert(journal.page === 1 && journal.pageSize === 100, 'journal echoes pagination');
+    assert(journal.total >= journal.items.length, 'journal reports a total');
+    assert(journal.totalPages >= 1, 'journal reports page count');
+
+    const journalPage = await req<{
+      items: Array<{ _id: string }>;
+      total: number;
+      totalPages: number;
+    }>('/accounting/journal-entries?currency=USD&page=1&pageSize=2', { cookie: bobCookie });
+    assert(journalPage.items.length <= 2, 'journal page respects pageSize');
+    if (journalPage.total > 2) {
+      const secondPage = await req<{ items: Array<{ _id: string }>; page: number }>(
+        '/accounting/journal-entries?currency=USD&page=2&pageSize=2',
+        { cookie: bobCookie },
+      );
+      assert(secondPage.page === 2, 'journal returns the requested page');
+      assert(
+        secondPage.items[0]?._id !== journalPage.items[0]?._id,
+        'journal pages contain different entries',
+      );
+    }
+    pass('journal exposes AP/AR postings and paginates');
+
+    const journalExport = await fetch(
+      `${BASE}/accounting/journal-entries/export?currency=USD`,
+      { headers: { cookie: bobCookie } },
+    );
+    const journalCsv = await journalExport.text();
+    assert(journalExport.status === 200, 'journal CSV export returns 200');
+    assert(
+      (journalExport.headers.get('content-type') ?? '').includes('text/csv'),
+      'journal CSV content type is correct',
+    );
+    assert(journalCsv.startsWith('date,memo,source_type,event'), 'journal CSV has a header row');
+    assert(journalCsv.split('\r\n').length > 2, 'journal CSV includes ledger lines');
+    pass('journal exports all matching lines as CSV');
 
     const emptyFrom = encodeURIComponent('2000-01-01T00:00:00.000Z');
     const emptyTo = encodeURIComponent('2000-01-02T23:59:59.999Z');
@@ -869,22 +913,41 @@ async function main() {
     assert(report.cashFlow.sources.length > 0, 'report breaks cash flow down by source');
     pass('reporting returns cash flow, P&L and a balanced balance sheet');
 
-    for (const format of ['pdf', 'xlsx'] as const) {
+    const exportTypes = {
+      pdf: 'application/pdf',
+      xlsx: 'spreadsheetml',
+      csv: 'text/csv',
+    } as const;
+    for (const format of ['pdf', 'xlsx', 'csv'] as const) {
       const response = await fetch(
         `${BASE}/accounting/reports/export?${reportQuery}&format=${format}`,
         { headers: { cookie: bobCookie } },
       );
       const bytes = await response.arrayBuffer();
       assert(response.status === 200, `${format} export returns 200`);
-      assert(bytes.byteLength > 1_000, `${format} export contains a document`);
+      assert(bytes.byteLength > (format === 'csv' ? 100 : 1_000), `${format} export contains a document`);
       assert(
-        (response.headers.get('content-type') ?? '').includes(
-          format === 'pdf' ? 'application/pdf' : 'spreadsheetml',
-        ),
+        (response.headers.get('content-type') ?? '').includes(exportTypes[format]),
         `${format} export content type is correct`,
       );
     }
-    pass('reporting exports PDF and Excel');
+    pass('reporting exports PDF, Excel and CSV');
+
+    for (const statement of [
+      'cash-flow',
+      'profit-and-loss',
+      'balance-sheet',
+      'all',
+    ] as const) {
+      const response = await fetch(
+        `${BASE}/accounting/reports/export?${reportQuery}&format=pdf&report=${statement}`,
+        { headers: { cookie: bobCookie } },
+      );
+      const bytes = await response.arrayBuffer();
+      assert(response.status === 200, `${statement} export returns 200`);
+      assert(bytes.byteLength > 1_000, `${statement} export contains a document`);
+    }
+    pass('reporting exports each statement separately');
 
     await req(`/receivables/${overdue._id}`, { cookie: aliceCookie, expect: 404 });
     pass('another org cannot read a receivable');

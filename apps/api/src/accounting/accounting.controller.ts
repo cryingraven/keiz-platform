@@ -1,12 +1,15 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   AccountingQuery,
   AgingQuery,
+  JournalExportQuery,
   JournalQuery,
   ManualJournalInput,
   TrialBalanceQuery,
   accountingQuerySchema,
   agingQuerySchema,
+  journalExportQuerySchema,
   journalQuerySchema,
   manualJournalSchema,
   trialBalanceQuerySchema,
@@ -47,6 +50,22 @@ export class AccountingController {
     @Query(new ZodBody(journalQuerySchema)) query: JournalQuery,
   ) {
     return this.accounting.journal(user.orgId, query);
+  }
+
+  @Get('journal-entries/export')
+  async exportJournal(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodBody(journalExportQuerySchema)) query: JournalExportQuery,
+    @Res() res: Response,
+  ) {
+    const csv = await this.accounting.journalCsv(user.orgId, query);
+    const from = query.from ? query.from.slice(0, 10) : 'all';
+    const to = query.to ? query.to.slice(0, 10) : 'all';
+    const filename = `keiz-journal-${query.currency ?? 'all'}-${from}-to-${to}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(csv);
   }
 
   @Roles('ADMIN', 'OWNER')

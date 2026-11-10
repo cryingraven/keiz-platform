@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
-  ArrowLeft,
   Check,
+  ChevronRight,
   CircleSlash,
   Copy,
   HandCoins,
@@ -18,12 +18,14 @@ import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
+import { useConfirm, useToast } from '@/components/feedback';
 import {
   Button,
   Card,
   Input,
   Label,
   Modal,
+  ProgressSteps,
   SectionTitle,
   Select,
   Spinner,
@@ -102,13 +104,15 @@ export default function ReceivableDetailPage() {
   const id = params.id;
   const receivable = useApi<Receivable>(id ? `/receivables/${id}` : null);
   const customers = useApi<Customer[]>('/customers');
-  const ledger = useApi<JournalEntry[]>(
-    id ? `/accounting/journal-entries?sourceType=receivable&sourceId=${id}` : null,
+  const ledger = useApi<{ items: JournalEntry[] }>(
+    id ? `/accounting/journal-entries?sourceType=receivable&sourceId=${id}&pageSize=100` : null,
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
   const { session } = useAuth();
   const role = session?.role ?? 'MEMBER';
   const canReceipt = ['APPROVER', 'ADMIN', 'OWNER'].includes(role);
@@ -118,13 +122,22 @@ export default function ReceivableDetailPage() {
 
   async function act(action: 'issue' | 'void') {
     if (!receivable.data) return;
-    if (action === 'void' && !window.confirm('Void this customer invoice?')) return;
+    if (action === 'void') {
+      const ok = await confirm({
+        title: 'Void this customer invoice?',
+        body: `Invoice ${receivable.data.number} will be voided and its receivable reversed in the ledger.`,
+        confirmLabel: 'Void invoice',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
     setBusy(action);
     setError(null);
     try {
       await api(`/receivables/${id}/${action}`, { method: 'POST' });
       await receivable.reload();
       await ledger.reload();
+      toast(action === 'issue' ? 'Invoice issued' : 'Invoice voided', action === 'void' ? 'info' : 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
@@ -165,15 +178,28 @@ export default function ReceivableDetailPage() {
   const canRecord = canReceipt && ['ISSUED', 'PARTIALLY_PAID'].includes(data.status);
   const canVoid =
     canAdmin && !['PAID', 'VOID'].includes(data.status) && (data.receipts?.length ?? 0) === 0;
+  const stepIndex =
+    data.status === 'PAID'
+      ? 3
+      : data.status === 'PARTIALLY_PAID'
+        ? 2
+        : data.status === 'ISSUED'
+          ? 1
+          : 0;
 
   return (
     <div>
-      <Link
-        href="/dashboard/receivables"
-        className="mb-5 inline-flex items-center gap-1.5 text-[12px] text-muted transition hover:text-ink"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Receivables
-      </Link>
+      <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1.5 text-[12px] text-muted">
+        <Link href="/dashboard" className="transition hover:text-ink">
+          Workspace
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <Link href="/dashboard/receivables" className="transition hover:text-ink">
+          Receivables
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="font-num font-medium text-ink">{data.number}</span>
+      </nav>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -187,15 +213,22 @@ export default function ReceivableDetailPage() {
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wider text-muted">Outstanding</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted">Outstanding</p>
           <p className="font-num text-2xl font-semibold">
             {formatMoney(outstanding.toString(), data.decimals, data.currency)}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted">
+          <p className="mt-0.5 text-[12px] text-muted">
             of {formatMoney(data.total, data.decimals, data.currency)}
           </p>
         </div>
       </div>
+
+      <Card className="mb-4 overflow-x-auto px-4 py-3 scroll-thin">
+        <ProgressSteps
+          labels={['Draft', 'Issued', 'Partially paid', 'Paid']}
+          current={stepIndex}
+        />
+      </Card>
 
       {error ? (
         <p className="mb-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
@@ -211,7 +244,7 @@ export default function ReceivableDetailPage() {
             </div>
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-5 py-2.5 font-medium">Description</th>
                   <th className="px-5 py-2.5 text-right font-medium">Qty</th>
                   <th className="px-5 py-2.5 text-right font-medium">Unit</th>
@@ -221,21 +254,21 @@ export default function ReceivableDetailPage() {
               <tbody className="divide-y divide-line">
                 {data.lineItems.map((line, index) => (
                   <tr key={index}>
-                    <td className="px-5 py-3 text-[13px]">{line.description}</td>
-                    <td className="font-num px-5 py-3 text-right text-[12px] text-muted">
+                    <td className="px-5 py-3 text-[14px]">{line.description}</td>
+                    <td className="font-num px-5 py-3 text-right text-[13px] text-muted">
                       {line.quantity}
                     </td>
-                    <td className="font-num px-5 py-3 text-right text-[12px] text-muted">
+                    <td className="font-num px-5 py-3 text-right text-[13px] text-muted">
                       {line.unitPrice}
                     </td>
-                    <td className="font-num px-5 py-3 text-right text-[13px]">
+                    <td className="font-num px-5 py-3 text-right text-[14px]">
                       {formatMoney(line.lineTotal, data.decimals, data.currency)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="space-y-1.5 border-t border-line px-5 py-4 text-[12px]">
+            <div className="space-y-1.5 border-t border-line px-5 py-4 text-[13px]">
               <div className="flex justify-between text-muted">
                 <span>Subtotal</span>
                 <span className="font-num">
@@ -248,7 +281,7 @@ export default function ReceivableDetailPage() {
                   {formatMoney(data.taxAmount, data.decimals, data.currency)}
                 </span>
               </div>
-              <div className="flex justify-between border-t border-line pt-2 text-[13px] font-semibold">
+              <div className="flex justify-between border-t border-line pt-2 text-[14px] font-semibold">
                 <span>Total</span>
                 <span className="font-num">
                   {formatMoney(data.total, data.decimals, data.currency)}
@@ -272,13 +305,13 @@ export default function ReceivableDetailPage() {
               />
             </div>
             {(data.receipts?.length ?? 0) === 0 ? (
-              <p className="px-5 py-6 text-[12px] text-muted">
+              <p className="px-5 py-6 text-[13px] text-muted">
                 No cash received yet. Issue the invoice first, then record receipts.
               </p>
             ) : (
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                  <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                     <th className="px-5 py-2.5 font-medium">Received</th>
                     <th className="px-5 py-2.5 font-medium">Method</th>
                     <th className="px-5 py-2.5 font-medium">Reference</th>
@@ -288,14 +321,14 @@ export default function ReceivableDetailPage() {
                 <tbody className="divide-y divide-line">
                   {data.receipts.map((receipt) => (
                     <tr key={receipt.receiptId}>
-                      <td className="px-5 py-3 text-[12px] text-muted">
+                      <td className="px-5 py-3 text-[13px] text-muted">
                         {formatDate(receipt.receivedAt)}
                       </td>
-                      <td className="px-5 py-3 text-[12px]">{humanize(receipt.method)}</td>
-                      <td className="font-num px-5 py-3 text-[11px] text-muted">
+                      <td className="px-5 py-3 text-[13px]">{humanize(receipt.method)}</td>
+                      <td className="font-num px-5 py-3 text-[12px] text-muted">
                         {receipt.reference ?? receipt.txHash ?? '—'}
                       </td>
-                      <td className="font-num px-5 py-3 text-right text-[13px]">
+                      <td className="font-num px-5 py-3 text-right text-[14px]">
                         {formatMoney(receipt.amount, receipt.decimals, receipt.currency)}
                       </td>
                     </tr>
@@ -308,7 +341,7 @@ export default function ReceivableDetailPage() {
           {data.notes ? (
             <Card className="p-5">
               <SectionTitle title="Notes" />
-              <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-muted">
+              <p className="mt-2 whitespace-pre-wrap text-[14px] leading-relaxed text-muted">
                 {data.notes}
               </p>
             </Card>
@@ -317,29 +350,29 @@ export default function ReceivableDetailPage() {
           <Card className="p-5">
             <SectionTitle title="Ledger postings" hint="Issue and reversal entries" />
             {ledger.loading ? (
-              <div className="mt-3 flex items-center gap-2 text-[12px] text-muted">
+              <div className="mt-3 flex items-center gap-2 text-[13px] text-muted">
                 <Spinner /> Loading postings
               </div>
-            ) : (ledger.data?.length ?? 0) === 0 ? (
-              <p className="mt-3 text-[12px] text-muted">
+            ) : (ledger.data?.items.length ?? 0) === 0 ? (
+              <p className="mt-3 text-[13px] text-muted">
                 Nothing posted yet. Issuing the invoice creates the AR entry.
               </p>
             ) : (
               <div className="mt-3 space-y-3">
-                {ledger.data?.map((entry) => (
+                {ledger.data?.items.map((entry) => (
                   <div key={entry._id} className="rounded-xl border border-line px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[12px] font-medium">{entry.memo}</p>
-                      <span className="text-[10px] uppercase tracking-wider text-muted">
+                      <p className="text-[13px] font-medium">{entry.memo}</p>
+                      <span className="text-[11px] uppercase tracking-wider text-muted">
                         {humanize(entry.event)}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-[10px] text-muted">{formatDate(entry.date)}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">{formatDate(entry.date)}</p>
                     <div className="mt-2 space-y-1">
                       {entry.lines.map((line, index) => (
                         <div
                           key={index}
-                          className="flex items-center justify-between text-[11px]"
+                          className="flex items-center justify-between text-[12px]"
                         >
                           <span className="text-muted">
                             {line.accountCode} · {line.accountName}
@@ -398,12 +431,12 @@ export default function ReceivableDetailPage() {
                   </Button>
                 ) : null}
                 {data.status === 'PAID' ? (
-                  <p className="flex items-center gap-1.5 text-[12px] text-mint">
+                  <p className="flex items-center gap-1.5 text-[13px] text-mint">
                     <ShieldCheck className="h-3.5 w-3.5" /> Fully collected
                   </p>
                 ) : null}
                 {!canReceipt && ['ISSUED', 'PARTIALLY_PAID'].includes(data.status) ? (
-                  <p className="text-[11px] text-muted">
+                  <p className="text-[12px] text-muted">
                     An APPROVER or ADMIN records receipts.
                   </p>
                 ) : null}
@@ -414,14 +447,14 @@ export default function ReceivableDetailPage() {
           {customer ? (
             <Card className="p-5">
               <SectionTitle title="Customer" />
-              <p className="mt-2 text-[13px] font-medium">{customer.name}</p>
-              <p className="text-[11px] text-muted">{customer.email}</p>
+              <p className="mt-2 text-[14px] font-medium">{customer.name}</p>
+              <p className="text-[12px] text-muted">{customer.email}</p>
             </Card>
           ) : null}
 
           <Card className="p-5">
             <SectionTitle title="Cash status" />
-            <div className="mt-3 space-y-2 text-[12px]">
+            <div className="mt-3 space-y-2 text-[13px]">
               <div className="flex justify-between text-muted">
                 <span>Total</span>
                 <span className="font-num">
@@ -676,7 +709,7 @@ function CollectionModal({
             ))}
           </Select>
           {tokens.loading ? (
-            <p className="mt-1 text-[10px] text-muted">Loading 1Click tokens…</p>
+            <p className="mt-1 text-[11px] text-muted">Loading 1Click tokens…</p>
           ) : null}
         </div>
         <div>
@@ -690,12 +723,12 @@ function CollectionModal({
         </div>
         {quote ? (
           <div className="space-y-2 rounded-xl border border-line bg-paper px-3 py-3">
-            <p className="text-[11px] font-medium">Send exactly</p>
-            <p className="font-num text-[13px]">
+            <p className="text-[12px] font-medium">Send exactly</p>
+            <p className="font-num text-[14px]">
               {quote.amountInFormatted} {quote.depositMemo ? `· memo ${quote.depositMemo}` : ''}
             </p>
             <div className="flex items-center gap-2">
-              <code className="font-num min-w-0 flex-1 truncate rounded-lg bg-surface px-2 py-1.5 text-[11px]">
+              <code className="font-num min-w-0 flex-1 truncate rounded-lg bg-surface px-2 py-1.5 text-[12px]">
                 {quote.depositAddress}
               </code>
               <button
@@ -707,7 +740,7 @@ function CollectionModal({
                 {copied ? <Check className="h-3.5 w-3.5 text-mint" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
             </div>
-            <p className="text-[10px] text-muted">
+            <p className="text-[11px] text-muted">
               Deposit before {quote.deadline ? new Date(quote.deadline).toLocaleString('en-US') : 'the quote expires'}.
               The receipt is recorded automatically after delivery.
             </p>

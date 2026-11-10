@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { ScrollText, Search } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { PageHeader } from '@/components/shell';
-import { Badge, Card, EmptyState, ErrorState, Input, Spinner } from '@/components/ui';
+import { Badge, Card, EmptyState, ErrorState, Input, TableSkeleton } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface AuditEntry {
@@ -55,9 +55,7 @@ export default function AuditPage() {
 
       <Card className="overflow-hidden">
         {audit.loading ? (
-          <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
-            <Spinner /> Loading audit log
-          </div>
+          <TableSkeleton rows={7} cols={5} />
         ) : audit.error ? (
           <ErrorState message={audit.error} onRetry={() => void audit.reload()} />
         ) : rows.length === 0 ? (
@@ -74,7 +72,7 @@ export default function AuditPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left">
               <thead>
-                <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-5 py-3 font-medium">When</th>
                   <th className="px-5 py-3 font-medium">Actor</th>
                   <th className="px-5 py-3 font-medium">Action</th>
@@ -85,7 +83,7 @@ export default function AuditPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map((entry) => (
-                  <tr key={entry._id} className="text-[12px] transition hover:bg-paper/60">
+                  <tr key={entry._id} className="text-[13px] transition hover:bg-paper/60">
                     <td className="whitespace-nowrap px-5 py-3 text-muted">
                       {new Date(entry.createdAt).toLocaleString('en-US')}
                     </td>
@@ -103,14 +101,14 @@ export default function AuditPage() {
                     <td className="px-5 py-3">
                       <span
                         className={cn(
-                          'font-num text-[11px] font-medium',
+                          'font-num text-[12px] font-medium',
                           entry.status >= 400 ? 'text-rose' : 'text-mint',
                         )}
                       >
                         {entry.status}
                       </span>
                     </td>
-                    <td className="font-num px-5 py-3 text-[11px] text-muted">{entry.ip ?? '—'}</td>
+                    <td className="font-num px-5 py-3 text-[12px] text-muted">{entry.ip ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

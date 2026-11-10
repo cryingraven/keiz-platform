@@ -6,6 +6,7 @@ import { useApi } from '@/lib/hooks';
 import { useAuth, type PasskeySummary } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/shell';
+import { useConfirm, useToast } from '@/components/feedback';
 import { Badge, Button, Card, Input, Label, Select, Spinner } from '@/components/ui';
 
 interface Collection {
@@ -39,6 +40,8 @@ export default function SettingsPage() {
   const [passkeys, setPasskeys] = useState<PasskeySummary[]>([]);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const reloadPasskeys = useCallback(async () => {
     try {
@@ -56,17 +59,24 @@ export default function SettingsPage() {
     setPasskeyError(null);
     await addPasskey();
     await reloadPasskeys();
+    toast('Passkey added');
   }
 
   async function remove(id: string) {
     const last = passkeys.length <= 1;
-    const message = last
-      ? 'This is your last passkey. Export your recovery key first. Remove it anyway?'
-      : 'Remove this passkey?';
-    if (!window.confirm(message)) return;
+    const ok = await confirm({
+      title: last ? 'Remove your last passkey?' : 'Remove this passkey?',
+      body: last
+        ? 'This is your last passkey. Export your recovery key first, or you may be locked out of this account.'
+        : 'Signing in with this passkey will stop working. Other passkeys are unaffected.',
+      confirmLabel: 'Remove passkey',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setPasskeyError(null);
     await removePasskey(id, last);
     await reloadPasskeys();
+    toast('Passkey removed');
   }
 
   async function exportKey() {
@@ -118,6 +128,7 @@ export default function SettingsPage() {
       });
       await collection.reload();
       setSaved(true);
+      toast('Collection contract saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not validate the collection contract');
     } finally {
@@ -148,12 +159,12 @@ export default function SettingsPage() {
             <p className="flex items-center gap-1.5 text-sm font-semibold">
               <Cable className="h-4 w-4 text-brand" /> AR collection contract
             </p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
               Each workspace uses its own <span className="font-num">keiz-collect</span> contract.
               The API validates the contract&apos;s org id, treasury, token allowlist and code hash
               before saving it.
             </p>
-            <p className="mt-1 font-num text-[10px] text-muted">
+            <p className="mt-1 font-num text-[11px] text-muted">
               Workspace id: {session?.org?.id ?? '—'}
             </p>
           </div>
@@ -253,7 +264,7 @@ export default function SettingsPage() {
                 </Button>
               </div>
             ) : (
-              <p className="text-[11px] text-muted">
+              <p className="text-[12px] text-muted">
                 Only an ADMIN or OWNER can change the collection contract.
               </p>
             )}
@@ -267,7 +278,7 @@ export default function SettingsPage() {
             <p className="flex items-center gap-1.5 text-sm font-semibold">
               <Fingerprint className="h-4 w-4 text-brand" /> Passkeys
             </p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
               A passkey signs you in and unlocks a NEAR key that exists only in your browser.
               Register a second passkey before removing the first one. Export the recovery key
               for a passkey account; a wallet account can always recover with its wallet.
@@ -275,7 +286,7 @@ export default function SettingsPage() {
               delete that key in the wallet if you want to revoke signing.
             </p>
             {session?.user ? (
-              <p className="mt-1 font-num text-[10px] text-muted">
+              <p className="mt-1 font-num text-[11px] text-muted">
                 Account: {session.user.accountId}
               </p>
             ) : null}
@@ -290,7 +301,7 @@ export default function SettingsPage() {
         ) : (
           <div className="mt-4 space-y-2">
             {passkeys.length === 0 ? (
-              <p className="text-[12px] text-muted">
+              <p className="text-[13px] text-muted">
                 No passkeys yet. Adding one from a wallet account asks the wallet to add the derived
                 key on-chain first.
               </p>
@@ -301,8 +312,8 @@ export default function SettingsPage() {
                   className="flex items-center justify-between gap-3 rounded-xl border border-line bg-paper px-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-num text-[11px]">{passkey.credentialId}</p>
-                    <p className="mt-0.5 text-[10px] text-muted">
+                    <p className="truncate font-num text-[12px]">{passkey.credentialId}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">
                       {passkey.deviceType ?? 'passkey'} · {passkey.backedUp ? 'synced' : 'this device'}
                       {passkey.lastUsedAt ? ` · used ${new Date(passkey.lastUsedAt).toLocaleDateString()}` : ''}
                     </p>
@@ -311,7 +322,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => void remove(passkey.id)}
                     disabled={passkeyBusy}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11px] text-muted transition hover:border-rose/30 hover:text-rose disabled:opacity-60"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[12px] text-muted transition hover:border-rose/30 hover:text-rose disabled:opacity-60"
                   >
                     <Trash2 className="h-3 w-3" /> Remove
                   </button>
@@ -330,14 +341,14 @@ export default function SettingsPage() {
 
             {recoveryKey ? (
               <div className="rounded-xl border border-amber/20 bg-amber-soft p-3">
-                <p className="text-[11px] font-medium text-amber">
+                <p className="text-[12px] font-medium text-amber">
                   Store this offline. Anyone with it controls the account.
                 </p>
                 <textarea
                   readOnly
                   value={recoveryKey}
                   rows={3}
-                  className="mt-2 w-full rounded-lg border border-amber/20 bg-white px-2 py-1.5 font-mono text-[10px] text-ink"
+                  className="mt-2 w-full rounded-lg border border-amber/20 bg-white px-2 py-1.5 font-mono text-[11px] text-ink"
                 />
               </div>
             ) : null}

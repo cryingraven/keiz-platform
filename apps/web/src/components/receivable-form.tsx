@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useToast } from './feedback';
 import { Button, Input, Label, Modal, Select, Textarea } from './ui';
 
 interface Customer {
@@ -55,6 +56,20 @@ export function ReceivableForm({
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+
+  useEffect(() => {
+    if (!open) return;
+    setCustomerId('');
+    setNumber(`AR-${Math.floor(2000 + Math.random() * 8000)}`);
+    setIssueDate(today());
+    setDueDate(inDays(14));
+    setCurrency('USD');
+    setTaxBps('0');
+    setNotes('');
+    setLines([emptyLine()]);
+    setError(null);
+  }, [open]);
 
   const preview = useMemo(() => {
     const subtotal = lines.reduce((sum, line) => {
@@ -109,6 +124,7 @@ export function ReceivableForm({
       setLines([emptyLine()]);
       setNotes('');
       setNumber(`AR-${Math.floor(2000 + Math.random() * 8000)}`);
+      toast('Customer invoice created');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the invoice');
     } finally {
@@ -198,37 +214,44 @@ export function ReceivableForm({
             <button
               type="button"
               onClick={() => setLines((current) => [...current, emptyLine()])}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
             >
               <Plus className="h-3 w-3" /> Add line
             </button>
           </div>
           <div className="space-y-2">
             {lines.map((line, index) => (
-              <div key={index} className="grid grid-cols-[1fr_64px_96px_28px] items-center gap-2">
+              <div
+                key={index}
+                className="grid grid-cols-[1fr_1fr_40px] items-center gap-2 rounded-control border border-line p-2 sm:grid-cols-[1fr_64px_96px_28px] sm:rounded-none sm:border-0 sm:p-0"
+              >
                 <Input
+                  className="col-span-3 sm:col-span-1"
                   placeholder="Description"
+                  aria-label={`Line ${index + 1} description`}
                   value={line.description}
                   onChange={(e) => updateLine(index, { description: e.target.value })}
                 />
                 <Input
                   placeholder="Qty"
+                  aria-label={`Line ${index + 1} quantity`}
                   value={line.quantity}
                   onChange={(e) => updateLine(index, { quantity: e.target.value })}
                 />
                 <Input
                   placeholder="Unit price"
+                  aria-label={`Line ${index + 1} unit price`}
                   value={line.unitPrice}
                   onChange={(e) => updateLine(index, { unitPrice: e.target.value })}
                 />
                 <button
                   type="button"
                   onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
-                  className="rounded-lg p-1.5 text-muted transition hover:bg-rose-soft hover:text-rose"
-                  aria-label="Remove line"
+                  className="justify-self-center rounded-lg p-2 text-muted transition hover:bg-rose-soft hover:text-rose disabled:opacity-40"
+                  aria-label={`Remove line ${index + 1}`}
                   disabled={lines.length === 1}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             ))}
@@ -246,11 +269,11 @@ export function ReceivableForm({
         </div>
 
         <div className="rounded-xl bg-paper px-4 py-3">
-          <div className="flex items-center justify-between text-[12px] text-muted">
+          <div className="flex items-center justify-between text-[13px] text-muted">
             <span>Subtotal</span>
             <span className="font-num">{preview.subtotal.toFixed(2)}</span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[12px] text-muted">
+          <div className="mt-1 flex items-center justify-between text-[13px] text-muted">
             <span>Tax</span>
             <span className="font-num">{preview.tax.toFixed(2)}</span>
           </div>
@@ -299,6 +322,16 @@ export function CustomerForm({
   const [billingAddress, setBillingAddress] = useState(customer?.billingAddress ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+
+  useEffect(() => {
+    if (!open) return;
+    setName(customer?.name ?? '');
+    setEmail(customer?.email ?? '');
+    setTaxId(customer?.taxId ?? '');
+    setBillingAddress(customer?.billingAddress ?? '');
+    setError(null);
+  }, [open, customer]);
 
   async function submit() {
     setBusy(true);
@@ -315,6 +348,7 @@ export function CustomerForm({
       });
       onCreated();
       onClose();
+      toast(isEdit ? 'Customer updated' : 'Customer added');
       if (!isEdit) {
         setName('');
         setEmail('');

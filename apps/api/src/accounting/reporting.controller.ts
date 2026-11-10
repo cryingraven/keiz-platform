@@ -33,7 +33,7 @@ export class ReportingController {
     @Res() res: Response,
   ) {
     const report = await this.reporting.build(user.orgId, query);
-    const file = await this.exporter.export(report, query.format);
+    const file = await this.exporter.export(report, query.format, query.report);
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
     res.setHeader('Cache-Control', 'no-store');

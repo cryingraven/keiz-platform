@@ -9,7 +9,7 @@ import { formatDate, shortAddress, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { DateRangeFilter } from '@/components/date-range-filter';
 import { NearIntentsLogo } from '@/components/landing/logos';
-import { Badge, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { Badge, Card, EmptyState, ErrorState, SectionTitle, StatusPill, TableSkeleton } from '@/components/ui';
 
 interface Payment {
   _id: string;
@@ -63,7 +63,7 @@ export default function PaymentsPage() {
         description="Every quote, deposit and settlement, straight from the ledger."
         actions={
           <div className="hidden items-center gap-2 sm:flex">
-            <span className="text-[10px] uppercase tracking-wider text-muted">Settled by</span>
+            <span className="text-[11px] uppercase tracking-wider text-muted">Settled by</span>
             <NearIntentsLogo />
           </div>
         }
@@ -96,9 +96,7 @@ export default function PaymentsPage() {
         </div>
 
         {payments.loading ? (
-          <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
-            <Spinner /> Loading payments
-          </div>
+          <TableSkeleton rows={6} cols={5} />
         ) : payments.error ? (
           <ErrorState message={payments.error} onRetry={() => void payments.reload()} />
         ) : (payments.data?.length ?? 0) === 0 ? (
@@ -108,10 +106,37 @@ export default function PaymentsPage() {
             body="Open an approved invoice and request a quote to create the first settlement."
           />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <ul className="divide-y divide-line md:hidden">
+            {(payments.data ?? []).map((payment) => (
+              <li key={payment._id}>
+                <Link
+                  href={`/dashboard/invoices/${payment.invoiceId}`}
+                  className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-paper/60"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-num text-[14px] font-medium">
+                      {invoiceNumbers.get(payment.invoiceId) ?? shortAddress(payment.invoiceId, 4)}
+                    </p>
+                    <p className="truncate text-[12px] text-muted">
+                      {payment.originSymbol ?? 'USDC'} → {payment.destinationSymbol ?? 'USDC'} on{' '}
+                      {payment.destinationChain ?? 'near'}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-num text-[14px]">{payment.amountOutFormatted ?? '—'}</p>
+                    <div className="mt-1 flex justify-end">
+                      <StatusPill status={payment.status} />
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[760px] text-left">
               <thead>
-                <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-5 py-3 font-medium">Invoice</th>
                   <th className="px-5 py-3 font-medium">Route</th>
                   <th className="px-5 py-3 text-right font-medium">Vendor receives</th>
@@ -126,27 +151,27 @@ export default function PaymentsPage() {
                     <td className="px-5 py-3.5">
                       <Link
                         href={`/dashboard/invoices/${payment.invoiceId}`}
-                        className="font-num text-[13px] font-medium group-hover:text-brand"
+                        className="font-num text-[14px] font-medium group-hover:text-brand"
                       >
                         {invoiceNumbers.get(payment.invoiceId) ?? shortAddress(payment.invoiceId, 4)}
                       </Link>
-                      <p className="text-[10px] text-muted">
+                      <p className="text-[11px] text-muted">
                         {payment.payer === 'AGENT' ? 'Agent wallet' : 'Human'} · {payment.provider}
                       </p>
                     </td>
-                    <td className="px-5 py-3.5 text-[12px]">
+                    <td className="px-5 py-3.5 text-[13px]">
                       <span className="font-medium">{payment.originSymbol ?? 'USDC'}</span>
                       <span className="text-muted"> → </span>
                       <span className="font-medium">{payment.destinationSymbol ?? 'USDC'}</span>
                       <span className="text-muted"> on {payment.destinationChain ?? 'near'}</span>
                     </td>
-                    <td className="font-num px-5 py-3.5 text-right text-[13px]">
+                    <td className="font-num px-5 py-3.5 text-right text-[14px]">
                       {payment.amountOutFormatted ?? '—'}
                     </td>
                     <td className="px-5 py-3.5">
                       <StatusPill status={payment.status} />
                     </td>
-                    <td className="px-5 py-3.5 text-[11px] text-muted">
+                    <td className="px-5 py-3.5 text-[12px] text-muted">
                       {['AWAITING_DEPOSIT', 'PROCESSING'].includes(payment.status)
                         ? timeLeft(payment.deadline)
                         : formatDate(payment.createdAt)}
@@ -161,6 +186,7 @@ export default function PaymentsPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
@@ -173,7 +199,7 @@ export default function PaymentsPage() {
           <Boxes className="h-4 w-4 text-muted" />
         </div>
         {(events.data?.length ?? 0) === 0 ? (
-          <div className="px-5 py-6 text-[12px] text-muted">
+          <div className="px-5 py-6 text-[13px] text-muted">
             No on-chain events indexed yet. In <span className="font-num">intents</span> mode the
             indexer reads deposits through NEAR RPC and stores a normalised row here. Mock payments
             are intentionally skipped.
@@ -183,12 +209,12 @@ export default function PaymentsPage() {
             {(events.data ?? []).map((event) => (
               <li key={event._id} className="flex items-center gap-3 px-5 py-3">
                 <span className="h-1.5 w-1.5 rounded-full bg-mint" />
-                <span className="text-[12px] font-medium">{event.kind}</span>
-                <span className="font-num truncate text-[11px] text-muted">{event.txHash}</span>
-                <span className="ml-auto text-[11px]">
+                <span className="text-[13px] font-medium">{event.kind}</span>
+                <span className="font-num truncate text-[12px] text-muted">{event.txHash}</span>
+                <span className="ml-auto text-[12px]">
                   <StatusPill status={event.status ?? 'SUCCEEDED'} />
                 </span>
-                <span className="w-28 text-right text-[10px] text-muted">
+                <span className="w-28 text-right text-[11px] text-muted">
                   {formatDate(event.observedAt)}
                 </span>
               </li>
@@ -203,9 +229,9 @@ export default function PaymentsPage() {
 function MiniStat({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <Card className="p-4">
-      <p className="text-[10px] uppercase tracking-wider text-muted">{label}</p>
+      <p className="text-[11px] uppercase tracking-wider text-muted">{label}</p>
       <p className="font-num mt-1 text-xl font-semibold">{value}</p>
-      <p className="mt-0.5 text-[10px] text-muted">{hint}</p>
+      <p className="mt-0.5 text-[11px] text-muted">{hint}</p>
     </Card>
   );
 }

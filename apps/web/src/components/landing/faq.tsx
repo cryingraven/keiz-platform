@@ -90,37 +90,37 @@ export function FaqSection() {
     <section id="faq" className="scroll-mt-24 border-b border-line bg-surface">
       <div className="mx-auto max-w-6xl gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
         <div className="w-full">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-brand">FAQ</p>
+          <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-brand">FAQ</p>
           <h2 className="mt-3 text-balance text-[28px] font-semibold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
             The short version.
           </h2>
-          <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-muted">
+          <p className="mt-3 max-w-sm text-[14px] leading-relaxed text-muted">
             The questions finance teams ask before they move their bills and invoices into one
             place.
           </p>
 
           <div className="mt-7 rounded-2xl border border-line bg-paper/60 p-5">
-            <p className="text-[12px] font-medium">Still have a question?</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            <p className="text-[13px] font-medium">Still have a question?</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
               Ask the assistant about your own workspace, or open the demo and click through it.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link
                 href="/dashboard/chat"
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[12px] font-medium text-white transition hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-white transition hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
               >
                 Ask the assistant <ArrowRight className="h-3.5 w-3.5" />
               </Link>
               <Link
                 href="/dashboard"
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-4 text-[12px] font-medium text-ink transition hover:border-ink/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-line-strong bg-surface px-4 text-[13px] font-medium text-ink transition hover:border-ink/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
               >
                 Open the workspace
               </Link>
             </div>
             <a
               href="#privacy"
-              className="mt-4 inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
+              className="mt-4 inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
             >
               Trust &amp; privacy <ArrowUpRight className="h-3 w-3" />
             </a>
@@ -131,10 +131,10 @@ export function FaqSection() {
           {FAQ_GROUPS.map((group, groupIndex) => (
             <div key={group.label}>
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted">
+                <h3 className="text-[12px] font-medium uppercase tracking-[0.18em] text-muted">
                   {group.label}
                 </h3>
-                <span className="font-num text-[10px] text-muted">
+                <span className="font-num text-[11px] text-muted">
                   {String(groupIndex + 1).padStart(2, '0')}
                 </span>
               </div>
@@ -151,7 +151,7 @@ export function FaqSection() {
                       {item.q}
                       <ChevronDown className="details-chevron mt-0.5 h-4 w-4 shrink-0 text-muted transition" />
                     </summary>
-                    <p className="max-w-2xl pb-4 text-[13px] leading-relaxed text-muted">{item.a}</p>
+                    <p className="max-w-2xl pb-4 text-[14px] leading-relaxed text-muted">{item.a}</p>
                   </details>
                 ))}
               </div>

@@ -11,7 +11,7 @@ import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { DateRangeFilter } from '@/components/date-range-filter';
 import { CustomerForm, ReceivableForm } from '@/components/receivable-form';
-import { Button, Card, EmptyState, ErrorState, Input, Spinner, StatusPill } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Input, StatusPill, TableSkeleton } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface Receivable {
@@ -118,33 +118,33 @@ export default function ReceivablesPage() {
 
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <Card className="p-4">
-          <p className="text-[10px] uppercase tracking-wider text-muted">Outstanding</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted">Outstanding</p>
           <p className="font-num mt-1.5 text-xl font-semibold">
             {summary.data
               ? formatMoney(summary.data.outstanding, summary.data.decimals, summary.data.currency)
               : '—'}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted">
+          <p className="mt-0.5 text-[12px] text-muted">
             {summary.data?.openCount ?? 0} open invoice(s)
           </p>
         </Card>
         <Card className="p-4">
-          <p className="text-[10px] uppercase tracking-wider text-muted">Overdue</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted">Overdue</p>
           <p className="font-num mt-1.5 text-xl font-semibold text-rose">
             {summary.data
               ? formatMoney(summary.data.overdue, summary.data.decimals, summary.data.currency)
               : '—'}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted">Past the due date</p>
+          <p className="mt-0.5 text-[12px] text-muted">Past the due date</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[10px] uppercase tracking-wider text-muted">Collected</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted">Collected</p>
           <p className="font-num mt-1.5 text-xl font-semibold text-mint">
             {summary.data
               ? formatMoney(summary.data.collected, summary.data.decimals, summary.data.currency)
               : '—'}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted">Recorded receipts</p>
+          <p className="mt-0.5 text-[12px] text-muted">Recorded receipts</p>
         </Card>
       </div>
 
@@ -161,8 +161,9 @@ export default function ReceivablesPage() {
               <button
                 key={item}
                 onClick={() => setFilter(item)}
+                aria-pressed={filter === item}
                 className={cn(
-                  'rounded-full border px-3 py-1.5 text-[11px] font-medium transition',
+                  'rounded-full border px-3 py-1.5 text-[12px] font-medium transition',
                   filter === item
                     ? 'border-ink bg-ink text-white'
                     : 'border-line bg-surface text-muted hover:border-line-strong hover:text-ink',
@@ -198,9 +199,7 @@ export default function ReceivablesPage() {
 
       <Card className="overflow-hidden">
         {receivables.loading ? (
-          <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
-            <Spinner /> Loading receivables
-          </div>
+          <TableSkeleton rows={6} cols={5} />
         ) : receivables.error ? (
           <ErrorState message={receivables.error} onRetry={() => void receivables.reload()} />
         ) : rows.length === 0 ? (
@@ -229,10 +228,39 @@ export default function ReceivablesPage() {
             }
           />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <ul className="divide-y divide-line md:hidden">
+            {rows.map((row) => {
+              const outstanding = BigInt(row.total) - BigInt(row.paidAmount);
+              return (
+                <li key={row._id}>
+                  <Link
+                    href={`/dashboard/receivables/${row._id}`}
+                    className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-paper/60"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-num text-[14px] font-medium">{row.number}</p>
+                      <p className="truncate text-[12px] text-muted">
+                        {customerNames.get(row.customerId) ?? '—'} · due {formatDate(row.dueDate)}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="font-num text-[14px]">
+                        {formatMoney(outstanding.toString(), row.decimals, row.currency)}
+                      </p>
+                      <div className="mt-1 flex justify-end">
+                        <StatusPill status={isOverdue(row) ? 'OVERDUE' : row.status} />
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] text-left">
               <thead>
-                <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-5 py-3 font-medium">Invoice</th>
                   <th className="px-5 py-3 font-medium">Customer</th>
                   <th className="px-5 py-3 font-medium">Due</th>
@@ -250,21 +278,21 @@ export default function ReceivablesPage() {
                       <td className="px-5 py-3.5">
                         <Link
                           href={`/dashboard/receivables/${row._id}`}
-                          className="font-num text-[13px] font-medium group-hover:text-brand"
+                          className="font-num text-[14px] font-medium group-hover:text-brand"
                         >
                           {row.number}
                         </Link>
                       </td>
-                      <td className="px-5 py-3.5 text-[13px] text-muted">
+                      <td className="px-5 py-3.5 text-[14px] text-muted">
                         {customerNames.get(row.customerId) ?? '—'}
                       </td>
-                      <td className="px-5 py-3.5 text-[12px] text-muted">
+                      <td className="px-5 py-3.5 text-[13px] text-muted">
                         {formatDate(row.dueDate)}
                       </td>
-                      <td className="font-num px-5 py-3.5 text-right text-[13px]">
+                      <td className="font-num px-5 py-3.5 text-right text-[14px]">
                         {formatMoney(row.total, row.decimals, row.currency)}
                       </td>
-                      <td className="font-num px-5 py-3.5 text-right text-[13px]">
+                      <td className="font-num px-5 py-3.5 text-right text-[14px]">
                         {formatMoney(outstanding.toString(), row.decimals, row.currency)}
                       </td>
                       <td className="px-5 py-3.5">
@@ -281,6 +309,7 @@ export default function ReceivablesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 

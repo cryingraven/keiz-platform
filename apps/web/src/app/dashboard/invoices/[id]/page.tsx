@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
-  ArrowLeft,
   Check,
+  ChevronRight,
   CircleSlash,
   FileText,
   Pencil,
@@ -16,7 +16,8 @@ import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
-import { Button, Card, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { useConfirm, useToast } from '@/components/feedback';
+import { Button, Card, ProgressSteps, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 import { InvoiceForm } from '@/components/invoice-form';
 import { PayPanel } from '@/components/pay-panel';
 
@@ -65,6 +66,8 @@ export default function InvoiceDetailPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const confirm = useConfirm();
+  const toast = useToast();
   const { session } = useAuth();
   const role = session?.role ?? 'MEMBER';
   const canApprove = ['APPROVER', 'ADMIN', 'OWNER'].includes(role);
@@ -74,8 +77,24 @@ export default function InvoiceDetailPage() {
 
   async function act(action: 'submit' | 'approve' | 'reject' | 'void') {
     if (!invoice.data) return;
-    if (action === 'void' && !window.confirm('Void this invoice?')) return;
-    if (action === 'reject' && !window.confirm('Reject this invoice?')) return;
+    if (action === 'void') {
+      const ok = await confirm({
+        title: 'Void this bill?',
+        body: `Bill ${invoice.data.number} will be voided and its payable reversed in the ledger.`,
+        confirmLabel: 'Void bill',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    if (action === 'reject') {
+      const ok = await confirm({
+        title: 'Reject this bill?',
+        body: `Bill ${invoice.data.number} goes back to the creator. The approval trail records the rejection.`,
+        confirmLabel: 'Reject bill',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
     setBusy(action);
     setError(null);
     try {
@@ -92,6 +111,16 @@ export default function InvoiceDetailPage() {
         });
       }
       await invoice.reload();
+      toast(
+        action === 'submit'
+          ? 'Bill submitted for approval'
+          : action === 'approve'
+            ? 'Bill approved'
+            : action === 'reject'
+              ? 'Bill rejected'
+              : 'Bill voided',
+        action === 'reject' || action === 'void' ? 'info' : 'success',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
@@ -126,15 +155,28 @@ export default function InvoiceDetailPage() {
   const canPay = data.status === 'APPROVED';
   const canVoid =
     canAdmin && !['PAID', 'VOID', 'PAYMENT_PENDING'].includes(data.status);
+  const stepIndex =
+    data.status === 'PAID'
+      ? 3
+      : data.status === 'PAYMENT_PENDING' || data.status === 'APPROVED'
+        ? 2
+        : data.status === 'SUBMITTED'
+          ? 1
+          : 0;
 
   return (
     <div>
-      <Link
-        href="/dashboard/invoices"
-        className="mb-5 inline-flex items-center gap-1.5 text-[12px] text-muted transition hover:text-ink"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Bills
-      </Link>
+      <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1.5 text-[12px] text-muted">
+        <Link href="/dashboard" className="transition hover:text-ink">
+          Workspace
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <Link href="/dashboard/invoices" className="transition hover:text-ink">
+          Bills
+        </Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="font-num font-medium text-ink">{data.number}</span>
+      </nav>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -148,12 +190,16 @@ export default function InvoiceDetailPage() {
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wider text-muted">Total</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted">Total</p>
           <p className="font-num text-2xl font-semibold">
             {formatMoney(data.total, data.decimals, data.currency)}
           </p>
         </div>
       </div>
+
+      <Card className="mb-4 overflow-x-auto px-4 py-3 scroll-thin">
+        <ProgressSteps labels={['Draft', 'Submitted', 'Approved', 'Paid']} current={stepIndex} />
+      </Card>
 
       {error ? (
         <p className="mb-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
@@ -169,7 +215,7 @@ export default function InvoiceDetailPage() {
             </div>
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-5 py-2.5 font-medium">Description</th>
                   <th className="px-5 py-2.5 text-right font-medium">Qty</th>
                   <th className="px-5 py-2.5 text-right font-medium">Unit</th>
@@ -179,21 +225,21 @@ export default function InvoiceDetailPage() {
               <tbody className="divide-y divide-line">
                 {data.lineItems.map((line, index) => (
                   <tr key={index}>
-                    <td className="px-5 py-3 text-[13px]">{line.description}</td>
-                    <td className="font-num px-5 py-3 text-right text-[12px] text-muted">
+                    <td className="px-5 py-3 text-[14px]">{line.description}</td>
+                    <td className="font-num px-5 py-3 text-right text-[13px] text-muted">
                       {line.quantity}
                     </td>
-                    <td className="font-num px-5 py-3 text-right text-[12px] text-muted">
+                    <td className="font-num px-5 py-3 text-right text-[13px] text-muted">
                       {line.unitPrice}
                     </td>
-                    <td className="font-num px-5 py-3 text-right text-[13px]">
+                    <td className="font-num px-5 py-3 text-right text-[14px]">
                       {formatMoney(line.lineTotal, data.decimals, data.currency)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="space-y-1.5 border-t border-line px-5 py-4 text-[12px]">
+            <div className="space-y-1.5 border-t border-line px-5 py-4 text-[13px]">
               <div className="flex justify-between text-muted">
                 <span>Subtotal</span>
                 <span className="font-num">
@@ -206,7 +252,7 @@ export default function InvoiceDetailPage() {
                   {formatMoney(data.taxAmount, data.decimals, data.currency)}
                 </span>
               </div>
-              <div className="flex justify-between border-t border-line pt-2 text-[13px] font-semibold">
+              <div className="flex justify-between border-t border-line pt-2 text-[14px] font-semibold">
                 <span>Total</span>
                 <span className="font-num">
                   {formatMoney(data.total, data.decimals, data.currency)}
@@ -218,7 +264,7 @@ export default function InvoiceDetailPage() {
           {data.notes ? (
             <Card className="p-5">
               <SectionTitle title="Notes" />
-              <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-muted">
+              <p className="mt-2 whitespace-pre-wrap text-[14px] leading-relaxed text-muted">
                 {data.notes}
               </p>
             </Card>
@@ -227,7 +273,7 @@ export default function InvoiceDetailPage() {
           <Card className="p-5">
             <SectionTitle title="Approval trail" hint="Append-only record" />
             {data.approvals.length === 0 ? (
-              <p className="mt-3 text-[12px] text-muted">No decisions recorded yet.</p>
+              <p className="mt-3 text-[13px] text-muted">No decisions recorded yet.</p>
             ) : (
               <ul className="mt-3 space-y-2.5">
                 {data.approvals.map((approval, index) => (
@@ -246,15 +292,15 @@ export default function InvoiceDetailPage() {
                       )}
                     </span>
                     <div>
-                      <p className="text-[12px] font-medium">
+                      <p className="text-[13px] font-medium">
                         {humanize(approval.decision)} ·{' '}
                         <span className="font-num text-muted">{approval.accountId}</span>
                       </p>
-                      <p className="text-[10px] text-muted">
+                      <p className="text-[11px] text-muted">
                         {new Date(approval.at).toLocaleString('en-US')}
                       </p>
                       {approval.comment ? (
-                        <p className="mt-0.5 text-[11px] text-muted">{approval.comment}</p>
+                        <p className="mt-0.5 text-[12px] text-muted">{approval.comment}</p>
                       ) : null}
                     </div>
                   </li>
@@ -317,7 +363,7 @@ export default function InvoiceDetailPage() {
                   </Button>
                 ) : null}
                 {data.status === 'PAID' ? (
-                  <p className="flex items-center gap-1.5 text-[12px] text-mint">
+                  <p className="flex items-center gap-1.5 text-[13px] text-mint">
                     <ShieldCheck className="h-3.5 w-3.5" /> Paid
                     {data.paidAt ? ` on ${formatDate(data.paidAt)}` : ''}
                   </p>
@@ -329,12 +375,12 @@ export default function InvoiceDetailPage() {
           {vendor ? (
             <Card className="p-5">
               <SectionTitle title="Vendor" />
-              <p className="mt-2 text-[13px] font-medium">{vendor.name}</p>
-              <p className="text-[11px] text-muted">{vendor.email}</p>
+              <p className="mt-2 text-[14px] font-medium">{vendor.name}</p>
+              <p className="text-[12px] text-muted">{vendor.email}</p>
               <div className="mt-3 rounded-xl bg-paper px-3 py-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Payout</p>
-                <p className="mt-0.5 text-[12px] font-medium capitalize">{vendor.payoutChain}</p>
-                <p className="font-num mt-0.5 truncate text-[11px] text-muted">
+                <p className="text-[11px] uppercase tracking-wider text-muted">Payout</p>
+                <p className="mt-0.5 text-[13px] font-medium capitalize">{vendor.payoutChain}</p>
+                <p className="font-num mt-0.5 truncate text-[12px] text-muted">
                   {vendor.payoutAddress}
                 </p>
               </div>
@@ -351,7 +397,7 @@ export default function InvoiceDetailPage() {
             <Card className="p-5">
               <div className="flex items-center gap-2 text-muted">
                 <FileText className="h-4 w-4" />
-                <p className="text-[12px]">
+                <p className="text-[13px]">
                   Settlement unlocks once the invoice is approved.
                 </p>
               </div>

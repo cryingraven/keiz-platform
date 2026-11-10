@@ -1,6 +1,6 @@
 import { ApiError } from './api';
 
-/** Download a binary API response (PDF/XLSX) through the same-origin proxy. */
+/** Download a file response (PDF/XLSX/CSV) through the same-origin proxy. */
 export async function downloadApiFile(path: string): Promise<void> {
   const response = await fetch(`/api${path}`, { credentials: 'include' });
   if (!response.ok) {

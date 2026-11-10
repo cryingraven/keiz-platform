@@ -11,7 +11,7 @@ import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { DateRangeFilter } from '@/components/date-range-filter';
 import { InvoiceForm } from '@/components/invoice-form';
-import { Button, Card, EmptyState, ErrorState, Input, Spinner, StatusPill } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Input, StatusPill, TableSkeleton } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
 interface Invoice {
@@ -100,8 +100,9 @@ export default function InvoicesPage() {
               <button
                 key={item}
                 onClick={() => setFilter(item)}
+                aria-pressed={filter === item}
                 className={cn(
-                  'rounded-full border px-3 py-1.5 text-[11px] font-medium transition',
+                  'rounded-full border px-3 py-1.5 text-[12px] font-medium transition',
                   filter === item
                     ? 'border-ink bg-ink text-white'
                     : 'border-line bg-surface text-muted hover:border-line-strong hover:text-ink',
@@ -137,9 +138,7 @@ export default function InvoicesPage() {
 
       <Card className="overflow-hidden">
         {invoices.loading ? (
-          <div className="flex items-center gap-2 px-5 py-10 text-sm text-muted">
-            <Spinner /> Loading invoices
-          </div>
+          <TableSkeleton rows={6} cols={5} />
         ) : invoices.error ? (
           <ErrorState message={invoices.error} onRetry={() => void invoices.reload()} />
         ) : rows.length === 0 ? (
@@ -168,10 +167,36 @@ export default function InvoicesPage() {
             }
           />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <ul className="divide-y divide-line md:hidden">
+            {rows.map((invoice) => (
+              <li key={invoice._id}>
+                <Link
+                  href={`/dashboard/invoices/${invoice._id}`}
+                  className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-paper/60"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-num text-[14px] font-medium">{invoice.number}</p>
+                    <p className="truncate text-[12px] text-muted">
+                      {vendorNames.get(invoice.vendorId) ?? '—'} · due {formatDate(invoice.dueDate)}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-num text-[14px]">
+                      {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
+                    </p>
+                    <div className="mt-1 flex justify-end">
+                      <StatusPill status={invoice.status} />
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[680px] text-left">
               <thead>
-                <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-5 py-3 font-medium">Invoice</th>
                   <th className="px-5 py-3 font-medium">Vendor</th>
                   <th className="px-5 py-3 font-medium">Due</th>
@@ -186,18 +211,18 @@ export default function InvoicesPage() {
                     <td className="px-5 py-3.5">
                       <Link
                         href={`/dashboard/invoices/${invoice._id}`}
-                        className="font-num text-[13px] font-medium group-hover:text-brand"
+                        className="font-num text-[14px] font-medium group-hover:text-brand"
                       >
                         {invoice.number}
                       </Link>
                     </td>
-                    <td className="px-5 py-3.5 text-[13px] text-muted">
+                    <td className="px-5 py-3.5 text-[14px] text-muted">
                       {vendorNames.get(invoice.vendorId) ?? '—'}
                     </td>
-                    <td className="px-5 py-3.5 text-[12px] text-muted">
+                    <td className="px-5 py-3.5 text-[13px] text-muted">
                       {formatDate(invoice.dueDate)}
                     </td>
-                    <td className="font-num px-5 py-3.5 text-right text-[13px]">
+                    <td className="font-num px-5 py-3.5 text-right text-[14px]">
                       {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
                     </td>
                     <td className="px-5 py-3.5">
@@ -213,6 +238,7 @@ export default function InvoicesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 

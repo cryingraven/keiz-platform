@@ -37,7 +37,8 @@ export function ReportPeriodFilter({
             key={mode.value}
             type="button"
             onClick={() => chooseMode(mode.value)}
-            className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+            aria-pressed={value.mode === mode.value}
+            className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition ${
               value.mode === mode.value
                 ? 'bg-ink text-white'
                 : 'text-muted hover:text-ink'
@@ -113,7 +114,7 @@ export function ReportPeriodFilter({
             onChange={(event) => onChange({ ...value, from: event.target.value })}
             className="w-auto"
           />
-          <span className="text-[11px] text-muted">to</span>
+          <span className="text-[12px] text-muted">to</span>
           <Input
             type="date"
             aria-label="Report to date"
@@ -124,7 +125,7 @@ export function ReportPeriodFilter({
         </>
       ) : null}
 
-      <span className="text-[11px] text-muted">{reportPeriodLabel(value)}</span>
+      <span className="text-[12px] text-muted">{reportPeriodLabel(value)}</span>
     </div>
   );
 }

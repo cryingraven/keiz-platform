@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/shell';
 import { CustomerForm, type CustomerRecord } from '@/components/receivable-form';
+import { useConfirm, useToast } from '@/components/feedback';
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Spinner } from '@/components/ui';
 
 interface CustomerRow extends CustomerRecord {
@@ -29,6 +30,8 @@ export default function CustomersPage() {
   const [editing, setEditing] = useState<CustomerRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -59,11 +62,18 @@ export default function CustomersPage() {
   }
 
   async function archive(customer: CustomerRow) {
-    if (!window.confirm(`Archive ${customer.name}? Existing invoices keep their history.`)) return;
+    const ok = await confirm({
+      title: `Archive ${customer.name}?`,
+      body: 'Existing invoices keep their history. You can restore the customer from the archived view.',
+      confirmLabel: 'Archive customer',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setError(null);
     try {
       await api(`/customers/${customer._id}`, { method: 'DELETE' });
       await customers.reload();
+      toast('Customer archived');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not archive the customer');
     }
@@ -74,6 +84,7 @@ export default function CustomersPage() {
     try {
       await api(`/customers/${customer._id}/restore`, { method: 'POST' });
       await customers.reload();
+      toast('Customer restored');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not restore the customer');
     }
@@ -191,17 +202,17 @@ export default function CustomersPage() {
                 </div>
               </div>
               <h3 className="mt-3 text-[15px] font-semibold tracking-tight">{customer.name}</h3>
-              <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
+              <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted">
                 <Mail className="h-3 w-3" /> {customer.email}
               </p>
-              <p className="mt-2 text-[11px] text-muted">
+              <p className="mt-2 text-[12px] text-muted">
                 {counts.get(customer._id) ?? 0} receivable
                 {(counts.get(customer._id) ?? 0) === 1 ? '' : 's'}
               </p>
               {customer.taxId || customer.billingAddress ? (
                 <div className="mt-4 space-y-1 rounded-xl bg-paper px-3 py-2.5">
                   {customer.taxId ? (
-                    <p className="text-[10px] uppercase tracking-wider text-muted">
+                    <p className="text-[11px] uppercase tracking-wider text-muted">
                       Tax ID ·{' '}
                       <span className="font-num normal-case tracking-normal text-ink">
                         {customer.taxId}
@@ -209,7 +220,7 @@ export default function CustomersPage() {
                     </p>
                   ) : null}
                   {customer.billingAddress ? (
-                    <p className="text-[10px] uppercase tracking-wider text-muted">
+                    <p className="text-[11px] uppercase tracking-wider text-muted">
                       Billing address ·{' '}
                       <span className="normal-case tracking-normal text-ink">
                         {customer.billingAddress}

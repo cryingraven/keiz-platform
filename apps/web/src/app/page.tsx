@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { FaqSection } from '@/components/landing/faq';
+import { MobileNav } from '@/components/landing/mobile-nav';
 import {
   LogoStrip,
   NearAiLogo,
@@ -82,13 +83,13 @@ const TIMELINE = [
 
 function Eyebrow({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-brand">{children}</p>
+    <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-brand">{children}</p>
   );
 }
 
 function StatusFlow({ steps }: { steps: string[] }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted">
+    <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
       {steps.map((step, index) => (
         <span key={step} className="inline-flex items-center gap-2">
           {index > 0 ? <span className="text-line-strong">/</span> : null}
@@ -120,7 +121,7 @@ function PrivacyCard({
         )}
       </div>
       <h3 className="mt-4 text-[15px] font-semibold tracking-tight">{title}</h3>
-      <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{body}</p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{body}</p>
     </div>
   );
 }
@@ -130,9 +131,10 @@ export default function LandingPage() {
     <div className="min-h-screen overflow-x-clip bg-paper">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-3 md:gap-8">
             <Logo />
-            <nav className="hidden items-center gap-4 text-[13px] text-muted md:flex lg:gap-6">
+            <MobileNav />
+            <nav className="hidden items-center gap-4 text-[14px] text-muted md:flex lg:gap-6">
               <a href="#product" className="transition hover:text-ink">
                 Product
               </a>
@@ -153,13 +155,13 @@ export default function LandingPage() {
           <div className="flex shrink-0 items-center gap-3">
             <Link
               href="/login"
-              className="hidden text-[13px] font-medium text-muted transition hover:text-ink lg:block"
+              className="hidden text-[14px] font-medium text-muted transition hover:text-ink lg:block"
             >
               Sign in
             </Link>
             <Link
               href="/dashboard"
-              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-3 text-[13px] font-medium text-white transition hover:bg-ink-soft sm:px-4"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-3 text-[14px] font-medium text-white transition hover:bg-ink-soft sm:px-4"
             >
               Open workspace <ArrowRight className="hidden h-3.5 w-3.5 sm:block" />
             </Link>
@@ -198,7 +200,7 @@ export default function LandingPage() {
                   See how it works
                 </a>
               </div>
-              <ul className="mt-8 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-muted sm:gap-x-5">
+              <ul className="mt-8 flex flex-wrap gap-x-4 gap-y-2 text-[12px] text-muted sm:gap-x-5">
                 {TRUST.map((item) => (
                   <li key={item.label} className="inline-flex items-center gap-1.5">
                     <item.icon className="h-3.5 w-3.5" />
@@ -232,12 +234,12 @@ export default function LandingPage() {
                   <span className="grid h-9 w-9 place-items-center rounded-xl bg-paper text-ink">
                     <FileText className="h-4 w-4" />
                   </span>
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted">
+                  <span className="text-[12px] font-medium uppercase tracking-wider text-muted">
                     Bills (AP)
                   </span>
                 </div>
                 <h3 className="mt-4 text-xl font-semibold tracking-tight">From inbox to paid.</h3>
-                <p className="mt-2 max-w-md text-[13px] leading-relaxed text-muted">
+                <p className="mt-2 max-w-md text-[14px] leading-relaxed text-muted">
                   Add a vendor bill, route it to the right approver, and pay it in the currency and
                   chain the vendor asks for. When it settles, the expense and the payable are
                   already posted.
@@ -253,12 +255,12 @@ export default function LandingPage() {
                   <span className="grid h-9 w-9 place-items-center rounded-xl bg-paper text-ink">
                     <HandCoins className="h-4 w-4" />
                   </span>
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted">
+                  <span className="text-[12px] font-medium uppercase tracking-wider text-muted">
                     Invoices (AR)
                   </span>
                 </div>
                 <h3 className="mt-4 text-xl font-semibold tracking-tight">From sent to settled.</h3>
-                <p className="mt-2 max-w-md text-[13px] leading-relaxed text-muted">
+                <p className="mt-2 max-w-md text-[14px] leading-relaxed text-muted">
                   Create a customer invoice, send it, and record full or partial payments as they
                   arrive. KEIZ tracks what is still owed and posts the cash against receivables.
                 </p>
@@ -269,7 +271,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <p className="mt-8 max-w-2xl border-t border-line pt-5 text-[12px] text-muted">
+            <p className="mt-8 max-w-2xl border-t border-line pt-5 text-[13px] text-muted">
               Both sides share the same vendors, customers and ledger. A bill and a customer
               invoice never have to be reconciled by hand at the end of the month.
             </p>
@@ -294,7 +296,7 @@ export default function LandingPage() {
                     <BookOpen className="h-4 w-4 text-brand" />
                     <h3 className="text-[14px] font-semibold">See the trial balance</h3>
                   </div>
-                  <p className="mt-1.5 max-w-md text-[12px] leading-relaxed text-muted">
+                  <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted">
                     Debits and credits, account by account, with a clear balanced check. The
                     statement is ready whenever you need it.
                   </p>
@@ -304,7 +306,7 @@ export default function LandingPage() {
                     <Clock className="h-4 w-4 text-brand" />
                     <h3 className="text-[14px] font-semibold">Know what is overdue</h3>
                   </div>
-                  <p className="mt-1.5 max-w-md text-[12px] leading-relaxed text-muted">
+                  <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted">
                     AP and AR aging tell you what to schedule and who to chase, grouped by how late
                     it is.
                   </p>
@@ -314,7 +316,7 @@ export default function LandingPage() {
                     <RotateCcw className="h-4 w-4 text-brand" />
                     <h3 className="text-[14px] font-semibold">Correct with reversals</h3>
                   </div>
-                  <p className="mt-1.5 max-w-md text-[12px] leading-relaxed text-muted">
+                  <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted">
                     Posted entries stay put. Void a bill or invoice and KEIZ posts the reversal, so
                     the history still adds up.
                   </p>
@@ -330,7 +332,7 @@ export default function LandingPage() {
             <div>
               <div className="flex items-center gap-3">
                 <NearIntentsLogo variant="dark" />
-                <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-white/45">
+                <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">
                   Settlement layer
                 </span>
               </div>
@@ -342,7 +344,7 @@ export default function LandingPage() {
                 shows you what will land, and handles the route through NEAR Intents. You approve.
                 They receive the exact invoice amount.
               </p>
-              <ul className="mt-7 space-y-3 text-[13px] text-white/75">
+              <ul className="mt-7 space-y-3 text-[14px] text-white/75">
                 <li className="flex items-start gap-2.5">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-mint" />
                   The exact amount is shown before you sign.
@@ -372,18 +374,18 @@ export default function LandingPage() {
                 “What do we owe this week?” “Who has not paid?” “What did we spend on cloud last
                 quarter?” The assistant reads your workspace and answers with your numbers.
               </p>
-              <p className="mt-6 inline-flex items-start gap-2 text-[12px] leading-relaxed text-muted">
+              <p className="mt-6 inline-flex items-start gap-2 text-[13px] leading-relaxed text-muted">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-mint" />
                 It can read your books and draft payment proposals. It cannot move money.
               </p>
               <div className="mt-5 rounded-xl border border-line bg-paper px-4 py-3">
                 <div className="flex items-center gap-2">
                   <NearAiLogo />
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted">
                     Private inference
                   </span>
                 </div>
-                <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+                <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
                   Connected to NEAR AI Cloud, prompts run through private, encrypted inference
                   inside Intel TDX and NVIDIA confidential computing. The local provider keeps
                   everything on your machine for offline demos.
@@ -409,15 +411,15 @@ export default function LandingPage() {
             <div className="mt-10 grid gap-8 sm:grid-cols-2">
               {CONTROLS.map((item, index) => (
                 <div key={item.title} className="border-t border-line pt-5">
-                  <p className="font-num text-[10px] text-muted">0{index + 1}</p>
+                  <p className="font-num text-[11px] text-muted">0{index + 1}</p>
                   <h3 className="mt-2 text-[15px] font-semibold">{item.title}</h3>
-                  <p className="mt-1.5 max-w-md text-[12px] leading-relaxed text-muted">
+                  <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted">
                     {item.body}
                   </p>
                 </div>
               ))}
             </div>
-            <p className="mt-8 inline-flex items-center gap-1.5 text-[11px] text-muted">
+            <p className="mt-8 inline-flex items-center gap-1.5 text-[12px] text-muted">
               <Wallet className="h-3.5 w-3.5" /> Sign in with a NEAR wallet. One message signature,
               no transaction.
             </p>
@@ -455,15 +457,15 @@ export default function LandingPage() {
             </div>
 
             <div className="mt-8 grid gap-4 border-t border-line pt-6 sm:grid-cols-2 lg:grid-cols-3">
-              <p className="text-[11px] leading-relaxed text-muted">
+              <p className="text-[12px] leading-relaxed text-muted">
                 <span className="font-medium text-ink">TEE</span> = Trusted Execution Environment.
                 Hardware-isolated compute with cryptographic attestation.
               </p>
-              <p className="text-[11px] leading-relaxed text-muted">
+              <p className="text-[12px] leading-relaxed text-muted">
                 Prompts to NEAR AI Cloud run in TEEs. The local provider keeps everything on your
                 machine for offline demos.
               </p>
-              <p className="text-[11px] leading-relaxed text-muted">
+              <p className="text-[12px] leading-relaxed text-muted">
                 NEAR wallet sign-in. KEIZ never holds your keys.
               </p>
             </div>
@@ -479,18 +481,18 @@ export default function LandingPage() {
                   No re-keying. No month-end scramble.
                 </h2>
               </div>
-              <p className="max-w-sm text-[13px] leading-relaxed text-muted">
+              <p className="max-w-sm text-[14px] leading-relaxed text-muted">
                 The work you already do, without the spreadsheet at the end of it.
               </p>
             </div>
             <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {TIMELINE.map((item) => (
                 <div key={item.label} className="border-t border-line pt-4">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-brand">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-brand">
                     {item.label}
                   </p>
                   <h3 className="mt-2 text-[14px] font-semibold">{item.title}</h3>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{item.body}</p>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{item.body}</p>
                 </div>
               ))}
             </div>
@@ -502,7 +504,7 @@ export default function LandingPage() {
         <section className="border-b border-line">
           <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:py-20">
             <div className="rounded-[28px] bg-ink px-5 py-10 text-center text-white sm:px-12 sm:py-12">
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">
+              <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-white/45">
                 Start here
               </p>
               <h2 className="mx-auto mt-3 max-w-2xl text-balance text-[26px] font-semibold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
@@ -526,7 +528,7 @@ export default function LandingPage() {
                   See how it works <ArrowRight className="h-4 w-4" />
                 </a>
               </div>
-              <p className="mt-4 text-[11px] text-white/40">
+              <p className="mt-4 text-[12px] text-white/40">
                 NEAR wallet. No seed phrase shared.
               </p>
             </div>
@@ -538,17 +540,17 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
           <div>
             <Logo />
-            <p className="mt-3 max-w-xs text-[12px] leading-relaxed text-muted">
+            <p className="mt-3 max-w-xs text-[13px] leading-relaxed text-muted">
               Bills, invoices and a double-entry ledger for small teams.
             </p>
-            <p className="mt-3 text-[11px] text-muted">
+            <p className="mt-3 text-[12px] text-muted">
               Built on NEAR Intents and NEAR AI.
             </p>
-            <p className="mt-1 max-w-xs text-[10px] leading-relaxed text-muted">
+            <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-muted">
               NEAR, NEAR Intents, NEAR AI and OutLayer are trademarks of their respective owners.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[12px] text-muted sm:grid-cols-3 sm:gap-x-10">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] text-muted sm:grid-cols-3 sm:gap-x-10">
             <a href="#product" className="transition hover:text-ink">
               Product
             </a>
@@ -597,7 +599,7 @@ export default function LandingPage() {
           </div>
         </div>
         <div className="border-t border-line">
-          <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-4 text-[11px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-4 text-[12px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <span>© {new Date().getFullYear()} KEIZ</span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5" /> Non-custodial signing

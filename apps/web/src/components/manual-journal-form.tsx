@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CURRENCY_DECIMALS, parseUnits } from '@keiz/shared';
 import { api } from '@/lib/api';
+import { useToast } from './feedback';
 import { Button, Input, Label, Modal, Select } from './ui';
 
 export interface Account {
@@ -38,6 +39,7 @@ export function ManualJournalForm({
   const [lines, setLines] = useState<Line[]>([emptyLine(), emptyLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const decimals = CURRENCY_DECIMALS[currency] ?? 2;
 
@@ -89,6 +91,7 @@ export function ManualJournalForm({
       onClose();
       setMemo('');
       setLines([emptyLine(), emptyLine()]);
+      toast('Journal entry posted');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not post the entry');
     } finally {
@@ -145,7 +148,7 @@ export function ManualJournalForm({
             <button
               type="button"
               onClick={() => setLines((current) => [...current, emptyLine()])}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
             >
               <Plus className="h-3 w-3" /> Add line
             </button>
@@ -204,8 +207,8 @@ export function ManualJournalForm({
         <div
           className={
             totals.balanced
-              ? 'rounded-xl border border-mint/20 bg-mint-soft px-4 py-3 text-[12px] text-mint'
-              : 'rounded-xl border border-amber/20 bg-amber-soft px-4 py-3 text-[12px] text-amber'
+              ? 'rounded-xl border border-mint/20 bg-mint-soft px-4 py-3 text-[13px] text-mint'
+              : 'rounded-xl border border-amber/20 bg-amber-soft px-4 py-3 text-[13px] text-amber'
           }
         >
           <div className="flex items-center justify-between">

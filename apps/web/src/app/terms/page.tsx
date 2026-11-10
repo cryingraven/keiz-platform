@@ -4,7 +4,7 @@ export default function TermsPage() {
   return (
     <div className="min-h-screen bg-white text-ink">
       <div className="mx-auto w-full max-w-[640px] px-5 py-16">
-        <Link href="/login" className="text-[13px] text-muted underline underline-offset-4 hover:text-ink">
+        <Link href="/login" className="text-[14px] text-muted underline underline-offset-4 hover:text-ink">
           ← Back to sign in
         </Link>
         <h1 className="mt-8 text-3xl font-semibold tracking-tight">Terms of Service</h1>
@@ -13,7 +13,7 @@ export default function TermsPage() {
           double-entry ledger. By signing in you agree to use it only for lawful invoice and
           payment activity, and to keep your wallet secure.
         </p>
-        <div className="mt-8 space-y-5 text-[13px] leading-relaxed text-muted">
+        <div className="mt-8 space-y-5 text-[14px] leading-relaxed text-muted">
           <p>
             On-chain transactions are irreversible. You are responsible for verifying vendor
             payout addresses, invoice amounts and the network before signing a deposit. KEIZ never

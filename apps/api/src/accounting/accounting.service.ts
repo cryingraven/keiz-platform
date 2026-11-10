@@ -10,6 +10,7 @@ import {
   JournalSourceType,
   ManualJournalInput,
   NormalBalance,
+  formatUnits,
   parseUnits,
   signedBalance,
 } from '@keiz/shared';
@@ -65,6 +66,14 @@ interface RawTotals {
 }
 
 const DAY = 86_400_000;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function csvCell(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
 
 function startOfDay(value: Date | string): Date {
   const date = new Date(value);
@@ -492,7 +501,7 @@ export class AccountingService {
     };
   }
 
-  async journal(
+  private journalFilter(
     orgId: string,
     query: {
       currency?: string;
@@ -501,9 +510,9 @@ export class AccountingService {
       accountCode?: string;
       sourceType?: JournalSourceType;
       sourceId?: string;
-      limit?: number;
+      q?: string;
     },
-  ) {
+  ): Record<string, unknown> {
     const filter: Record<string, unknown> = { orgId };
     if (query.currency) filter.currency = query.currency;
     if (query.sourceType) filter.sourceType = query.sourceType;
@@ -515,11 +524,100 @@ export class AccountingService {
       if (query.to) date.$lte = endOfDay(query.to);
       filter.date = date;
     }
-    return this.entries
-      .find(filter)
-      .sort({ date: -1, createdAt: -1 })
-      .limit(query.limit ?? 100)
+    if (query.q) {
+      const needle = escapeRegExp(query.q);
+      filter.$or = [
+        { memo: { $regex: needle, $options: 'i' } },
+        { event: { $regex: needle, $options: 'i' } },
+        { sourceType: { $regex: needle, $options: 'i' } },
+        { 'lines.accountCode': { $regex: needle, $options: 'i' } },
+        { 'lines.accountName': { $regex: needle, $options: 'i' } },
+      ];
+    }
+    return filter;
+  }
+
+  async journal(
+    orgId: string,
+    query: {
+      currency?: string;
+      from?: string;
+      to?: string;
+      accountCode?: string;
+      sourceType?: JournalSourceType;
+      sourceId?: string;
+      q?: string;
+      page?: number;
+      pageSize?: number;
+      limit?: number;
+    },
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(query.pageSize ?? query.limit ?? 25, 100);
+    const filter = this.journalFilter(orgId, query);
+    const [items, total] = await Promise.all([
+      this.entries
+        .find(filter)
+        .sort({ date: -1, createdAt: -1, _id: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .lean(),
+      this.entries.countDocuments(filter),
+    ]);
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  async journalCsv(
+    orgId: string,
+    query: {
+      currency?: string;
+      from?: string;
+      to?: string;
+      accountCode?: string;
+      sourceType?: JournalSourceType;
+      sourceId?: string;
+      q?: string;
+    },
+  ): Promise<string> {
+    const entries = await this.entries
+      .find(this.journalFilter(orgId, query))
+      .sort({ date: -1, createdAt: -1, _id: -1 })
       .lean();
+    const rows: string[][] = [
+      [
+        'date',
+        'memo',
+        'source_type',
+        'event',
+        'currency',
+        'account_code',
+        'account_name',
+        'debit',
+        'credit',
+      ],
+    ];
+    for (const entry of entries) {
+      for (const line of entry.lines) {
+        rows.push([
+          entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10),
+          entry.memo,
+          entry.sourceType,
+          entry.event,
+          entry.currency,
+          line.accountCode,
+          line.accountName,
+          formatUnits(line.debit, entry.decimals),
+          formatUnits(line.credit, entry.decimals),
+        ]);
+      }
+    }
+    return rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
   }
 
   async aging(orgId: string, side: 'AP' | 'AR', currency: string) {

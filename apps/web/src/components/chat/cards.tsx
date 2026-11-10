@@ -40,7 +40,7 @@ function RiskBadge({ risk }: { risk: ChatRisk }) {
       : risk === 'write'
         ? 'bg-amber-soft text-amber'
         : 'bg-paper text-muted';
-  return <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', tone)}>{risk}</span>;
+  return <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', tone)}>{risk}</span>;
 }
 
 function CardShell({
@@ -54,14 +54,14 @@ function CardShell({
     <div className="mt-2.5 overflow-hidden rounded-xl border border-line bg-surface">
       <div className="flex items-start justify-between gap-2 border-b border-line px-3 py-2.5">
         <div className="min-w-0">
-          <p className="truncate text-[12px] font-semibold">{card.title}</p>
+          <p className="truncate text-[13px] font-semibold">{card.title}</p>
           {card.subtitle ? (
-            <p className="mt-0.5 truncate text-[10px] text-muted">{card.subtitle}</p>
+            <p className="mt-0.5 truncate text-[11px] text-muted">{card.subtitle}</p>
           ) : null}
         </div>
         <Link
           href={card.link.href}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[10px] font-medium text-brand transition hover:bg-brand-soft"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium text-brand transition hover:bg-brand-soft"
         >
           {card.link.label} <ArrowUpRight className="h-3 w-3" />
         </Link>
@@ -73,7 +73,7 @@ function CardShell({
             <Link
               key={`${link.href}-${link.label}`}
               href={link.href}
-              className="text-[10px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline"
+              className="text-[11px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline"
             >
               {link.label}
             </Link>
@@ -85,7 +85,7 @@ function CardShell({
 }
 
 function EmptyRows({ label }: { label: string }) {
-  return <p className="py-2 text-[11px] text-muted">{label}</p>;
+  return <p className="py-2 text-[12px] text-muted">{label}</p>;
 }
 
 function RowLink({
@@ -105,10 +105,10 @@ function RowLink({
       className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 transition hover:bg-paper"
     >
       <span className="min-w-0">
-        <span className="block truncate font-num text-[11px] font-medium">{title}</span>
-        {meta ? <span className="block truncate text-[10px] text-muted">{meta}</span> : null}
+        <span className="block truncate font-num text-[12px] font-medium">{title}</span>
+        {meta ? <span className="block truncate text-[11px] text-muted">{meta}</span> : null}
       </span>
-      <span className="shrink-0 text-right text-[10px] text-muted">{right}</span>
+      <span className="shrink-0 text-right text-[11px] text-muted">{right}</span>
     </Link>
   );
 }
@@ -116,8 +116,8 @@ function RowLink({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-paper px-2.5 py-2">
-      <p className="text-[9px] uppercase tracking-wider text-muted">{label}</p>
-      <p className="font-num mt-0.5 text-[13px] font-semibold">{value}</p>
+      <p className="text-[11px] uppercase tracking-wider text-muted">{label}</p>
+      <p className="font-num mt-0.5 text-[14px] font-semibold">{value}</p>
     </div>
   );
 }
@@ -166,7 +166,7 @@ export function ChatCardView({ card }: { card: ChatCard }) {
           {card.data.lines.length ? (
             <div className="mt-2.5 space-y-1 border-t border-line pt-2">
               {card.data.lines.map((line, index) => (
-                <div key={index} className="flex justify-between gap-2 text-[10px]">
+                <div key={index} className="flex justify-between gap-2 text-[11px]">
                   <span className="min-w-0 truncate">{line.description}</span>
                   <span className="font-num shrink-0 text-muted">{amount(line.lineTotal)}</span>
                 </div>
@@ -174,7 +174,7 @@ export function ChatCardView({ card }: { card: ChatCard }) {
             </div>
           ) : null}
           {card.data.approvals.length ? (
-            <div className="mt-2 space-y-0.5 border-t border-line pt-2 text-[10px] text-muted">
+            <div className="mt-2 space-y-0.5 border-t border-line pt-2 text-[11px] text-muted">
               {card.data.approvals.map((approval, index) => (
                 <p key={index}>
                   {humanize(approval.decision)} · {approval.accountId} ·{' '}
@@ -195,14 +195,14 @@ export function ChatCardView({ card }: { card: ChatCard }) {
           ) : (
             <div className="space-y-1">
               {card.data.byStatus.map((row, index) => (
-                <div key={`${row.status}-${row.currency}-${index}`} className="flex justify-between text-[11px]">
+                <div key={`${row.status}-${row.currency}-${index}`} className="flex justify-between text-[12px]">
                   <span>
                     {humanize(row.status)} <span className="text-muted">· {row.count}</span>
                   </span>
                   <span className="font-num">{amount(row.total)}</span>
                 </div>
               ))}
-              <p className="pt-1 text-[10px] text-muted">{card.data.vendorCount} active vendor(s)</p>
+              <p className="pt-1 text-[11px] text-muted">{card.data.vendorCount} active vendor(s)</p>
             </div>
           )}
         </CardShell>
@@ -220,7 +220,7 @@ export function ChatCardView({ card }: { card: ChatCard }) {
             <Stat label="Expenses" value={amount(data.expenses)} />
             <Stat label="Net income" value={amount(data.netIncome)} />
           </div>
-          <p className="mt-2 text-[10px] text-muted">
+          <p className="mt-2 text-[11px] text-muted">
             Trial balance:{' '}
             <span className={data.trialBalance.totals.balanced ? 'text-mint' : 'text-rose'}>
               {data.trialBalance.totals.balanced ? 'balanced' : 'out of balance'}
@@ -258,7 +258,7 @@ export function ChatCardView({ card }: { card: ChatCard }) {
             <Stat label="Payout chain" value={card.data.vendor.payoutChain} />
             <Stat label="Status" value={humanize(card.data.vendor.status)} />
           </div>
-          <p className="mt-2 break-all font-num text-[10px] text-muted">
+          <p className="mt-2 break-all font-num text-[11px] text-muted">
             {card.data.vendor.payoutAddress}
           </p>
           {card.data.bills?.length ? (
@@ -358,7 +358,7 @@ export function ChatCardView({ card }: { card: ChatCard }) {
             <Stat label="Outstanding" value={amount(row.outstanding)} />
           </div>
           {card.data.receipts.length ? (
-            <div className="mt-2 space-y-0.5 border-t border-line pt-2 text-[10px]">
+            <div className="mt-2 space-y-0.5 border-t border-line pt-2 text-[11px]">
               {card.data.receipts.map((receipt) => (
                 <div key={receipt.receiptId} className="flex justify-between gap-2">
                   <span className="truncate text-muted">
@@ -410,12 +410,12 @@ export function ChatCardView({ card }: { card: ChatCard }) {
             <Stat label="Out" value={amount(payment.amountOut)} />
           </div>
           {payment.depositAddress ? (
-            <p className="mt-2 break-all font-num text-[10px] text-muted">
+            <p className="mt-2 break-all font-num text-[11px] text-muted">
               Deposit: {payment.depositAddress}
             </p>
           ) : null}
           {card.data.events.length ? (
-            <div className="mt-2 space-y-0.5 border-t border-line pt-2 text-[10px] text-muted">
+            <div className="mt-2 space-y-0.5 border-t border-line pt-2 text-[11px] text-muted">
               {card.data.events.slice(-6).map((event) => (
                 <p key={event.id}>
                   {formatDate(event.at)} · {humanize(event.status)}
@@ -456,7 +456,7 @@ export function ChatCardView({ card }: { card: ChatCard }) {
             <Stat label="Status" value={humanize(card.data.action.status)} />
             <Stat label="Amount" value={`$${card.data.action.amountUsd}`} />
           </div>
-          <p className="mt-2 break-all font-num text-[10px] text-muted">
+          <p className="mt-2 break-all font-num text-[11px] text-muted">
             {card.data.action.asset}
           </p>
         </CardShell>
@@ -475,13 +475,13 @@ export function ChatCardView({ card }: { card: ChatCard }) {
                   href={entry.link.href}
                   className="block rounded-lg px-2 py-1.5 transition hover:bg-paper"
                 >
-                  <div className="flex justify-between gap-2 text-[11px]">
+                  <div className="flex justify-between gap-2 text-[12px]">
                     <span className="truncate font-medium">{entry.memo}</span>
-                    <span className="shrink-0 text-[10px] text-muted">
+                    <span className="shrink-0 text-[11px] text-muted">
                       {formatDate(entry.date)}
                     </span>
                   </div>
-                  <p className="text-[10px] text-muted">
+                  <p className="text-[11px] text-muted">
                     {entry.sourceType} · {entry.event} · {entry.currency}
                   </p>
                 </Link>
@@ -513,7 +513,7 @@ export function PlanCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="text-[12px] font-semibold">Action plan</p>
+            <p className="text-[13px] font-semibold">Action plan</p>
             <Badge
               className={cn(
                 plan.status === 'approved' && 'bg-mint-soft text-mint',
@@ -523,24 +523,24 @@ export function PlanCard({
               {humanize(plan.status)}
             </Badge>
           </div>
-          <p className="mt-0.5 text-[11px] text-muted">{plan.goal}</p>
+          <p className="mt-0.5 text-[12px] text-muted">{plan.goal}</p>
         </div>
       </div>
       <ol className="space-y-1.5 px-3 py-2.5">
         {plan.steps.map((step, index) => (
           <li key={index} className="flex gap-2">
-            <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-paper font-num text-[9px] text-muted">
+            <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-paper font-num text-[11px] text-muted">
               {index + 1}
             </span>
             <span className="min-w-0">
-              <span className="block text-[11px] font-medium">{step.title}</span>
+              <span className="block text-[12px] font-medium">{step.title}</span>
               {step.detail ? (
-                <span className="block text-[10px] text-muted">{step.detail}</span>
+                <span className="block text-[11px] text-muted">{step.detail}</span>
               ) : null}
               <span className="mt-0.5 flex items-center gap-1.5">
                 <RiskBadge risk={step.risk} />
                 {step.tool ? (
-                  <span className="font-num text-[9px] text-muted">{step.tool}</span>
+                  <span className="font-num text-[11px] text-muted">{step.tool}</span>
                 ) : null}
               </span>
             </span>
@@ -584,21 +584,21 @@ export function ApprovalCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="text-[12px] font-semibold">Confirm tool call</p>
+            <p className="text-[13px] font-semibold">Confirm tool call</p>
             <RiskBadge risk={approval.risk} />
           </div>
-          <p className="mt-0.5 text-[11px] text-muted">{approval.summary}</p>
-          <p className="font-num mt-0.5 text-[9px] text-muted/70">{approval.name}</p>
+          <p className="mt-0.5 text-[12px] text-muted">{approval.summary}</p>
+          <p className="font-num mt-0.5 text-[11px] text-muted/70">{approval.name}</p>
         </div>
       </div>
       <details className="px-3 py-2">
-        <summary className="cursor-pointer text-[10px] text-muted">Arguments</summary>
-        <pre className="mt-1 max-h-32 overflow-auto rounded-lg bg-paper p-2 text-[9px] leading-relaxed text-muted scroll-thin">
+        <summary className="cursor-pointer text-[11px] text-muted">Arguments</summary>
+        <pre className="mt-1 max-h-32 overflow-auto rounded-lg bg-paper p-2 text-[11px] leading-relaxed text-muted scroll-thin">
           {JSON.stringify(approval.args, null, 2)}
         </pre>
       </details>
       {resolved ? (
-        <div className="border-t border-line px-3 py-2 text-[10px]">
+        <div className="border-t border-line px-3 py-2 text-[11px]">
           <span className={resolved.approved ? 'text-mint' : 'text-rose'}>
             {resolved.approved ? 'Approved' : 'Declined'}
           </span>
@@ -610,7 +610,7 @@ export function ApprovalCard({
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             placeholder="Why decline? (optional)"
-            className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-[11px] outline-none focus:border-brand"
+            className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-[12px] outline-none focus:border-brand"
           />
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="secondary" onClick={() => setDeclining(false)} disabled={busy}>

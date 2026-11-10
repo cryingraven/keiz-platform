@@ -133,11 +133,12 @@ with reuse detection).
 | GET | `/accounts` | Member | — | Per-org chart of accounts. |
 | GET | `/summary` | Member | `?currency=&from=&to=` | |
 | GET | `/trial-balance` | Member | `?currency=&asOf=` | Must balance. |
-| GET | `/journal-entries` | Member | `?currency=&accountCode=&sourceType=&sourceId=&limit=` | Immutable journal. |
+| GET | `/journal-entries` | Member | `?currency=&accountCode=&sourceType=&sourceId=&q=&page=&pageSize=` | Immutable journal. Returns `{ items, page, pageSize, total, totalPages }`. |
+| GET | `/journal-entries/export` | Member | `?currency=&from=&to=&accountCode=&sourceType=&sourceId=&q=&format=csv` | Exports all matching ledger lines as CSV. |
 | POST | `/journal-entries` | Admin | `{ date?, memo, currency?, lines[] }` | Manual balanced entry. |
 | GET | `/aging` | Member | `?side=AP\|AR&currency=` | |
 | GET | `/reports` | Member | `?currency=&from=&to=` | Cash flow, P&L and balance sheet for a period. |
-| GET | `/reports/export` | Member | `?currency=&from=&to=&format=pdf\|xlsx` | Downloads the report as PDF or Excel. |
+| GET | `/reports/export` | Member | `?currency=&from=&to=&format=pdf\|xlsx\|csv&report=cash-flow\|profit-and-loss\|balance-sheet\|all` | Downloads one statement or the full report pack. `report` defaults to `all`, `format` to `pdf`. |
 | POST | `/rebuild` | Admin | — | Idempotent backfill of missing system postings. |
 
 ## Agent wallet — `/api/agent`

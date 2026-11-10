@@ -1,94 +1,99 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Download, BookOpen, RefreshCw, Scale, Wallet } from 'lucide-react';
-import { formatUnits } from '@keiz/shared';
+import { Suspense, useMemo, useState, type KeyboardEvent } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  BookOpen,
+  Clock,
+  LayoutDashboard,
+  RefreshCw,
+  Scale,
+  type LucideIcon,
+} from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
-import { downloadCsv } from '@/lib/csv';
-import { DateFilterValue, EMPTY_DATE_FILTER, dateFilterQuery, today } from '@/lib/period';
-import { formatDate, formatMoney, humanize } from '@/lib/format';
+import {
+  DateFilterValue,
+  EMPTY_DATE_FILTER,
+  dateFilterQuery,
+  endOfDayIso,
+  startOfDayIso,
+  today,
+} from '@/lib/period';
 import { PageHeader } from '@/components/shell';
 import { DateRangeFilter } from '@/components/date-range-filter';
-import { Account, ManualJournalForm } from '@/components/manual-journal-form';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  SectionTitle,
-  Select,
-  Spinner,
-} from '@/components/ui';
+import { ManualJournalForm } from '@/components/manual-journal-form';
+import { OverviewTab } from '@/components/accounting/overview-tab';
+import { TrialBalanceTab } from '@/components/accounting/trial-balance-tab';
+import { JournalTab } from '@/components/accounting/journal-tab';
+import { AgingTab } from '@/components/accounting/aging-tab';
+import type {
+  AccountingTab,
+  AccountOption,
+  Aging,
+  Summary,
+} from '@/components/accounting/types';
+import { Button, Card, Select } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
-interface TrialRow {
-  code: string;
-  name: string;
-  type: string;
-  normalBalance: string;
-  debit: string;
-  credit: string;
-  balance: string;
+const TABS: Array<{ id: AccountingTab; label: string; icon: LucideIcon }> = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'trial-balance', label: 'Trial balance', icon: Scale },
+  { id: 'journal', label: 'Journal', icon: BookOpen },
+  { id: 'aging', label: 'Aging', icon: Clock },
+];
+
+function isAccountingTab(value: string | null): value is AccountingTab {
+  return TABS.some((tab) => tab.id === value);
 }
 
-interface Summary {
-  currency: string;
-  decimals: number;
-  cash: string;
-  receivable: string;
-  payable: string;
-  inputTax: string;
-  taxPayable: string;
-  revenue: string;
-  expenses: string;
-  netIncome: string;
-  availableCurrencies: string[];
-  trialBalance: {
-    rows: TrialRow[];
-    totals: { debit: string; credit: string; balanced: boolean };
-  };
+function tabId(tab: AccountingTab): string {
+  return `accounting-tab-${tab}`;
 }
 
-interface JournalEntry {
-  _id: string;
-  date: string;
-  memo: string;
-  event: string;
-  sourceType: string;
-  currency: string;
-  decimals: number;
-  lines: Array<{
-    accountCode: string;
-    accountName: string;
-    debit: string;
-    credit: string;
-  }>;
-}
-
-interface Aging {
-  side: string;
-  currency: string;
-  decimals: number;
-  buckets: Array<{ key: string; label: string; count: number; amount: string }>;
-  total: string;
+function panelId(tab: AccountingTab): string {
+  return `accounting-panel-${tab}`;
 }
 
 export default function AccountingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="h-16 animate-pulse rounded-card bg-surface" />
+          <div className="h-80 animate-pulse rounded-card bg-surface" />
+        </div>
+      }
+    >
+      <AccountingContent />
+    </Suspense>
+  );
+}
+
+function AccountingContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const highlightedEntry = searchParams.get('entry');
+  const tabParam = searchParams.get('tab');
+  const activeTab: AccountingTab = isAccountingTab(tabParam)
+    ? tabParam
+    : highlightedEntry
+      ? 'journal'
+      : 'overview';
+  const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0];
+
   const [currency, setCurrency] = useState('USD');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(EMPTY_DATE_FILTER);
   const [manualOpen, setManualOpen] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
   const { session } = useAuth();
   const canAdmin = ['ADMIN', 'OWNER'].includes(session?.role ?? 'MEMBER');
 
-  const { summaryPath, journalPath } = useMemo(() => {
+  const { summaryPath, journalFrom, journalTo } = useMemo(() => {
     // Accounting's default is all time. The API defaults to the current month
     // when no from/to is supplied, so make the all-time case explicit.
     const effective =
@@ -99,15 +104,35 @@ export default function AccountingPage() {
     const suffix = range ? `&${range.slice(1)}` : '';
     return {
       summaryPath: `/accounting/summary?currency=${currency}${suffix}`,
-      journalPath: `/accounting/journal-entries?currency=${currency}&limit=50${suffix}`,
+      journalFrom: effective.from ? startOfDayIso(effective.from) : undefined,
+      journalTo: effective.to ? endOfDayIso(effective.to) : undefined,
     };
   }, [currency, dateFilter]);
 
   const summary = useApi<Summary>(summaryPath);
-  const journal = useApi<JournalEntry[]>(journalPath);
-  const accounts = useApi<Account[]>('/accounting/accounts');
+  const accounts = useApi<AccountOption[]>('/accounting/accounts');
   const apAging = useApi<Aging>(`/accounting/aging?side=AP&currency=${currency}`);
   const arAging = useApi<Aging>(`/accounting/aging?side=AR&currency=${currency}`);
+
+  function selectTab(tab: AccountingTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.replace(`/dashboard/accounting?${params.toString()}`, { scroll: false });
+  }
+
+  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % TABS.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = TABS.length - 1;
+    else return;
+
+    event.preventDefault();
+    const tab = TABS[next].id;
+    selectTab(tab);
+    document.getElementById(tabId(tab))?.focus();
+  }
 
   async function rebuild() {
     setRebuilding(true);
@@ -123,9 +148,9 @@ export default function AccountingPage() {
           : `Backfilled ${result.created} journal entr${result.created === 1 ? 'y' : 'ies'}.`,
       );
       if (result.failed > 0) setError(`${result.failed} posting(s) still failed.`);
+      setLedgerVersion((value) => value + 1);
       await Promise.all([
         summary.reload(),
-        journal.reload(),
         apAging.reload(),
         arAging.reload(),
       ]);
@@ -137,9 +162,6 @@ export default function AccountingPage() {
   }
 
   const data = summary.data;
-  const decimals = data?.decimals ?? 2;
-  const shownCurrency = data?.currency ?? currency;
-  const money = (value: string) => formatMoney(value, decimals, shownCurrency);
 
   return (
     <div>
@@ -148,28 +170,6 @@ export default function AccountingPage() {
         description="Double-entry books for every bill, customer invoice and receipt."
         actions={
           <>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                downloadCsv(
-                  'keiz-journal.csv',
-                  (journal.data ?? []).flatMap((entry) =>
-                    entry.lines.map((line) => ({
-                      date: entry.date.slice(0, 10),
-                      memo: entry.memo,
-                      event: entry.event,
-                      currency: entry.currency,
-                      accountCode: line.accountCode,
-                      accountName: line.accountName,
-                      debit: formatUnits(line.debit, entry.decimals),
-                      credit: formatUnits(line.credit, entry.decimals),
-                    })),
-                  ),
-                )
-              }
-            >
-              <Download className="h-3.5 w-3.5" /> Export CSV
-            </Button>
             {canAdmin ? (
               <Button
                 variant="secondary"
@@ -199,313 +199,96 @@ export default function AccountingPage() {
         </p>
       ) : null}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-3">
         <DateRangeFilter value={dateFilter} onChange={setDateFilter} showDateField={false} />
-        <Select value={currency} onChange={(event) => setCurrency(event.target.value)}>
-          {(data?.availableCurrencies ?? ['USD']).map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-muted">Currency</span>
+          <Select
+            aria-label="Accounting currency"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value)}
+            className="w-auto min-w-[90px]"
+          >
+            {(data?.availableCurrencies ?? ['USD']).map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Card>
+
+      <div
+        role="tablist"
+        aria-label="Accounting views"
+        className="mb-4 flex gap-1 overflow-x-auto rounded-control border border-line bg-surface p-1 scroll-thin"
+      >
+        {TABS.map((tab, index) => {
+          const selected = tab.id === activeTab;
+          return (
+            <button
+              key={tab.id}
+              id={tabId(tab.id)}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={panelId(tab.id)}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-2 rounded-[10px] px-3 py-2 text-[13px] font-medium transition',
+                selected
+                  ? 'bg-ink text-white shadow-sm'
+                  : 'text-muted hover:bg-paper hover:text-ink',
+              )}
+            >
+              <tab.icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {summary.loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Spinner /> Loading the books
-        </div>
-      ) : summary.error ? (
-        <Card>
-          <ErrorState message={summary.error} onRetry={() => void summary.reload()} />
-        </Card>
-      ) : !data ? (
-        <Card>
-          <EmptyState
-            icon={<Scale className="h-5 w-5" />}
-            title="No ledger yet"
-            body="Approve a bill, issue a customer invoice, or post a manual entry to open the books."
+      <div
+        role="tabpanel"
+        id={panelId(activeTab)}
+        aria-labelledby={tabId(activeTab)}
+      >
+        {activeTab === 'overview' ? (
+          <OverviewTab summary={summary} onOpenTab={selectTab} />
+        ) : null}
+        {activeTab === 'trial-balance' ? <TrialBalanceTab summary={summary} /> : null}
+        {activeTab === 'journal' ? (
+          <JournalTab
+            currency={currency}
+            from={journalFrom}
+            to={journalTo}
+            accounts={accounts.data ?? []}
+            focusEntry={highlightedEntry}
+            refreshToken={ledgerVersion}
           />
-        </Card>
-      ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Stat label="Cash" value={money(data.cash)} hint="1010 · asset" icon={<Wallet className="h-4 w-4" />} />
-            <Stat label="Accounts receivable" value={money(data.receivable)} hint="1100 · asset" />
-            <Stat label="Accounts payable" value={money(data.payable)} hint="2000 · liability" />
-            <Stat label="Revenue" value={money(data.revenue)} hint="Selected period" />
-            <Stat label="Expenses" value={money(data.expenses)} hint="Selected period" />
-            <Stat
-              label="Net income"
-              value={money(data.netIncome)}
-              hint="Revenue − expenses"
-              tone={BigInt(data.netIncome) >= 0n ? 'text-mint' : 'text-rose'}
-            />
-          </div>
+        ) : null}
+        {activeTab === 'aging' ? (
+          <AgingTab apAging={apAging} arAging={arAging} />
+        ) : null}
+      </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-            <Card className="overflow-hidden">
-              <div className="flex items-center justify-between border-b border-line px-5 py-4">
-                <SectionTitle title="Trial balance" hint="As of today" />
-                <Badge
-                  dot
-                  className={
-                    data.trialBalance.totals.balanced
-                      ? 'border-mint/20 bg-mint-soft text-mint'
-                      : 'border-rose/20 bg-rose-soft text-rose'
-                  }
-                >
-                  {data.trialBalance.totals.balanced ? 'Balanced' : 'Out of balance'}
-                </Badge>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left">
-                  <thead>
-                    <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
-                      <th className="px-5 py-2.5 font-medium">Account</th>
-                      <th className="px-5 py-2.5 font-medium">Type</th>
-                      <th className="px-5 py-2.5 text-right font-medium">Debit</th>
-                      <th className="px-5 py-2.5 text-right font-medium">Credit</th>
-                      <th className="px-5 py-2.5 text-right font-medium">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {data.trialBalance.rows.map((row) => (
-                      <tr key={row.code}>
-                        <td className="px-5 py-2.5">
-                          <span className="font-num text-[11px] text-muted">{row.code}</span>
-                          <span className="ml-2 text-[12px]">{row.name}</span>
-                        </td>
-                        <td className="px-5 py-2.5 text-[10px] uppercase tracking-wider text-muted">
-                          {humanize(row.type)}
-                        </td>
-                        <td className="font-num px-5 py-2.5 text-right text-[12px]">
-                          {row.debit === '0' ? '—' : money(row.debit)}
-                        </td>
-                        <td className="font-num px-5 py-2.5 text-right text-[12px]">
-                          {row.credit === '0' ? '—' : money(row.credit)}
-                        </td>
-                        <td className="font-num px-5 py-2.5 text-right text-[12px] font-medium">
-                          {money(row.balance)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-line bg-paper/60 text-[12px] font-semibold">
-                      <td className="px-5 py-3" colSpan={2}>
-                        Totals
-                      </td>
-                      <td className="font-num px-5 py-3 text-right">
-                        {money(data.trialBalance.totals.debit)}
-                      </td>
-                      <td className="font-num px-5 py-3 text-right">
-                        {money(data.trialBalance.totals.credit)}
-                      </td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </Card>
-
-            <div className="space-y-4">
-              <AgingCard title="AP aging" hint="Approved bills not yet paid" report={apAging} />
-              <AgingCard title="AR aging" hint="Issued invoices not yet collected" report={arAging} />
-
-              <Card className="p-5">
-                <SectionTitle title="Balance check" hint="The ledger identity" />
-                <div className="mt-3 space-y-2 text-[12px]">
-                  <Row label="Assets" value={money(
-                    (BigInt(data.cash) + BigInt(data.receivable) + BigInt(data.inputTax)).toString(),
-                  )} />
-                  <Row label="Liabilities" value={money(
-                    (BigInt(data.payable) + BigInt(data.taxPayable)).toString(),
-                  )} />
-                  <Row label="Equity + net income" value={money(
-                    (BigInt(data.cash) + BigInt(data.receivable) + BigInt(data.inputTax) -
-                      BigInt(data.payable) - BigInt(data.taxPayable)).toString(),
-                  )} />
-                </div>
-              </Card>
-            </div>
-          </div>
-
-          <Card className="mt-4 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-line px-5 py-4">
-              <SectionTitle title="Journal" hint="Newest first, append-only" />
-              <span className="text-[11px] text-muted">{journal.data?.length ?? 0} entries</span>
-            </div>
-            {journal.loading ? (
-              <div className="flex items-center gap-2 px-5 py-8 text-sm text-muted">
-                <Spinner /> Loading entries
-              </div>
-            ) : (journal.data?.length ?? 0) === 0 ? (
-              <EmptyState
-                icon={<BookOpen className="h-5 w-5" />}
-                title="No journal entries"
-                body="Postings appear automatically when bills are approved and paid, and when customer invoices are issued and collected."
-              />
-            ) : (
-              <div className="divide-y divide-line">
-                {journal.data?.map((entry) => {
-                  // A balanced entry has equal debit and credit totals; summing
-                  // both would display double the transaction value.
-                  const amount = entry.lines.reduce(
-                    (total, line) => total + BigInt(line.debit),
-                    0n,
-                  );
-                  return (
-                    <details
-                      key={entry._id}
-                      id={`entry-${entry._id}`}
-                      open={highlightedEntry === entry._id}
-                      className={
-                        highlightedEntry === entry._id
-                          ? 'group bg-brand-soft/40'
-                          : 'group'
-                      }
-                    >
-                      <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3.5 transition hover:bg-paper/60">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium">{entry.memo}</p>
-                          <p className="mt-0.5 text-[10px] text-muted">
-                            {formatDate(entry.date)} · {humanize(entry.sourceType)} ·{' '}
-                            {humanize(entry.event)}
-                          </p>
-                        </div>
-                        <p className="font-num text-[12px]">
-                          {formatMoney(amount.toString(), entry.decimals, entry.currency)}
-                        </p>
-                      </summary>
-                      <div className="bg-paper/40 px-5 py-3">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className="text-[9px] uppercase tracking-wider text-muted">
-                              <th className="pb-1 font-medium">Account</th>
-                              <th className="pb-1 text-right font-medium">Debit</th>
-                              <th className="pb-1 text-right font-medium">Credit</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {entry.lines.map((line, index) => (
-                              <tr key={index} className="text-[11px]">
-                                <td className="py-0.5">
-                                  <span className="font-num text-muted">{line.accountCode}</span>{' '}
-                                  {line.accountName}
-                                </td>
-                                <td className="font-num py-0.5 text-right">
-                                  {line.debit === '0'
-                                    ? '—'
-                                    : formatMoney(line.debit, entry.decimals, entry.currency)}
-                                </td>
-                                <td className="font-num py-0.5 text-right">
-                                  {line.credit === '0'
-                                    ? '—'
-                                    : formatMoney(line.credit, entry.decimals, entry.currency)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        </>
-      )}
+      <p className="mt-4 px-1 text-[11px] text-muted">
+        {active.label} · {data ? `All amounts in ${data.currency}` : 'Double-entry ledger'}
+      </p>
 
       <ManualJournalForm
         open={manualOpen}
         accounts={accounts.data ?? []}
         onClose={() => setManualOpen(false)}
         onCreated={() => {
+          setLedgerVersion((value) => value + 1);
           void summary.reload();
-          void journal.reload();
+          void apAging.reload();
+          void arAging.reload();
         }}
       />
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  hint,
-  icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  icon?: React.ReactNode;
-  tone?: string;
-}) {
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between text-muted">
-        <span className="text-[10px] font-medium uppercase tracking-wider">{label}</span>
-        {icon ? <span className="rounded-lg bg-paper p-1.5">{icon}</span> : null}
-      </div>
-      <p className={`font-num mt-2.5 text-[22px] font-semibold tracking-tight ${tone ?? ''}`}>
-        {value}
-      </p>
-      <p className="mt-0.5 text-[11px] text-muted">{hint}</p>
-    </Card>
-  );
-}
-
-function AgingCard({
-  title,
-  hint,
-  report,
-}: {
-  title: string;
-  hint: string;
-  report: { data: Aging | null; loading: boolean };
-}) {
-  const data = report.data;
-  return (
-    <Card className="p-5">
-      <SectionTitle title={title} hint={hint} />
-      {report.loading ? (
-        <div className="mt-3 flex items-center gap-2 text-[12px] text-muted">
-          <Spinner /> Loading
-        </div>
-      ) : !data ? (
-        <p className="mt-3 text-[12px] text-muted">Unavailable.</p>
-      ) : (
-        <div className="mt-3 space-y-1.5">
-          {data.buckets.map((bucket) => (
-            <div key={bucket.key} className="flex items-center justify-between text-[12px]">
-              <span className="text-muted">
-                {bucket.label}
-                <span className="ml-1 text-[10px]">({bucket.count})</span>
-              </span>
-              <span className="font-num">
-                {formatMoney(bucket.amount, data.decimals, data.currency)}
-              </span>
-            </div>
-          ))}
-          <div className="flex items-center justify-between border-t border-line pt-1.5 text-[12px] font-semibold">
-            <span>Total</span>
-            <span className="font-num">
-              {formatMoney(data.total, data.decimals, data.currency)}
-            </span>
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted">{label}</span>
-      <span className="font-num">{value}</span>
     </div>
   );
 }

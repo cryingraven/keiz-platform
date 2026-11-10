@@ -33,6 +33,7 @@ import {
   streamChatApproval,
 } from '@/lib/chat-stream';
 import { Button, Spinner, Textarea } from '@/components/ui';
+import { useConfirm } from '@/components/feedback';
 import { cn } from '@/lib/utils';
 import { ApprovalCard, ChatCardView, PlanCard } from '@/components/chat/cards';
 import {
@@ -126,7 +127,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           className="group fixed bottom-5 right-5 z-40 grid h-13 w-13 place-items-center rounded-full bg-ink text-white shadow-xl shadow-ink/25 ring-1 ring-white/10 transition hover:scale-105 hover:bg-ink-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 sm:bottom-6 sm:right-6"
         >
           <Bot className="h-5 w-5" />
-          <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100 sm:block">
+          <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-[12px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100 sm:block">
             Ask KEIZ
           </span>
         </button>
@@ -148,6 +149,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
   const [modelId, setModelId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const confirm = useConfirm();
 
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -445,7 +447,13 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
   }
 
   async function deleteThread(thread: Thread) {
-    if (!window.confirm(`Delete "${thread.title}"?`)) return;
+    const ok = await confirm({
+      title: 'Delete this conversation?',
+      body: `"${thread.title}" and its messages will be removed. This cannot be undone.`,
+      confirmLabel: 'Delete conversation',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await api(`/chat/threads/${thread._id}`, { method: 'DELETE' });
       if (threadId === thread._id) {
@@ -582,10 +590,10 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
               <Bot className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <h2 id="assistant-title" className="text-[13px] font-semibold">
+              <h2 id="assistant-title" className="text-[14px] font-semibold">
                 KEIZ assistant
               </h2>
-              <p className="truncate text-[10px] text-muted">{providerLabel}</p>
+              <p className="truncate text-[11px] text-muted">{providerLabel}</p>
             </div>
           </div>
 
@@ -616,11 +624,11 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                   className="absolute right-0 top-full z-20 mt-1 w-72 overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
                 >
                   <div className="flex items-center justify-between border-b border-line px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-wider text-muted">Threads</p>
+                    <p className="text-[11px] uppercase tracking-wider text-muted">Threads</p>
                     <button
                       type="button"
                       onClick={newThread}
-                      className="flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
+                      className="flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
                     >
                       <MessageSquarePlus className="h-3 w-3" /> New
                     </button>
@@ -630,7 +638,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                       <Spinner />
                     </div>
                   ) : (threads.data?.length ?? 0) === 0 ? (
-                    <p className="px-3 py-4 text-[11px] text-muted">No conversations yet.</p>
+                    <p className="px-3 py-4 text-[12px] text-muted">No conversations yet.</p>
                   ) : (
                     <ul className="max-h-64 overflow-y-auto scroll-thin">
                       {(threads.data ?? []).map((thread) => (
@@ -644,8 +652,8 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                               threadId === thread._id && 'bg-paper',
                             )}
                           >
-                            <p className="truncate text-[12px] font-medium">{thread.title}</p>
-                            <p className="text-[10px] text-muted">
+                            <p className="truncate text-[13px] font-medium">{thread.title}</p>
+                            <p className="text-[11px] text-muted">
                               {new Date(thread.updatedAt).toLocaleDateString('en-US')}
                             </p>
                           </button>
@@ -695,7 +703,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                 <Sparkles className="h-5 w-5 text-brand" />
               </span>
               <p className="mt-3 text-sm font-semibold">Ask about your payables</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-muted">
+              <p className="mt-1 text-[13px] leading-relaxed text-muted">
                 The assistant calls tools against your org. Payment requests become proposals in
                 the agent queue.
               </p>
@@ -705,7 +713,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                     key={suggestion}
                     type="button"
                     onClick={() => void send(suggestion)}
-                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] text-muted transition hover:border-line-strong hover:text-ink"
+                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-muted transition hover:border-line-strong hover:text-ink"
                   >
                     {suggestion}
                   </button>
@@ -747,14 +755,14 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                     )}
                   >
                     {message.content ? (
-                      <div className="whitespace-pre-wrap text-[13px] leading-relaxed">
+                      <div className="whitespace-pre-wrap text-[14px] leading-relaxed">
                         <MarkdownText content={message.content} />
                         {streaming && isLast && message.role === 'assistant' ? (
                           <span className="ml-0.5 inline-block h-3.5 w-[2px] animate-pulse bg-ink align-middle" />
                         ) : null}
                       </div>
                     ) : streaming && isLast && !message.plan && phase !== 'final' ? (
-                      <span className="flex items-center gap-2 text-[12px] text-muted">
+                      <span className="flex items-center gap-2 text-[13px] text-muted">
                         <Spinner className="h-3 w-3" /> Preparing…
                       </span>
                     ) : null}
@@ -783,7 +791,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                     ) : null}
 
                     {!isFinal ? (
-                      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted">
+                      <div className="mt-2 flex items-center gap-2 text-[12px] text-muted">
                         <Spinner className="h-3 w-3" />
                         {pendingWrite
                           ? 'Waiting for your confirmation…'
@@ -792,7 +800,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                             : 'Working through the plan…'}
                       </div>
                     ) : message.plan ? (
-                      <p className="mt-2 flex items-center gap-1.5 text-[10px] text-muted">
+                      <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted">
                         <CheckCircle2 className="h-3 w-3 text-mint" /> Plan completed
                       </p>
                     ) : null}
@@ -817,7 +825,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                       <div className="mt-2 space-y-1.5 border-t border-line/70 pt-2">
                         {message.toolCalls.map((tool, toolIndex) => (
                           <details key={toolIndex} className="group">
-                            <summary className="flex cursor-pointer items-center gap-1.5 text-[10px] text-muted">
+                            <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted">
                               {tool.status === 'calling' ? (
                                 <Spinner className="h-3 w-3" />
                               ) : (
@@ -828,7 +836,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                                 {shortAddress(JSON.stringify(tool.args), 16)}
                               </span>
                             </summary>
-                            <pre className="mt-1 max-h-40 overflow-auto rounded-lg bg-surface p-2 text-[9px] leading-relaxed text-muted scroll-thin">
+                            <pre className="mt-1 max-h-40 overflow-auto rounded-lg bg-surface p-2 text-[11px] leading-relaxed text-muted scroll-thin">
                               {JSON.stringify(tool.result ?? tool.args, null, 2)}
                             </pre>
                           </details>
@@ -848,7 +856,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
         </div>
 
         {error ? (
-          <div className="flex items-center justify-between gap-2 border-t border-line bg-rose-soft px-4 py-2 text-[11px] text-rose">
+          <div className="flex items-center justify-between gap-2 border-t border-line bg-rose-soft px-4 py-2 text-[12px] text-rose">
             <span className="min-w-0 flex-1">{error}</span>
             {messages.some((message) => message.role === 'user') ? (
               <button
@@ -895,7 +903,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
               </Button>
             )}
           </div>
-          <p className="mt-1.5 flex items-center gap-1 text-[10px] text-muted">
+          <p className="mt-1.5 flex items-center gap-1 text-[11px] text-muted">
             <Cpu className="h-3 w-3" />
             Responses stream over SSE. Chat can only create proposals.
           </p>
@@ -916,7 +924,7 @@ function MarkdownText({ content }: { content: string }) {
           return (
             <pre
               key={index}
-              className="overflow-auto rounded-lg bg-surface p-2 text-[10px] leading-relaxed text-muted scroll-thin"
+              className="overflow-auto rounded-lg bg-surface p-2 text-[11px] leading-relaxed text-muted scroll-thin"
             >
               {body.replace(/\n$/, '')}
             </pre>
@@ -956,7 +964,7 @@ function inlineMarkdown(text: string): ReactNode {
     }
     if (token.startsWith('`') && token.endsWith('`')) {
       return (
-        <code key={index} className="rounded bg-surface px-1 py-0.5 font-num text-[11px]">
+        <code key={index} className="rounded bg-surface px-1 py-0.5 font-num text-[12px]">
           {token.slice(1, -1)}
         </code>
       );

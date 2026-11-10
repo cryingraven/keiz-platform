@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { humanize, shortAddress } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import { useConfirm, useToast } from '@/components/feedback';
 import {
   Badge,
   Button,
@@ -44,6 +45,8 @@ export default function TeamPage() {
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function changeRole(member: Member, role: string) {
     setBusyId(member.userId);
@@ -54,6 +57,7 @@ export default function TeamPage() {
         body: JSON.stringify({ role }),
       });
       await members.reload();
+      toast('Role updated');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change the role');
     } finally {
@@ -62,12 +66,19 @@ export default function TeamPage() {
   }
 
   async function remove(member: Member) {
-    if (!window.confirm(`Remove ${member.accountId} from this workspace?`)) return;
+    const ok = await confirm({
+      title: 'Remove this member?',
+      body: `${member.accountId} will lose access to this workspace. Their history stays in the audit log.`,
+      confirmLabel: 'Remove member',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setBusyId(member.userId);
     setError(null);
     try {
       await api(`/members/${member.userId}`, { method: 'DELETE' });
       await members.reload();
+      toast('Member removed');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove the member');
     } finally {
@@ -128,13 +139,13 @@ export default function TeamPage() {
                     <Users className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 text-[13px] font-medium">
+                    <p className="flex items-center gap-2 text-[14px] font-medium">
                       <span className="font-num">{shortAddress(member.accountId, 8)}</span>
                       {self ? (
                         <Badge className="border-line bg-paper text-muted">You</Badge>
                       ) : null}
                     </p>
-                    <p className="font-num truncate text-[11px] text-muted">
+                    <p className="font-num truncate text-[12px] text-muted">
                       {member.accountId}
                     </p>
                   </div>
@@ -171,7 +182,7 @@ export default function TeamPage() {
               );
             })}
           </ul>
-          <div className="flex items-start gap-2 border-t border-line bg-paper/50 px-5 py-3 text-[11px] text-muted">
+          <div className="flex items-start gap-2 border-t border-line bg-paper/50 px-5 py-3 text-[12px] text-muted">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mint" />
             <span>
               OWNER: {ROLE_HELP.OWNER} ADMIN: {ROLE_HELP.ADMIN} APPROVER: {ROLE_HELP.APPROVER}{' '}
@@ -205,6 +216,7 @@ function AddMemberModal({
   const [role, setRole] = useState('MEMBER');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function submit() {
     setBusy(true);
@@ -218,6 +230,8 @@ function AddMemberModal({
       onClose();
       setAccountId('');
       setRole('MEMBER');
+      toast('Member added');
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the member');
     } finally {
@@ -251,7 +265,7 @@ function AddMemberModal({
               </option>
             ))}
           </Select>
-          <p className="mt-1.5 text-[11px] text-muted">{ROLE_HELP[role]}</p>
+          <p className="mt-1.5 text-[12px] text-muted">{ROLE_HELP[role]}</p>
         </div>
         {error ? (
           <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">

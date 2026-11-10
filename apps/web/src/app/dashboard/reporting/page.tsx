@@ -1,73 +1,79 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  FileSpreadsheet,
-  Download,
-  Scale,
-  TrendingDown,
-  TrendingUp,
-  Wallet,
-} from 'lucide-react';
+import Link from 'next/link';
+import { Suspense, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowUpRight, Scale, TrendingUp, Waves, type LucideIcon } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
-import { downloadApiFile } from '@/lib/download';
-import { formatMoney } from '@/lib/format';
-import { endOfDayIso, reportPeriodRange, startOfDayIso, defaultReportPeriod, ReportPeriod } from '@/lib/period';
+import { formatDate } from '@/lib/format';
+import {
+  defaultReportPeriod,
+  endOfDayIso,
+  reportPeriodRange,
+  startOfDayIso,
+  type ReportPeriod,
+} from '@/lib/period';
 import { PageHeader } from '@/components/shell';
 import { ReportPeriodFilter } from '@/components/report-period-filter';
-import { Button, Card, EmptyState, ErrorState, SectionTitle, Select, Spinner } from '@/components/ui';
+import { ReportExportMenu } from '@/components/reports/export-menu';
+import {
+  BalanceSheetStatement,
+  CashFlowStatement,
+  ProfitLossStatement,
+} from '@/components/reports/statements';
+import type { FinancialReport, ReportTab } from '@/components/reports/types';
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  Select,
+  Skeleton,
+} from '@/components/ui';
+import { cn } from '@/lib/utils';
 
-interface ReportLine {
-  code: string;
-  name: string;
-  amount: string;
+const TABS: Array<{ id: ReportTab; label: string; icon: LucideIcon }> = [
+  { id: 'cash-flow', label: 'Cash flow', icon: Waves },
+  { id: 'profit-and-loss', label: 'Profit & loss', icon: TrendingUp },
+  { id: 'balance-sheet', label: 'Balance sheet', icon: Scale },
+];
+
+function isReportTab(value: string | null): value is ReportTab {
+  return TABS.some((tab) => tab.id === value);
 }
 
-interface FinancialReport {
-  currency: string;
-  decimals: number;
-  from: string;
-  to: string;
-  availableCurrencies: string[];
-  cashFlow: {
-    inflow: string;
-    outflow: string;
-    net: string;
-    sources: Array<{
-      key: string;
-      label: string;
-      inflow: string;
-      outflow: string;
-      net: string;
-    }>;
-  };
-  profitAndLoss: {
-    revenueLines: ReportLine[];
-    expenseLines: ReportLine[];
-    totalRevenue: string;
-    totalExpenses: string;
-    netIncome: string;
-  };
-  balanceSheet: {
-    assetLines: ReportLine[];
-    liabilityLines: ReportLine[];
-    equityLines: ReportLine[];
-    totalAssets: string;
-    totalLiabilities: string;
-    totalEquity: string;
-    currentEarnings: string;
-    balanced: boolean;
-    asOf: string;
-  };
+function tabId(tab: ReportTab): string {
+  return `report-tab-${tab}`;
+}
+
+function panelId(tab: ReportTab): string {
+  return `report-panel-${tab}`;
 }
 
 export default function ReportingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="h-16 animate-pulse rounded-card bg-surface" />
+          <ReportSkeleton />
+        </div>
+      }
+    >
+      <ReportingContent />
+    </Suspense>
+  );
+}
+
+function ReportingContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: ReportTab = isReportTab(tabParam) ? tabParam : 'cash-flow';
+  const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0];
+
   const [period, setPeriod] = useState<ReportPeriod>(defaultReportPeriod);
   const [currency, setCurrency] = useState('USD');
-  const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
 
   const range = useMemo(() => reportPeriodRange(period), [period]);
   const query = useMemo(
@@ -79,75 +85,97 @@ export default function ReportingPage() {
   );
 
   const report = useApi<FinancialReport>(`/accounting/reports?${query}`);
-
   const data = report.data;
-  const money = (value: string) => formatMoney(value, data?.decimals ?? 2, data?.currency ?? currency);
 
-  async function exportReport(format: 'pdf' | 'xlsx') {
-    setExporting(format);
-    setExportError(null);
-    try {
-      await downloadApiFile(`/accounting/reports/export?${query}&format=${format}`);
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : 'Could not export the report');
-    } finally {
-      setExporting(null);
-    }
+  function selectTab(tab: ReportTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.replace(`/dashboard/reporting?${params.toString()}`, { scroll: false });
   }
+
+  function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % TABS.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = TABS.length - 1;
+    else return;
+
+    event.preventDefault();
+    const tab = TABS[next].id;
+    selectTab(tab);
+    document.getElementById(tabId(tab))?.focus();
+  }
+
+  const periodText = data
+    ? activeTab === 'balance-sheet'
+      ? `As of ${formatDate(data.to)}`
+      : `${formatDate(data.from)} – ${formatDate(data.to)}`
+    : '';
 
   return (
     <div>
       <PageHeader
-        title="Reporting"
-        description="Cash movement, profit and loss, and the balance sheet for any period."
+        title="Reports"
+        description="Cash flow, profit & loss and the balance sheet for any period."
         actions={
-          <>
-            <Button
-              variant="secondary"
-              loading={exporting === 'pdf'}
-              disabled={!data || exporting !== null}
-              onClick={() => void exportReport('pdf')}
-            >
-              <Download className="h-3.5 w-3.5" /> Export PDF
-            </Button>
-            <Button
-              variant="secondary"
-              loading={exporting === 'xlsx'}
-              disabled={!data || exporting !== null}
-              onClick={() => void exportReport('xlsx')}
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5" /> Export Excel
-            </Button>
-          </>
+          <ReportExportMenu query={query} activeTab={activeTab} disabled={!data} />
         }
       />
 
       <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-3">
         <ReportPeriodFilter value={period} onChange={setPeriod} />
-        <Select
-          aria-label="Report currency"
-          value={currency}
-          onChange={(event) => setCurrency(event.target.value)}
-          className="w-auto min-w-[90px]"
-        >
-          {(data?.availableCurrencies ?? ['USD']).map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-muted">Currency</span>
+          <Select
+            aria-label="Report currency"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value)}
+            className="w-auto min-w-[90px]"
+          >
+            {(data?.availableCurrencies ?? ['USD']).map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </Select>
+        </div>
       </Card>
 
-      {exportError ? (
-        <p className="mb-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
-          {exportError}
-        </p>
-      ) : null}
+      <div
+        role="tablist"
+        aria-label="Financial reports"
+        className="mb-4 flex gap-1 overflow-x-auto rounded-control border border-line bg-surface p-1 scroll-thin"
+      >
+        {TABS.map((tab, index) => {
+          const selected = tab.id === activeTab;
+          return (
+            <button
+              key={tab.id}
+              id={tabId(tab.id)}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={panelId(tab.id)}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-2 rounded-[10px] px-3 py-2 text-[13px] font-medium transition',
+                selected
+                  ? 'bg-ink text-white shadow-sm'
+                  : 'text-muted hover:bg-paper hover:text-ink',
+              )}
+            >
+              <tab.icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
       {report.loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Spinner /> Building the report
-        </div>
+        <ReportSkeleton />
       ) : report.error ? (
         <Card>
           <ErrorState message={report.error} onRetry={() => void report.reload()} />
@@ -162,140 +190,59 @@ export default function ReportingPage() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <Stat
-              label="Cash in"
-              value={money(data.cashFlow.inflow)}
-              hint="Receipts and other cash debits"
-              icon={<ArrowDownLeft className="h-4 w-4 text-mint" />}
-            />
-            <Stat
-              label="Cash out"
-              value={money(data.cashFlow.outflow)}
-              hint="Vendor payments and other cash credits"
-              icon={<ArrowUpRight className="h-4 w-4 text-rose" />}
-            />
-            <Stat
-              label="Net cash"
-              value={money(data.cashFlow.net)}
-              hint="Cash in − cash out"
-              icon={<Wallet className="h-4 w-4" />}
-            />
-            <Stat
-              label="Revenue"
-              value={money(data.profitAndLoss.totalRevenue)}
-              hint="Selected period"
-              icon={<TrendingUp className="h-4 w-4 text-mint" />}
-            />
-            <Stat
-              label="Expenses"
-              value={money(data.profitAndLoss.totalExpenses)}
-              hint="Selected period"
-              icon={<TrendingDown className="h-4 w-4 text-rose" />}
-            />
-            <Stat
-              label="Net profit"
-              value={money(data.profitAndLoss.netIncome)}
-              hint="Revenue − expenses"
-              tone={BigInt(data.profitAndLoss.netIncome) >= 0n ? 'text-mint' : 'text-rose'}
-            />
-          </div>
-
-          <Card className="mt-5 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-line px-5 py-4">
-              <SectionTitle title="Inflow & outflow" hint="Cash movement in the selected period" />
-              <span className="font-num text-[11px] text-muted">{data.currency}</span>
-            </div>
-            {data.cashFlow.sources.length === 0 ? (
-              <p className="px-5 py-6 text-[12px] text-muted">No cash movement in this period.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px] text-left">
-                  <thead>
-                    <tr className="border-b border-line text-[10px] uppercase tracking-wider text-muted">
-                      <th className="px-5 py-2.5 font-medium">Source</th>
-                      <th className="px-5 py-2.5 text-right font-medium">In</th>
-                      <th className="px-5 py-2.5 text-right font-medium">Out</th>
-                      <th className="px-5 py-2.5 text-right font-medium">Net</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {data.cashFlow.sources.map((source) => (
-                      <tr key={source.key} className="text-[12px]">
-                        <td className="px-5 py-2.5">{source.label}</td>
-                        <td className="font-num px-5 py-2.5 text-right">
-                          {source.inflow === '0' ? '—' : money(source.inflow)}
-                        </td>
-                        <td className="font-num px-5 py-2.5 text-right">
-                          {source.outflow === '0' ? '—' : money(source.outflow)}
-                        </td>
-                        <td className="font-num px-5 py-2.5 text-right font-medium">
-                          {money(source.net)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-line bg-paper/60 text-[12px] font-semibold">
-                      <td className="px-5 py-3">Net cash</td>
-                      <td className="font-num px-5 py-3 text-right">{money(data.cashFlow.inflow)}</td>
-                      <td className="font-num px-5 py-3 text-right">{money(data.cashFlow.outflow)}</td>
-                      <td className="font-num px-5 py-3 text-right">{money(data.cashFlow.net)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+          <Card className="overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4 sm:px-5">
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-control bg-brand-soft text-brand">
+                  <active.icon className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-[16px] font-semibold tracking-tight">{active.label}</h2>
+                  <p className="mt-0.5 text-[12px] text-muted">
+                    {periodText} · All amounts in {data.currency}
+                  </p>
+                </div>
               </div>
-            )}
-          </Card>
-
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <Card className="overflow-hidden">
-              <div className="flex items-center justify-between border-b border-line px-5 py-4">
-                <SectionTitle title="Profit & loss" hint="Revenue less expenses" />
-                <span className="text-[10px] uppercase tracking-wider text-muted">Period</span>
-              </div>
-              <div className="px-5 py-4">
-                <StatementGroup title="Revenue" lines={data.profitAndLoss.revenueLines} money={money} />
-                <StatementTotal label="Total revenue" value={money(data.profitAndLoss.totalRevenue)} />
-                <StatementGroup title="Expenses" lines={data.profitAndLoss.expenseLines} money={money} />
-                <StatementTotal label="Total expenses" value={money(data.profitAndLoss.totalExpenses)} />
-                <StatementTotal
-                  label="Net income"
-                  value={money(data.profitAndLoss.netIncome)}
-                  emphasis
-                />
-              </div>
-            </Card>
-
-            <Card className="overflow-hidden">
-              <div className="flex items-center justify-between border-b border-line px-5 py-4">
-                <SectionTitle title="Balance sheet" hint="As of the period end" />
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              {activeTab === 'balance-sheet' ? (
+                <Badge
+                  dot
+                  className={
                     data.balanceSheet.balanced
-                      ? 'bg-mint-soft text-mint'
-                      : 'bg-rose-soft text-rose'
-                  }`}
+                      ? 'border-mint/20 bg-mint-soft text-mint'
+                      : 'border-rose/20 bg-rose-soft text-rose'
+                  }
                 >
                   {data.balanceSheet.balanced ? 'Balanced' : 'Out of balance'}
-                </span>
-              </div>
-              <div className="px-5 py-4">
-                <StatementGroup title="Assets" lines={data.balanceSheet.assetLines} money={money} />
-                <StatementTotal label="Total assets" value={money(data.balanceSheet.totalAssets)} />
-                <StatementGroup
-                  title="Liabilities"
-                  lines={data.balanceSheet.liabilityLines}
-                  money={money}
-                />
-                <StatementTotal
-                  label="Total liabilities"
-                  value={money(data.balanceSheet.totalLiabilities)}
-                />
-                <StatementGroup title="Equity" lines={data.balanceSheet.equityLines} money={money} />
-                <StatementTotal label="Total equity" value={money(data.balanceSheet.totalEquity)} />
-              </div>
-            </Card>
+                </Badge>
+              ) : (
+                <span className="text-[11px] uppercase tracking-wider text-muted">Statement</span>
+              )}
+            </div>
+
+            <div
+              role="tabpanel"
+              id={panelId(activeTab)}
+              aria-labelledby={tabId(activeTab)}
+              className="px-4 py-4 sm:px-5 sm:py-5"
+            >
+              {activeTab === 'cash-flow' ? <CashFlowStatement report={data} /> : null}
+              {activeTab === 'profit-and-loss' ? <ProfitLossStatement report={data} /> : null}
+              {activeTab === 'balance-sheet' ? <BalanceSheetStatement report={data} /> : null}
+            </div>
+          </Card>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-muted">
+            <span>
+              {activeTab === 'balance-sheet'
+                ? 'The balance sheet is cumulative and reflects the position at the period end.'
+                : 'This statement covers the selected period.'}
+            </span>
+            <Link
+              href="/dashboard/accounting"
+              className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+            >
+              Open accounting <ArrowUpRight className="h-3 w-3" />
+            </Link>
           </div>
         </>
       )}
@@ -303,81 +250,26 @@ export default function ReportingPage() {
   );
 }
 
-function Stat({
-  label,
-  value,
-  hint,
-  icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  icon?: React.ReactNode;
-  tone?: string;
-}) {
+function ReportSkeleton() {
   return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between text-muted">
-        <span className="text-[10px] font-medium uppercase tracking-wider">{label}</span>
-        {icon ? <span className="rounded-lg bg-paper p-1.5">{icon}</span> : null}
+    <Card className="overflow-hidden">
+      <div className="flex items-start gap-3 border-b border-line px-5 py-4">
+        <Skeleton className="h-9 w-9 rounded-control" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-64" />
+        </div>
       </div>
-      <p className={`font-num mt-2 text-[19px] font-semibold tracking-tight ${tone ?? ''}`}>
-        {value}
-      </p>
-      <p className="mt-0.5 text-[10px] text-muted">{hint}</p>
+      <div className="space-y-4 px-5 py-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Skeleton className="h-20 rounded-control" />
+          <Skeleton className="h-20 rounded-control" />
+          <Skeleton className="h-20 rounded-control" />
+        </div>
+        <Skeleton className="h-48 rounded-control" />
+      </div>
     </Card>
   );
 }
 
-function StatementGroup({
-  title,
-  lines,
-  money,
-}: {
-  title: string;
-  lines: ReportLine[];
-  money: (value: string) => string;
-}) {
-  return (
-    <div className="mb-3">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-muted">{title}</p>
-      <div className="mt-1.5 space-y-1">
-        {lines.length === 0 ? (
-          <p className="text-[12px] text-muted">No entries.</p>
-        ) : (
-          lines.map((line) => (
-            <div key={`${title}-${line.code}-${line.name}`} className="flex items-center justify-between text-[12px]">
-              <span className="text-muted">
-                <span className="font-num mr-2 text-[10px]">{line.code}</span>
-                {line.name}
-              </span>
-              <span className="font-num">{money(line.amount)}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
 
-function StatementTotal({
-  label,
-  value,
-  emphasis,
-}: {
-  label: string;
-  value: string;
-  emphasis?: boolean;
-}) {
-  return (
-    <div
-      className={`mb-3 flex items-center justify-between border-t border-line pt-2 text-[12px] ${
-        emphasis ? 'font-semibold' : 'font-medium'
-      }`}
-    >
-      <span>{label}</span>
-      <span className="font-num">{value}</span>
-    </div>
-  );
-}

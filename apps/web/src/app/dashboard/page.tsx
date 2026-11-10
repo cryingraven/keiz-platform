@@ -18,6 +18,7 @@ import { api } from '@/lib/api';
 import { formatDate, formatDollars, formatMoney, humanize, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { Badge, Button, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
+import { cn } from '@/lib/utils';
 
 interface Invoice {
   _id: string;
@@ -27,6 +28,7 @@ interface Invoice {
   decimals: number;
   currency: string;
   dueDate: string;
+  vendorId: string;
 }
 interface Payment {
   _id: string;
@@ -86,6 +88,12 @@ export default function OverviewPage() {
     return { outstanding, paid, awaiting, inFlight };
   }, [invoices.data, payments.data]);
 
+  const vendorNames = useMemo(() => {
+    const map = new Map<string, string>();
+    (vendors.data ?? []).forEach((vendor) => map.set(vendor._id, vendor.name));
+    return map;
+  }, [vendors.data]);
+
   const demoEmpty = !invoices.loading && !invoices.error && (invoices.data?.length ?? 0) === 0;
 
   async function seed() {
@@ -134,11 +142,11 @@ export default function OverviewPage() {
         </p>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.35fr_1fr_1fr_1fr]">
+        <HeroStat
           label="Outstanding"
           value={formatDollars(stats.outstanding)}
-          meta={`USD · ${stats.awaiting} awaiting approval`}
+          meta={`${stats.awaiting} awaiting approval · USD bills`}
           icon={<CircleDollarSign className="h-4 w-4" />}
         />
         <Stat
@@ -149,7 +157,7 @@ export default function OverviewPage() {
         />
         <Stat
           label="In flight"
-          value={String(stats.inFlight.length)}
+          value={`${stats.inFlight.length} quotes`}
           meta={
             stats.inFlight[0]?.deadline
               ? `next deadline ${timeLeft(stats.inFlight[0].deadline)}`
@@ -176,7 +184,7 @@ export default function OverviewPage() {
         />
         <Link
           href="/dashboard/accounting"
-          className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+          className="inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
         >
           Open accounting <ArrowUpRight className="h-3 w-3" />
         </Link>
@@ -214,7 +222,7 @@ export default function OverviewPage() {
             <SectionTitle title="Recent bills" hint="Newest first" />
             <Link
               href="/dashboard/invoices"
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
             >
               All invoices <ArrowRight className="h-3 w-3" />
             </Link>
@@ -238,22 +246,32 @@ export default function OverviewPage() {
             />
           ) : (
             <div className="divide-y divide-line">
-              {(invoices.data ?? []).slice(0, 6).map((invoice) => (
-                <Link
-                  key={invoice._id}
-                  href={`/dashboard/invoices/${invoice._id}`}
-                  className="flex items-center gap-3 px-5 py-3.5 transition hover:bg-paper/70"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-num text-[13px] font-medium">{invoice.number}</p>
-                    <p className="text-[11px] text-muted">Due {formatDate(invoice.dueDate)}</p>
-                  </div>
-                  <p className="font-num text-[13px]">
-                    {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
-                  </p>
-                  <StatusPill status={invoice.status} />
-                </Link>
-              ))}
+              {(invoices.data ?? []).slice(0, 6).map((invoice) => {
+                const overdue =
+                  !['PAID', 'DRAFT', 'VOID'].includes(invoice.status) &&
+                  new Date(invoice.dueDate).getTime() < Date.now();
+                return (
+                  <Link
+                    key={invoice._id}
+                    href={`/dashboard/invoices/${invoice._id}`}
+                    className="flex items-center gap-3 px-5 py-3.5 transition hover:bg-paper/70"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-num text-[14px] font-medium">{invoice.number}</p>
+                      <p className="truncate text-[12px] text-muted">
+                        {vendorNames.get(invoice.vendorId) ?? 'Vendor'}
+                        <span className={overdue ? ' text-rose' : ''}>
+                          {' '}· due {formatDate(invoice.dueDate)}
+                        </span>
+                      </p>
+                    </div>
+                    <p className="font-num text-[14px]">
+                      {formatMoney(invoice.total, invoice.decimals, invoice.currency)}
+                    </p>
+                    <StatusPill status={invoice.status} />
+                  </Link>
+                );
+              })}
             </div>
           )}
         </Card>
@@ -268,13 +286,22 @@ export default function OverviewPage() {
                 const pct = Math.round((count / total) * 100);
                 return (
                   <div key={status}>
-                    <div className="mb-1 flex items-center justify-between text-[11px]">
+                    <div className="mb-1 flex items-center justify-between text-[12px]">
                       <span className="text-muted">{humanize(status)}</span>
                       <span className="font-num text-muted">{count}</span>
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-paper">
                       <div
-                        className="h-full rounded-full bg-ink/70"
+                        className={cn(
+                          'h-full rounded-full',
+                          status === 'PAID'
+                            ? 'bg-mint'
+                            : status === 'APPROVED'
+                              ? 'bg-brand'
+                              : status === 'SUBMITTED' || status === 'PAYMENT_PENDING'
+                                ? 'bg-amber'
+                                : 'bg-line-strong',
+                        )}
                         style={{ width: `${Math.max(pct, count > 0 ? 6 : 0)}%` }}
                       />
                     </div>
@@ -289,13 +316,13 @@ export default function OverviewPage() {
               <Bot className="h-4 w-4 text-brand" />
               <p className="text-sm font-semibold">Ask the assistant</p>
             </div>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
               &ldquo;What is waiting for approval?&rdquo; or &ldquo;pay INV-1001&rdquo; — it drafts
               proposals, never moves funds.
             </p>
             <Link
               href="/dashboard/chat"
-              className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+              className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
             >
               Open assistant <ArrowUpRight className="h-3 w-3" />
             </Link>
@@ -316,10 +343,10 @@ export default function OverviewPage() {
                   {agent.data.active ? 'Active' : 'Paused'}
                 </Badge>
               </div>
-              <p className="font-num mt-2 truncate text-[12px] text-muted">{agent.data.accountId}</p>
+              <p className="font-num mt-2 truncate text-[13px] text-muted">{agent.data.accountId}</p>
               <Link
                 href="/dashboard/agent"
-                className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+                className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
               >
                 Manage policy <ArrowUpRight className="h-3 w-3" />
               </Link>
@@ -327,6 +354,35 @@ export default function OverviewPage() {
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function HeroStat({
+  label,
+  value,
+  meta,
+  icon,
+}: {
+  label: string;
+  value: string;
+  meta: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-card border border-ink bg-ink p-5 text-white sm:col-span-2 lg:col-span-1">
+      <div
+        className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/[0.06]"
+        aria-hidden
+      />
+      <div className="relative flex items-center justify-between text-white/60">
+        <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
+        <span className="rounded-lg bg-white/10 p-1.5 text-white">{icon}</span>
+      </div>
+      <p className="font-num relative mt-4 text-[32px] font-semibold leading-none tracking-tight">
+        {value}
+      </p>
+      <p className="relative mt-2 text-[12px] text-white/55">{meta}</p>
     </div>
   );
 }
@@ -345,11 +401,11 @@ function Stat({
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between text-muted">
-        <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
+        <span className="text-[12px] font-medium uppercase tracking-wider">{label}</span>
         <span className="rounded-lg bg-paper p-1.5">{icon}</span>
       </div>
       <p className="font-num mt-3 text-[26px] font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-[11px] text-muted">{meta}</p>
+      <p className="mt-1 text-[12px] text-muted">{meta}</p>
     </Card>
   );
 }
