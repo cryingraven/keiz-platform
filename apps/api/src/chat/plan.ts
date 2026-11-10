@@ -31,6 +31,7 @@ const requestContextSchema = z.object({
   orgId: z.string().min(1),
   userId: z.string().min(1),
   accountId: z.string().min(1),
+  role: z.string().min(1),
 });
 
 export function planFromArgs(args: Partial<PlanInput>, id: string): ChatPlan {

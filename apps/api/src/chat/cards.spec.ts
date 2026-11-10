@@ -7,6 +7,7 @@ import {
   journalListCard,
   money,
   needsConfirmation,
+  normalizeToolName,
   receivableRow,
   spendSummaryCard,
   toolRisk,
@@ -143,6 +144,10 @@ describe('tool summary', () => {
     expect(toolRisk('unknown-tool')).toBe('write');
     expect(describeToolCall('get-invoice', { number: 'INV-1' })).toContain('INV-1');
     expect(describeToolCall('propose-payment', { invoiceNumber: 'INV-2' })).toContain('INV-2');
+    expect(toolRisk('create-vendor')).toBe('write');
+    expect(toolRisk('create-customer')).toBe('write');
+    expect(toolRisk('create-bill')).toBe('write');
+    expect(toolRisk('create-receivable')).toBe('write');
   });
 
   it('only confirms writes and drafts', () => {
@@ -152,6 +157,24 @@ describe('tool summary', () => {
     expect(needsConfirmation('journal-summary')).toBe(false);
     expect(needsConfirmation('propose-payment')).toBe(true);
     expect(needsConfirmation('proposePayment')).toBe(true);
+    expect(needsConfirmation('create-vendor')).toBe(true);
+    expect(needsConfirmation('createCustomer')).toBe(true);
+    expect(needsConfirmation('create-bill')).toBe(true);
+    expect(needsConfirmation('createReceivable')).toBe(true);
     expect(needsConfirmation('some-future-tool')).toBe(true);
+  });
+
+  it('describes creation calls and uses kebab-case aliases', () => {
+    expect(describeToolCall('createVendor', { name: 'Acme' })).toBe('Create vendor Acme');
+    expect(describeToolCall('create-customer', { name: 'Globex' })).toBe(
+      'Create customer Globex',
+    );
+    expect(describeToolCall('createBill', { vendor: 'Acme', submit: true })).toContain(
+      'and submit',
+    );
+    expect(describeToolCall('createReceivable', { customer: 'Globex', issue: true })).toContain(
+      'and issue',
+    );
+    expect(normalizeToolName('createBill')).toBe('create-bill');
   });
 });

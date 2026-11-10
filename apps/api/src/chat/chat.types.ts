@@ -9,6 +9,7 @@ export interface ChatRequestContext {
   orgId: string;
   userId: string;
   accountId: string;
+  role: string;
   planApproved: boolean;
 }
 

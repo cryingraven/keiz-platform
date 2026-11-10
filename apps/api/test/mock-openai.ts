@@ -33,6 +33,14 @@ export async function startMockOpenAi(port: number) {
       const hasToolResult = toolResults >= 2;
       const declared = body.tools?.[0]?.function?.name;
       if (declared) toolName = declared;
+      const lastUser = [...(body.messages ?? [])]
+        .reverse()
+        .find((message) => message.role === 'user');
+      const lastUserText =
+        typeof lastUser?.content === 'string'
+          ? lastUser.content
+          : JSON.stringify(lastUser?.content ?? '');
+      const createVendorFlow = lastUserText.toLowerCase().includes('create a vendor');
 
       res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -53,22 +61,42 @@ export async function startMockOpenAi(port: number) {
       };
 
       if (!hasToolResult) {
-        const nextTool = toolResults === 0 ? 'plan-actions' : 'listInvoices';
+        const nextTool = createVendorFlow
+          ? toolResults === 0
+            ? 'plan-actions'
+            : 'createVendor'
+          : toolResults === 0
+            ? 'plan-actions'
+            : 'listInvoices';
         const args =
-          toolResults === 0
+          createVendorFlow && toolResults > 0
             ? JSON.stringify({
-                goal: 'Read the latest invoices',
-                summary: 'One read-only step.',
-                steps: [
-                  {
-                    title: 'List invoices',
-                    detail: 'Load the workspace bills.',
-                    tool: 'list-invoices',
-                    risk: 'read',
-                  },
-                ],
+                name: 'Mastra Vendor',
+                email: 'pay@mastravendor.test',
+                payoutChain: 'near',
+                payoutAddress: 'mastravendor.near',
               })
-            : '{}';
+            : toolResults === 0
+              ? JSON.stringify({
+                  goal: createVendorFlow ? 'Create a vendor' : 'Read the latest invoices',
+                  summary: createVendorFlow ? 'One write step.' : 'One read-only step.',
+                  steps: [
+                    createVendorFlow
+                      ? {
+                          title: 'Create the vendor',
+                          detail: 'Confirm the payout details before writing.',
+                          tool: 'create-vendor',
+                          risk: 'write',
+                        }
+                      : {
+                          title: 'List invoices',
+                          detail: 'Load the workspace bills.',
+                          tool: 'list-invoices',
+                          risk: 'read',
+                        },
+                  ],
+                })
+              : '{}';
         send({
           ...base,
           choices: [
@@ -103,15 +131,24 @@ export async function startMockOpenAi(port: number) {
         });
         send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
       } else {
+        const finalText = createVendorFlow
+          ? ['Created ', 'the vendor.']
+          : ['You have ', 'invoices in the workspace.'];
         send({
           ...base,
           choices: [
-            { index: 0, delta: { role: 'assistant', content: 'You have ' }, finish_reason: null },
+            {
+              index: 0,
+              delta: { role: 'assistant', content: finalText[0] },
+              finish_reason: null,
+            },
           ],
         });
         send({
           ...base,
-          choices: [{ index: 0, delta: { content: 'invoices in the workspace.' }, finish_reason: null }],
+          choices: [
+            { index: 0, delta: { content: finalText[1] }, finish_reason: null },
+          ],
         });
         send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
       }

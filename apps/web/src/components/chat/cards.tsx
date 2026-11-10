@@ -27,6 +27,11 @@ import type {
 import { Badge, Button, Spinner, StatusPill } from '@/components/ui';
 import { formatDate, humanize } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import {
+  CreatePreview,
+  createApproveLabel,
+  isCreateTool,
+} from '@/components/chat/create-preview';
 
 function amount(money: ChatMoney | undefined): string {
   if (!money) return '—';
@@ -576,6 +581,8 @@ export function ApprovalCard({
 }) {
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
+  const creating = isCreateTool(approval.name);
+  const approveLabel = createApproveLabel(approval.name, approval.args) ?? 'Approve';
   return (
     <div className="mt-2 overflow-hidden rounded-xl border border-line bg-surface">
       <div className="flex items-start gap-2 border-b border-line px-3 py-2.5">
@@ -584,19 +591,27 @@ export function ApprovalCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="text-[13px] font-semibold">Confirm tool call</p>
+            <p className="text-[13px] font-semibold">
+              {creating ? 'Confirm creation' : 'Confirm tool call'}
+            </p>
             <RiskBadge risk={approval.risk} />
           </div>
           <p className="mt-0.5 text-[12px] text-muted">{approval.summary}</p>
           <p className="font-num mt-0.5 text-[11px] text-muted/70">{approval.name}</p>
         </div>
       </div>
-      <details className="px-3 py-2">
-        <summary className="cursor-pointer text-[11px] text-muted">Arguments</summary>
-        <pre className="mt-1 max-h-32 overflow-auto rounded-lg bg-paper p-2 text-[11px] leading-relaxed text-muted scroll-thin">
-          {JSON.stringify(approval.args, null, 2)}
-        </pre>
-      </details>
+      {creating ? (
+        <div className="px-3 py-2.5">
+          <CreatePreview name={approval.name} args={approval.args} />
+        </div>
+      ) : (
+        <details className="px-3 py-2">
+          <summary className="cursor-pointer text-[11px] text-muted">Arguments</summary>
+          <pre className="mt-1 max-h-32 overflow-auto rounded-lg bg-paper p-2 text-[11px] leading-relaxed text-muted scroll-thin">
+            {JSON.stringify(approval.args, null, 2)}
+          </pre>
+        </details>
+      )}
       {resolved ? (
         <div className="border-t border-line px-3 py-2 text-[11px]">
           <span className={resolved.approved ? 'text-mint' : 'text-rose'}>
@@ -637,7 +652,8 @@ export function ApprovalCard({
             <X className="h-3 w-3" /> Decline
           </Button>
           <Button size="sm" onClick={onApprove} disabled={busy}>
-            {busy ? <Spinner className="h-3 w-3" /> : <Check className="h-3 w-3" />} Approve
+            {busy ? <Spinner className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+            {approveLabel}
           </Button>
         </div>
       )}

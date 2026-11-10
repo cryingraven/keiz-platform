@@ -516,8 +516,8 @@ stateDiagram-v2
 ## 7. AI assistant
 
 The Mastra agent is server-side. Every tool receives `orgId` from the request
-context; the model never chooses the tenant. Chat can create proposals but has
-no path to move funds.
+context; the model never chooses the tenant. Chat can create drafts and payment
+proposals but has no path to approve bills or move funds.
 
 The agent is plan-first and human-in-the-loop:
 
@@ -532,6 +532,13 @@ The agent is plan-first and human-in-the-loop:
    `approveToolCall` / `declineToolCall` and streams the continuation.
 4. Tool results are validated against Zod `outputSchema`s and emitted as
    `card` events. Every card has a link to the relevant detail page.
+5. Creation tools (`create-vendor`, `create-customer`, `create-bill`,
+   `create-receivable`) are write tools with a structured confirmation preview.
+   Vendors/customers are resolved by name/email inside the org, never by a
+   model-supplied id. Bills and customer invoices start as `DRAFT`; optional
+   `submit` moves a bill to `SUBMITTED` (no posting), while optional `issue`
+   moves a customer invoice to `ISSUED` and posts AR. `create-vendor` is
+   ADMIN/OWNER only. Chat cannot approve bills, record receipts or move funds.
 
 ```mermaid
 sequenceDiagram

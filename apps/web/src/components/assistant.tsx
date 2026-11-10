@@ -11,13 +11,17 @@ import {
 } from 'react';
 import {
   Bot,
+  Building2,
   CheckCircle2,
+  Contact,
   CornerDownLeft,
   Cpu,
+  FileText,
   History,
   Maximize2,
   MessageSquarePlus,
   Minimize2,
+  Receipt,
   Sparkles,
   Square,
   Trash2,
@@ -26,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { shortAddress } from '@/lib/format';
 import {
   fetchPendingApprovals,
@@ -92,6 +97,34 @@ const SUGGESTIONS = [
   'Which vendors do we have?',
 ];
 
+const CREATE_ACTIONS = [
+  {
+    label: 'Vendor',
+    prompt:
+      'I want to create a vendor. Ask me for the name, email, payout chain and payout address before calling the plan.',
+    icon: Building2,
+    requiresAdmin: true,
+  },
+  {
+    label: 'Customer',
+    prompt:
+      'I want to create a customer. Ask me for the name and email before calling the plan.',
+    icon: Contact,
+  },
+  {
+    label: 'AP bill',
+    prompt:
+      'I want to create a vendor bill. Ask me for the vendor, line items, currency, tax and due date before calling the plan.',
+    icon: FileText,
+  },
+  {
+    label: 'AR invoice',
+    prompt:
+      'I want to create a customer invoice. Ask me for the customer, line items, currency, tax and due date before calling the plan.',
+    icon: Receipt,
+  },
+];
+
 interface AssistantContextValue {
   open: boolean;
   openAssistant: () => void;
@@ -140,6 +173,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
 function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const threads = useApi<Thread[]>(open ? '/chat/threads' : null);
+  const { session } = useAuth();
+  const canAdmin = ['ADMIN', 'OWNER'].includes(session?.role ?? '');
+  const createActions = CREATE_ACTIONS.filter(
+    (action) => !('requiresAdmin' in action) || !action.requiresAdmin || canAdmin,
+  );
   const [threadId, setThreadId] = useState<string | undefined>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -698,26 +736,64 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
           aria-relevant="additions text"
         >
           {messages.length === 0 ? (
-            <div className="mx-auto max-w-md py-6 text-center">
-              <span className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-paper">
-                <Sparkles className="h-5 w-5 text-brand" />
-              </span>
-              <p className="mt-3 text-sm font-semibold">Ask about your payables</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-muted">
-                The assistant calls tools against your org. Payment requests become proposals in
-                the agent queue.
-              </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => void send(suggestion)}
-                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-muted transition hover:border-line-strong hover:text-ink"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+            <div className="mx-auto max-w-md py-4">
+              <div className="text-center">
+                <span className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-paper">
+                  <Sparkles className="h-5 w-5 text-brand" />
+                </span>
+                <p className="mt-3 text-sm font-semibold">Ask or create</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted">
+                  Chat can create vendors, customers, AP bills and AR invoices. Everything is
+                  confirmed before it is written.
+                </p>
+              </div>
+
+              <div className="mt-5">
+                <p className="text-[11px] uppercase tracking-wider text-muted">Create</p>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  {createActions.map((action) => {
+                    const Icon = action.icon;
+                    return (
+                      <button
+                        key={action.label}
+                        type="button"
+                        onClick={() => void send(action.prompt)}
+                        className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2.5 text-left text-[12px] font-medium transition hover:border-line-strong hover:bg-paper"
+                      >
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block">{action.label}</span>
+                          <span className="block truncate text-[10px] font-normal text-muted">
+                            Confirm before writing
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {provider === 'local' ? (
+                  <p className="mt-2 text-[11px] text-muted">
+                    Creating records needs the NEAR AI agent. Set NEARAI_API_KEY to enable it.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="mt-5">
+                <p className="text-[11px] uppercase tracking-wider text-muted">Ask</p>
+                <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => void send(suggestion)}
+                      className="rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-muted transition hover:border-line-strong hover:text-ink"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
@@ -883,7 +959,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
                   void send(input);
                 }
               }}
-              placeholder="Ask about invoices, spend, or propose a payment…"
+              placeholder="Ask about invoices, or create a vendor, bill or customer invoice…"
               className="min-h-[44px] max-h-32 flex-1 resize-none py-2.5"
               rows={1}
               disabled={streaming}
@@ -905,7 +981,7 @@ function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void
           </div>
           <p className="mt-1.5 flex items-center gap-1 text-[11px] text-muted">
             <Cpu className="h-3 w-3" />
-            Responses stream over SSE. Chat can only create proposals.
+            Chat can create drafts and submit or issue them. It cannot approve bills or move funds.
           </p>
         </div>
       </div>

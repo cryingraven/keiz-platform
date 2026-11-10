@@ -615,9 +615,13 @@ const TOOL_ALIASES: Record<string, string> = {
   listAgentActions: 'list-agent-actions',
   journalSummary: 'journal-summary',
   proposePayment: 'propose-payment',
+  createVendor: 'create-vendor',
+  createCustomer: 'create-customer',
+  createBill: 'create-bill',
+  createReceivable: 'create-receivable',
 };
 
-function normalizeToolName(toolName: string): string {
+export function normalizeToolName(toolName: string): string {
   return TOOL_ALIASES[toolName] ?? toolName;
 }
 
@@ -636,6 +640,10 @@ const RISKY_TOOLS: Record<string, ChatRisk> = {
   'get-payment': 'read',
   'list-agent-actions': 'read',
   'journal-summary': 'read',
+  'create-vendor': 'write',
+  'create-customer': 'write',
+  'create-bill': 'write',
+  'create-receivable': 'write',
 };
 
 export function toolRisk(toolName: string): ChatRisk {
@@ -681,6 +689,14 @@ export function describeToolCall(
       return 'Read recent journal entries';
     case 'propose-payment':
       return `Create a payment proposal for ${String(args.invoiceNumber ?? 'an invoice')}`;
+    case 'create-vendor':
+      return `Create vendor ${String(args.name ?? 'new vendor')}`;
+    case 'create-customer':
+      return `Create customer ${String(args.name ?? 'new customer')}`;
+    case 'create-bill':
+      return `Create ${args.submit ? 'and submit ' : ''}a bill for ${String(args.vendor ?? 'a vendor')}`;
+    case 'create-receivable':
+      return `Create ${args.issue ? 'and issue ' : ''}a customer invoice for ${String(args.customer ?? 'a customer')}`;
     default:
       return `Run ${rawToolName}`;
   }

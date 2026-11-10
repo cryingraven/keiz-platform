@@ -5,6 +5,11 @@ import {
   agentActionListCardSchema,
   booksSummaryCardSchema,
   chatToolErrorSchema,
+  createCustomerSchema,
+  createInvoiceSchema,
+  createReceivableSchema,
+  createVendorSchema,
+  currencySchema,
   customerCardSchema,
   customerListCardSchema,
   invoiceCardSchema,
@@ -55,11 +60,34 @@ const requestContextSchema = z.object({
   orgId: z.string().min(1),
   userId: z.string().min(1),
   accountId: z.string().min(1),
+  role: z.string().min(1),
 });
 
 type ToolContext = {
   requestContext?: { get: (key: string) => unknown };
 };
+
+/** Models sometimes send numbers for money fields; the REST schemas require strings. */
+const chatLineItemSchema = z.object({
+  description: z.string().min(1).max(300),
+  quantity: z.union([z.string(), z.number()]).transform((value) => String(value)),
+  unitPrice: z.union([z.string(), z.number()]).transform((value) => String(value)),
+});
+
+const chatCurrencySchema = z
+  .string()
+  .transform((value) => value.toUpperCase())
+  .pipe(currencySchema);
+
+const chatTaxBpsSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => Number(value))
+  .pipe(z.number().int().min(0).max(10_000));
+
+const chatDueInDaysSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => Number(value))
+  .pipe(z.number().int().min(1).max(365));
 
 function requireOrg(context: ToolContext | undefined): string {
   const orgId = context?.requestContext?.get('orgId');
@@ -69,12 +97,140 @@ function requireOrg(context: ToolContext | undefined): string {
   return orgId;
 }
 
+function requireUser(context: ToolContext | undefined): string {
+  const userId = context?.requestContext?.get('userId');
+  if (typeof userId !== 'string' || !userId) {
+    throw new Error('Missing userId in request context - refusing to write tenant data');
+  }
+  return userId;
+}
+
+function canCreateVendors(context: ToolContext | undefined): boolean {
+  const role = context?.requestContext?.get('role');
+  return role === 'ADMIN' || role === 'OWNER';
+}
+
+function zodMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.map(String).join('.');
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join('; ');
+}
+
+function isoDate(value: string): string {
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00.000Z`
+    : value;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) throw new Error('Dates must be ISO strings or YYYY-MM-DD');
+  return date.toISOString();
+}
+
+function dueDateFrom(input: { dueDate?: string; dueInDays?: number }): string {
+  if (input.dueDate) return isoDate(input.dueDate);
+  const days = input.dueInDays ?? 14;
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString();
+}
+
+function shortError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > 120 ? `${message.slice(0, 117)}...` : message;
+}
+
+function nextNumber(rows: Array<{ number: string }>, prefix: string): string {
+  const values = rows
+    .map((row) => row.number)
+    .filter((number) => number.startsWith(`${prefix}-`))
+    .map((number) => Number(number.slice(prefix.length + 1)))
+    .filter((value) => Number.isInteger(value));
+  const next = (values.length ? Math.max(...values) : 1000) + 1;
+  return `${prefix}-${next}`;
+}
+
+async function resolveVendor(
+  orgId: string,
+  query: string,
+  vendors: VendorsService,
+): Promise<VendorLike> {
+  const rows = (await vendors.list(orgId)) as VendorLike[];
+  const needle = query.trim().toLowerCase();
+  const exact = rows.filter(
+    (vendor) =>
+      vendor.name.toLowerCase() === needle ||
+      vendor.email.toLowerCase() === needle ||
+      vendor.nearAccountId?.toLowerCase() === needle,
+  );
+  const matches = exact.length
+    ? exact
+    : rows.filter(
+        (vendor) =>
+          vendor.name.toLowerCase().includes(needle) ||
+          vendor.email.toLowerCase().includes(needle),
+      );
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) {
+    throw new Error(
+      `Vendor "${query}" was not found in this workspace. Create the vendor first or use the exact name or email.`,
+    );
+  }
+  throw new Error(
+    `Vendor "${query}" is ambiguous: ${matches
+      .slice(0, 5)
+      .map((vendor) => vendor.name)
+      .join(', ')}. Ask for the exact name or email.`,
+  );
+}
+
+async function resolveCustomer(
+  orgId: string,
+  query: string,
+  receivables: ReceivablesService,
+): Promise<CustomerLike> {
+  const rows = (await receivables.listCustomers(orgId)) as CustomerLike[];
+  const needle = query.trim().toLowerCase();
+  const exact = rows.filter(
+    (customer) =>
+      customer.name.toLowerCase() === needle || customer.email.toLowerCase() === needle,
+  );
+  const matches = exact.length
+    ? exact
+    : rows.filter(
+        (customer) =>
+          customer.name.toLowerCase().includes(needle) ||
+          customer.email.toLowerCase().includes(needle),
+      );
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) {
+    throw new Error(
+      `Customer "${query}" was not found in this workspace. Create the customer first or use the exact name or email.`,
+    );
+  }
+  throw new Error(
+    `Customer "${query}" is ambiguous: ${matches
+      .slice(0, 5)
+      .map((customer) => customer.name)
+      .join(', ')}. Ask for the exact name or email.`,
+  );
+}
+
 /** Reject the approval prompt unless the plan has already been approved. */
 function requirePlan(
   _input: unknown,
-  ctx?: { requestContext?: Record<string, unknown> },
+  ctx?: { requestContext?: unknown },
 ): { proceed: false; output: { error: string } } | undefined {
-  if (ctx?.requestContext?.planApproved !== true) {
+  const requestContext = ctx?.requestContext as
+    | { get?: (key: string) => unknown; planApproved?: unknown }
+    | undefined;
+  const approved =
+    typeof requestContext?.get === 'function'
+      ? requestContext.get('planApproved') === true
+      : requestContext?.planApproved === true;
+  if (!approved) {
     return {
       proceed: false as const,
       output: {
@@ -435,6 +591,260 @@ export function createChatTools(deps: ChatToolDeps) {
     },
   });
 
+  const createVendor = createTool({
+    id: 'create-vendor',
+    description:
+      'Create a vendor (payee) in the current organization. Requires ADMIN or OWNER. Use only after the user has supplied the name, email, payout chain and payout address. This does not pay anyone.',
+    inputSchema: z.object({
+      name: z.string().min(1).max(120),
+      email: z.string().min(3).max(200),
+      nearAccountId: z.string().max(64).optional(),
+      payoutChain: z.string().min(2).max(20).optional(),
+      payoutAddress: z.string().min(2).max(200),
+      bankName: z.string().max(120).optional(),
+      bankAccount: z.string().max(60).optional(),
+    }),
+    outputSchema: vendorCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    requireApproval: true,
+    beforeApproval: requirePlan,
+    execute: async (input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      if (!canCreateVendors(context as ToolContext)) {
+        return { error: 'Only an ADMIN or OWNER can create vendors.' };
+      }
+      const parsed = createVendorSchema.safeParse(input);
+      if (!parsed.success) return { error: zodMessage(parsed.error) };
+      const existing = (await deps.vendors.list(orgId)) as VendorLike[];
+      const duplicate = existing.find(
+        (vendor) => vendor.email.toLowerCase() === parsed.data.email.toLowerCase(),
+      );
+      if (duplicate) {
+        return {
+          error: `A vendor with email ${parsed.data.email} already exists (${duplicate.name}).`,
+        };
+      }
+      const vendor = (await deps.vendors.create(orgId, parsed.data)) as unknown as VendorLike;
+      return {
+        ...vendorCard(vendor, [], new Map()),
+        title: `Created ${vendor.name}`,
+        subtitle: `New vendor · ${vendor.payoutChain} · ${vendor.status}`,
+      };
+    },
+  });
+
+  const createCustomer = createTool({
+    id: 'create-customer',
+    description:
+      'Create a customer in the current organization. Use only after the user has supplied the name and email. This does not issue an invoice.',
+    inputSchema: z.object({
+      name: z.string().min(1).max(120),
+      email: z.string().min(3).max(200),
+      taxId: z.string().max(60).optional(),
+      billingAddress: z.string().max(300).optional(),
+    }),
+    outputSchema: customerCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    requireApproval: true,
+    beforeApproval: requirePlan,
+    execute: async (input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      const parsed = createCustomerSchema.safeParse(input);
+      if (!parsed.success) return { error: zodMessage(parsed.error) };
+      const existing = (await deps.receivables.listCustomers(orgId)) as CustomerLike[];
+      const duplicate = existing.find(
+        (customer) => customer.email.toLowerCase() === parsed.data.email.toLowerCase(),
+      );
+      if (duplicate) {
+        return {
+          error: `A customer with email ${parsed.data.email} already exists (${duplicate.name}).`,
+        };
+      }
+      const customer = (await deps.receivables.createCustomer(
+        orgId,
+        parsed.data,
+      )) as unknown as CustomerLike;
+      return {
+        ...customerCard(customer, [], new Map()),
+        title: `Created ${customer.name}`,
+        subtitle: `New customer · ${customer.email} · ${customer.status}`,
+      };
+    },
+  });
+
+  const createBill = createTool({
+    id: 'create-bill',
+    description:
+      'Create an AP bill (vendor invoice) for an existing vendor. Resolve the vendor by name or email; never invent a vendor id. Creates a DRAFT and, only when the user explicitly asks, submits it. Submitting does not post to the ledger.',
+    inputSchema: z.object({
+      vendor: z.string().min(1).max(200),
+      number: z.string().min(1).max(64).optional(),
+      issueDate: z.string().min(1).max(40).optional(),
+      dueDate: z.string().min(1).max(40).optional(),
+      dueInDays: chatDueInDaysSchema.optional(),
+      currency: chatCurrencySchema.default('USD'),
+      taxBps: chatTaxBpsSchema.default(0),
+      notes: z.string().max(2000).optional(),
+      lineItems: z.array(chatLineItemSchema).min(1).max(50),
+      submit: z.boolean().optional(),
+    }),
+    outputSchema: invoiceCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    requireApproval: true,
+    beforeApproval: requirePlan,
+    execute: async (input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      const userId = requireUser(context as ToolContext);
+      let vendor: VendorLike;
+      try {
+        vendor = await resolveVendor(orgId, input.vendor, deps.vendors);
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+      let dueDate: string;
+      let issueDate: string | undefined;
+      try {
+        dueDate = dueDateFrom(input);
+        issueDate = input.issueDate ? isoDate(input.issueDate) : undefined;
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+      const rows = (await deps.invoices.list(orgId, {})) as InvoiceLike[];
+      const number = input.number ?? nextNumber(rows, 'INV');
+      const parsed = createInvoiceSchema.safeParse({
+        vendorId: String(vendor._id),
+        number,
+        issueDate,
+        dueDate,
+        currency: input.currency,
+        taxBps: input.taxBps,
+        notes: input.notes,
+        lineItems: input.lineItems,
+      });
+      if (!parsed.success) return { error: zodMessage(parsed.error) };
+
+      let invoice: InvoiceLike;
+      try {
+        invoice = (await deps.invoices.create(
+          orgId,
+          userId,
+          parsed.data,
+        )) as unknown as InvoiceLike;
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+
+      let warning: string | undefined;
+      if (input.submit) {
+        try {
+          invoice = (await deps.invoices.submit(
+            orgId,
+            String(invoice._id),
+          )) as unknown as InvoiceLike;
+        } catch (error) {
+          warning = `Created as DRAFT; submit failed: ${shortError(error)}`;
+        }
+      }
+
+      return {
+        ...invoiceCard(invoice, vendor.name, [], new Map([[String(invoice._id), invoice.number]])),
+        title: `Created ${invoice.number}`,
+        subtitle: `New AP bill · ${invoice.status}${warning ? ` · ${warning}` : ''}`,
+        relatedLinks: [
+          { href: '/dashboard/invoices', label: 'View all bills' },
+          { href: `/dashboard/vendors/${String(vendor._id)}`, label: 'View vendor' },
+        ],
+      };
+    },
+  });
+
+  const createReceivable = createTool({
+    id: 'create-receivable',
+    description:
+      'Create an AR customer invoice (receivable) for an existing customer. Resolve the customer by name or email; never invent a customer id. Creates a DRAFT and, only when the user explicitly asks, issues it. Issuing posts AR to the ledger.',
+    inputSchema: z.object({
+      customer: z.string().min(1).max(200),
+      number: z.string().min(1).max(64).optional(),
+      issueDate: z.string().min(1).max(40).optional(),
+      dueDate: z.string().min(1).max(40).optional(),
+      dueInDays: chatDueInDaysSchema.optional(),
+      currency: chatCurrencySchema.default('USD'),
+      taxBps: chatTaxBpsSchema.default(0),
+      notes: z.string().max(2000).optional(),
+      lineItems: z.array(chatLineItemSchema).min(1).max(50),
+      issue: z.boolean().optional(),
+    }),
+    outputSchema: receivableCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    requireApproval: true,
+    beforeApproval: requirePlan,
+    execute: async (input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      const userId = requireUser(context as ToolContext);
+      let customer: CustomerLike;
+      try {
+        customer = await resolveCustomer(orgId, input.customer, deps.receivables);
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+      let dueDate: string;
+      let issueDate: string | undefined;
+      try {
+        dueDate = dueDateFrom(input);
+        issueDate = input.issueDate ? isoDate(input.issueDate) : undefined;
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+      const rows = (await deps.receivables.list(orgId, {})) as ReceivableLike[];
+      const number = input.number ?? nextNumber(rows, 'AR');
+      const parsed = createReceivableSchema.safeParse({
+        customerId: String(customer._id),
+        number,
+        issueDate,
+        dueDate,
+        currency: input.currency,
+        taxBps: input.taxBps,
+        notes: input.notes,
+        lineItems: input.lineItems,
+      });
+      if (!parsed.success) return { error: zodMessage(parsed.error) };
+
+      let receivable: ReceivableLike;
+      try {
+        receivable = (await deps.receivables.create(
+          orgId,
+          userId,
+          parsed.data,
+        )) as unknown as ReceivableLike;
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+
+      let warning: string | undefined;
+      if (input.issue) {
+        try {
+          receivable = (await deps.receivables.issue(
+            orgId,
+            String(receivable._id),
+          )) as unknown as ReceivableLike;
+        } catch (error) {
+          warning = `Created as DRAFT; issue failed: ${shortError(error)}`;
+        }
+      }
+
+      const names = new Map([[String(customer._id), customer.name]]);
+      return {
+        ...receivableCard(receivable, names),
+        title: `Created ${receivable.number}`,
+        subtitle: `New AR invoice · ${receivable.status}${warning ? ` · ${warning}` : ''}`,
+        relatedLinks: [
+          { href: '/dashboard/receivables', label: 'View all receivables' },
+          { href: `/dashboard/customers/${String(customer._id)}`, label: 'View customer' },
+        ],
+      };
+    },
+  });
+
   const planActions = createPlanTool();
 
   return {
@@ -454,6 +864,10 @@ export function createChatTools(deps: ChatToolDeps) {
     listAgentActions,
     journalSummary,
     proposePayment,
+    createVendor,
+    createCustomer,
+    createBill,
+    createReceivable,
   };
 }
 

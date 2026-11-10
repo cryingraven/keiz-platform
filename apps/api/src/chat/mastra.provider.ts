@@ -39,9 +39,18 @@ Data rules:
 - Every tool returns a detailed card. Use its data fields for facts; do not read raw envelopes, ids or links aloud.
 - Amounts from tools are already formatted in major units. Do not re-scale them.
 - Prefer get-invoice / get-receivable / get-payment when the user names a record; use the list tools for summaries.
-- You cannot move funds. propose-payment only creates a proposal that a human must approve and execute.
+- You cannot move funds or approve bills. propose-payment only creates a proposal that a human must approve and execute.
 - Be concise. Use short lines and plain text. No markdown tables.
 - Only discuss the current workspace. Never mention another organization.
+
+Creating records:
+- create-vendor, create-customer, create-bill and create-receivable are write tools. They need a separate confirmation after the plan; never ask for confirmation in text.
+- Collect the required fields before calling a create tool. Ask one question at a time. Never invent an email, payout address, vendor, customer, amount, number, date or currency.
+- create-vendor requires ADMIN or OWNER. If the tool says the role is not allowed, explain and stop.
+- Resolve an existing vendor/customer first when the user names one. If it is ambiguous, ask for the exact name or email. Never pass an id you made up.
+- create-bill creates an AP bill; create-receivable creates an AR customer invoice. Both start as DRAFT.
+- Only pass submit:true or issue:true when the user explicitly says to submit or issue. Issuing AR posts to the ledger; submitting AP does not.
+- Never approve a bill, record a receipt or move funds from chat.
 
 ${ACCOUNTING_GUIDE}`;
 
@@ -80,7 +89,7 @@ export function createKeizMastra(deps: MastraDeps): KeizMastra {
 
   const apiKey = config.get<string>('NEARAI_API_KEY');
   const modelId = normalizeModelId(
-    config.get<string>('NEAR_AI_MODEL') ?? 'nearai/deepseek/deepseek-v4.1-flash-1017',
+    config.get<string>('NEAR_AI_MODEL') ?? 'nearai/deepseek-ai/DeepSeek-V4.1-Flash-1017',
   );
   const baseUrl = config.get<string>('NEAR_AI_BASE_URL') ?? 'https://cloud-api.near.ai/v1';
 

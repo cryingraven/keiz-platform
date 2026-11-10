@@ -13,7 +13,13 @@ import {
 } from './chat.types';
 import { KeizMastra, MASTRA } from './mastra.provider';
 import { mapChunk } from './stream-mapper';
-import { describeToolCall, needsConfirmation, planCard, toolRisk } from './cards';
+import {
+  describeToolCall,
+  needsConfirmation,
+  normalizeToolName,
+  planCard,
+  toolRisk,
+} from './cards';
 import { planFromArgs, PlanInput, PLAN_TOOL_ID } from './plan';
 import { LocalAction, LocalActionResult, LocalRunStore } from './local-runs';
 import type { ChatTools } from './tools';
@@ -22,6 +28,7 @@ export interface StreamInput {
   orgId: string;
   userId: string;
   accountId: string;
+  role: string;
   message: string;
   threadId?: string;
   abortSignal?: AbortSignal;
@@ -31,6 +38,7 @@ export interface ApprovalInput {
   orgId: string;
   userId: string;
   accountId: string;
+  role: string;
   threadId: string;
   runId: string;
   toolCallId: string;
@@ -70,11 +78,13 @@ export class ChatService {
     orgId: string;
     userId: string;
     accountId: string;
+    role: string;
   }): RequestContext<ChatRequestContext> {
     const ctx = new RequestContext<ChatRequestContext>();
     ctx.set('orgId', input.orgId);
     ctx.set('userId', input.userId);
     ctx.set('accountId', input.accountId);
+    ctx.set('role', input.role);
     ctx.set('planApproved', false);
     return ctx;
   }
@@ -333,13 +343,25 @@ export class ChatService {
         context?: { requestContext?: { get: (key: string) => unknown } };
       }) => {
         const active = executionContext?.requestContext ?? context;
-        if (toolName === PLAN_TOOL_ID) return undefined;
+        const normalized = normalizeToolName(toolName);
+        if (normalized === PLAN_TOOL_ID) return undefined;
         if (active.get('planApproved') !== true) {
           return {
             proceed: false as const,
             output: {
               error:
                 'Blocked: call plan-actions and get the plan approved before calling any other tool.',
+            },
+          };
+        }
+        if (
+          normalized === 'create-vendor' &&
+          !['ADMIN', 'OWNER'].includes(String(active.get('role')))
+        ) {
+          return {
+            proceed: false as const,
+            output: {
+              error: 'Only an ADMIN or OWNER can create vendors. Ask a workspace admin to add it.',
             },
           };
         }
@@ -598,6 +620,22 @@ export class ChatService {
       ].join('\n');
     };
 
+    if (
+      /\b(create|add|new)\s+(a\s+|an\s+)?(vendor|customer|bill|invoice|receivable)\b/.test(
+        lower,
+      )
+    ) {
+      return {
+        plan: {
+          goal: 'Create a record',
+          steps: [{ title: 'Check the configured chat provider', risk: 'read' }],
+        },
+        actions: [],
+        render: () =>
+          'Creating vendors, customers, bills or customer invoices needs the NEAR AI agent. Set NEARAI_API_KEY and restart the API, or use the dashboard forms.',
+      };
+    }
+
     if ((/^pay\b|pay invoice|propose/.test(lower) || lower.includes('pay inv')) && invoiceNumber) {
       return {
         plan: {
@@ -772,7 +810,7 @@ export class ChatService {
       actions: [action('listInvoices', { limit: 5 })],
       render: (results) => {
         const text = renderCards(results);
-        return `I can help with bills, receivables, customers, vendors, payments, agent actions, spend, books and payment proposals.\n${text}\nTry: "show pending invoices", "spend summary", "books summary", or "pay INV-1042".`;
+        return `I can help with bills, receivables, customers, vendors, payments, agent actions, spend, books and payment proposals.\n${text}\nTry: "show pending invoices", "spend summary", "books summary", or "pay INV-1042". Creating records needs the NEAR AI agent.`;
       },
     };
   }

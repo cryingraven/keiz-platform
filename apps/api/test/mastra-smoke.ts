@@ -258,6 +258,55 @@ async function main() {
     await req(`/chat/threads/${threads[0]._id}`, { cookie: otherCookie, expect: 404 });
     pass('another user cannot read the thread');
 
+    const createResponse = await fetch(`${BASE}/chat/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({
+        message:
+          'Create a vendor for Mastra Vendor, email pay@mastravendor.test, near payout to mastravendor.near',
+      }),
+    });
+    assert(createResponse.ok, `create chat returned ${createResponse.status}`);
+    const createEvents = parseSse(await createResponse.text());
+    const createPlan = createEvents.find(
+      (event) =>
+        event.event === 'approval' &&
+        (event.data.approval as { name?: string } | undefined)?.name === 'plan-actions',
+    )?.data.approval as
+      | { runId: string; threadId: string; toolCallId: string }
+      | undefined;
+    assert(createPlan, 'create request suspends for plan approval');
+
+    const afterCreatePlan = await approve(cookie, createPlan);
+    const createApproval = afterCreatePlan.find(
+      (event) =>
+        event.event === 'approval' &&
+        (event.data.approval as { name?: string } | undefined)?.name === 'createVendor',
+    )?.data.approval as
+      | { runId: string; threadId: string; toolCallId: string; summary: string }
+      | undefined;
+    assert(createApproval, 'create-vendor pauses for its own confirmation');
+    assert(
+      createApproval.summary.includes('Create vendor'),
+      'create-vendor confirmation describes the entity',
+    );
+    pass('create-vendor requires a separate approval');
+
+    const afterCreate = await approve(cookie, createApproval);
+    const createdVendor = afterCreate.find(
+      (event) =>
+        event.event === 'card' &&
+        (event.data.card as { kind?: string } | undefined)?.kind === 'vendor',
+    )?.data.card as { title?: string } | undefined;
+    assert(createdVendor, 'created vendor card emitted');
+    assert(createdVendor.title === 'Created Mastra Vendor', 'created vendor card is labelled');
+    const vendors = await req<Array<{ name: string }>>('/vendors', { cookie });
+    assert(
+      vendors.some((vendor) => vendor.name === 'Mastra Vendor'),
+      'vendor exists in the workspace after the confirmed tool call',
+    );
+    pass('creation tool writes only after confirmation');
+
     console.log('\nMastra checks passed\n');
   } finally {
     await app.close();

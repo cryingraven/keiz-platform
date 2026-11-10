@@ -70,6 +70,7 @@ export class ChatController {
         orgId: user.orgId,
         userId: user.sub,
         accountId: user.accountId,
+        role: user.role,
         message: body.message,
         threadId: body.threadId,
         abortSignal: abort.signal,
@@ -107,6 +108,7 @@ export class ChatController {
         orgId: user.orgId,
         userId: user.sub,
         accountId: user.accountId,
+        role: user.role,
         ...body,
       })) {
         this.write(res, event);
