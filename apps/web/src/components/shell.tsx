@@ -13,6 +13,7 @@ import {
   HandCoins,
   LayoutDashboard,
   Menu,
+  MessageSquare,
   ScrollText,
   Settings,
   Sparkles,
@@ -62,6 +63,7 @@ const NAV_GROUPS = [
   {
     label: 'Workspace',
     items: [
+      { href: '/dashboard/chat', label: 'Chat', icon: MessageSquare },
       { href: '/dashboard/team', label: 'Team', icon: Users },
       { href: '/dashboard/agent', label: 'Agent wallet', icon: Wallet },
       { href: '/dashboard/audit', label: 'Audit log', icon: ScrollText },
