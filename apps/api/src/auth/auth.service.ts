@@ -27,7 +27,7 @@ export interface CompletedLogin {
   accessToken: string;
   refreshToken: string;
   user: { id: string; accountId: string; displayName: string | null };
-  org: { id: string; name: string; slug: string };
+  org: { id: string; name: string; slug: string; baseCurrency: string };
   role: string;
   authMethod: AuthMethod;
 }
@@ -181,7 +181,12 @@ export class AuthService {
     return {
       ...tokens,
       user: { id: user.id, accountId: user.accountId, displayName: user.displayName ?? null },
-      org: { id: org!.id, name: org!.name, slug: org!.slug },
+      org: {
+        id: org!.id,
+        name: org!.name,
+        slug: org!.slug,
+        baseCurrency: org!.baseCurrency ?? 'USD',
+      },
       role: membership!.role,
       authMethod,
     };
@@ -247,7 +252,12 @@ export class AuthService {
           accountId: user.accountId,
           displayName: user.displayName ?? null,
         },
-        org: { id: org.id, name: org.name, slug: org.slug },
+        org: {
+          id: org.id,
+          name: org.name,
+          slug: org.slug,
+          baseCurrency: org.baseCurrency ?? 'USD',
+        },
         role: membership.role,
         authMethod: (payload.amr as AuthMethod | undefined) ?? 'wallet',
       };

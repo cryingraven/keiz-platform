@@ -7,18 +7,22 @@ import {
   Check,
   ChevronRight,
   CircleSlash,
+  Download,
   FileText,
   Pencil,
+  Share2,
   ShieldCheck,
   X,
 } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { downloadApiFile } from '@/lib/download';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { useConfirm, useToast } from '@/components/feedback';
 import { Button, Card, ProgressSteps, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 import { InvoiceForm } from '@/components/invoice-form';
+import { ShareDocumentDialog } from '@/components/documents/share-dialog';
 import { PayPanel } from '@/components/pay-panel';
 
 interface Invoice {
@@ -66,6 +70,8 @@ export default function InvoiceDetailPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const confirm = useConfirm();
   const toast = useToast();
   const { session } = useAuth();
@@ -74,6 +80,17 @@ export default function InvoiceDetailPage() {
   const canAdmin = ['ADMIN', 'OWNER'].includes(role);
 
   const vendor = vendors.data?.find((item) => item._id === invoice.data?.vendorId);
+
+  async function downloadPdf() {
+    setDownloading(true);
+    try {
+      await downloadApiFile(`/documents/bill/${id}/pdf`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not download the PDF', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function act(action: 'submit' | 'approve' | 'reject' | 'void') {
     if (!invoice.data) return;
@@ -155,6 +172,8 @@ export default function InvoiceDetailPage() {
   const canPay = data.status === 'APPROVED';
   const canVoid =
     canAdmin && !['PAID', 'VOID', 'PAYMENT_PENDING'].includes(data.status);
+  const canShare =
+    canApprove && ['SUBMITTED', 'APPROVED', 'PAYMENT_PENDING', 'PAID'].includes(data.status);
   const stepIndex =
     data.status === 'PAID'
       ? 3
@@ -166,17 +185,34 @@ export default function InvoiceDetailPage() {
 
   return (
     <div>
-      <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1.5 text-[12px] text-muted">
-        <Link href="/dashboard" className="transition hover:text-ink">
-          Workspace
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <Link href="/dashboard/invoices" className="transition hover:text-ink">
-          Bills
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <span className="font-num font-medium text-ink">{data.number}</span>
-      </nav>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[12px] text-muted">
+          <Link href="/dashboard" className="transition hover:text-ink">
+            Workspace
+          </Link>
+          <ChevronRight className="h-3 w-3" />
+          <Link href="/dashboard/invoices" className="transition hover:text-ink">
+            Bills
+          </Link>
+          <ChevronRight className="h-3 w-3" />
+          <span className="font-num font-medium text-ink">{data.number}</span>
+        </nav>
+        <div className="flex items-center gap-2">
+          {canShare ? (
+            <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-3.5 w-3.5" /> Share
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={downloading}
+            onClick={() => void downloadPdf()}
+          >
+            {downloading ? null : <Download className="h-3.5 w-3.5" />} Download PDF
+          </Button>
+        </div>
+      </div>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -412,6 +448,13 @@ export default function InvoiceDetailPage() {
         invoice={data}
         onClose={() => setEditOpen(false)}
         onCreated={() => void invoice.reload()}
+      />
+      <ShareDocumentDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        documentType="bill"
+        documentId={data._id}
+        documentNumber={data.number}
       />
     </div>
   );

@@ -92,7 +92,12 @@ export class AuthController {
     );
     setSessionCookies(res, tokens);
     return {
-      org: { id: org.id, name: org.name, slug: org.slug },
+      org: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        baseCurrency: org.baseCurrency ?? 'USD',
+      },
       role: membership.role,
     };
   }

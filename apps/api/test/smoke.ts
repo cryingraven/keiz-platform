@@ -230,6 +230,51 @@ async function main() {
     // Cross-tenant isolation
     const bob = await tokenFor('bob.near');
     const bobCookie = `keiz_access=${bob.token}`;
+
+    const orgProfile = await req<{
+      id: string;
+      name: string;
+      slug: string;
+      baseCurrency: string;
+      network: string;
+    }>('/orgs/current', { cookie: bobCookie });
+    assert(orgProfile.id === bob.org!.id, 'workspace profile is scoped to the session org');
+
+    const updatedOrg = await req<{
+      name: string;
+      slug: string;
+      baseCurrency: string;
+    }>('/orgs/current', {
+      method: 'PATCH',
+      cookie: bobCookie,
+      body: { name: 'Bob Studio', slug: 'bob-studio', baseCurrency: 'EUR' },
+    });
+    assert(updatedOrg.name === 'Bob Studio', 'workspace name updates');
+    assert(updatedOrg.slug === 'bob-studio', 'workspace slug updates');
+    assert(updatedOrg.baseCurrency === 'EUR', 'workspace base currency updates');
+
+    const refreshedSession = await req<{
+      org: { name: string; baseCurrency: string };
+    }>('/auth/me', { cookie: bobCookie });
+    assert(refreshedSession.org.name === 'Bob Studio', 'session reflects the new workspace name');
+    assert(
+      refreshedSession.org.baseCurrency === 'EUR',
+      'session reflects the new base currency',
+    );
+
+    await req('/orgs/current', {
+      method: 'PATCH',
+      cookie: bobCookie,
+      body: { slug: alice.org!.slug },
+      expect: 409,
+    });
+    await req('/orgs/current', {
+      method: 'PATCH',
+      cookie: bobCookie,
+      body: { slug: 'Bad Slug' },
+      expect: 400,
+    });
+    pass('workspace profile updates and validates slug/currency');
     await req(`/invoices/${invoice._id}`, { cookie: bobCookie, expect: 404 });
     pass('another org cannot read the invoice');
 
@@ -778,6 +823,73 @@ async function main() {
     });
     pass('full receipt clears AR and a paid receivable cannot be voided');
 
+    const emptyShare = await req<{ active: boolean }>(
+      `/documents/bill/${invoice._id}/share`,
+      { cookie: aliceCookie },
+    );
+    assert(!emptyShare.active, 'a new bill has no public share');
+    const billShare = await req<{ token: string; path: string; expiresAt: string }>(
+      `/documents/bill/${invoice._id}/share`,
+      { method: 'POST', cookie: aliceCookie, body: { expiresInDays: 30 } },
+    );
+    assert(billShare.token.length >= 32, 'bill share returns a bearer token');
+    assert(billShare.path === `/share/${billShare.token}`, 'bill share returns a public path');
+
+    const publicBillResponse = await fetch(`${BASE}/public/documents/${billShare.token}`);
+    const publicBill = (await publicBillResponse.json()) as Record<string, unknown>;
+    assert(publicBillResponse.status === 200, 'public bill share is readable without auth');
+    assert(publicBill.number === 'INV-SMOKE-1', 'public bill includes the document number');
+    assert(publicBill.title === 'Bill', 'public bill identifies itself as a bill');
+    assert(publicBill.status === 'Paid', 'public bill exposes only the mapped status');
+    assert(!('orgId' in publicBill), 'public bill does not leak orgId');
+    assert(!('approvals' in publicBill), 'public bill does not leak approvals');
+    assert(!('tokenHash' in publicBill), 'public bill does not leak the token hash');
+    assert(!JSON.stringify(publicBill).includes('payoutAddress'), 'public bill omits payout details');
+    assert(!JSON.stringify(publicBill).includes('bankAccount'), 'public bill omits bank details');
+
+    const publicBillPdf = await fetch(
+      `${BASE}/public/documents/${billShare.token}/pdf`,
+    );
+    const publicBillBytes = await publicBillPdf.arrayBuffer();
+    assert(publicBillPdf.status === 200, 'public bill PDF returns 200');
+    assert(
+      (publicBillPdf.headers.get('content-type') ?? '').includes('application/pdf'),
+      'public bill PDF content type is correct',
+    );
+    assert(publicBillBytes.byteLength > 1_000, 'public bill PDF contains a document');
+
+    const authBillPdf = await fetch(`${BASE}/documents/bill/${invoice._id}/pdf`, {
+      headers: { cookie: aliceCookie },
+    });
+    assert(authBillPdf.status === 200, 'authenticated bill PDF returns 200');
+    assert(
+      (authBillPdf.headers.get('content-type') ?? '').includes('application/pdf'),
+      'authenticated bill PDF content type is correct',
+    );
+
+    const invoiceShare = await req<{ token: string }>(
+      `/documents/invoice/${receivable._id}/share`,
+      { method: 'POST', cookie: bobCookie, body: { expiresInDays: 7 } },
+    );
+    const publicInvoiceResponse = await fetch(`${BASE}/public/documents/${invoiceShare.token}`);
+    const publicInvoice = (await publicInvoiceResponse.json()) as {
+      title: string;
+      amountDue: string;
+      paidAmount: string;
+    };
+    assert(publicInvoiceResponse.status === 200, 'public invoice share is readable');
+    assert(publicInvoice.title === 'Invoice', 'public invoice identifies itself as an invoice');
+    assert(publicInvoice.amountDue === '0', 'paid public invoice has zero amount due');
+    assert(publicInvoice.paidAmount === '55000', 'public invoice includes amount paid');
+
+    await req(`/documents/bill/${invoice._id}/share`, {
+      method: 'DELETE',
+      cookie: aliceCookie,
+    });
+    const revokedBill = await fetch(`${BASE}/public/documents/${billShare.token}`);
+    assert(revokedBill.status === 404, 'revoked public links stop working');
+    pass('bill and invoice shares expose sanitized documents and PDFs');
+
     const voidable = await req<{ _id: string }>('/receivables', {
       method: 'POST',
       cookie: bobCookie,
@@ -972,6 +1084,18 @@ async function main() {
           { accountCode: '3000', credit: '1.00' },
         ],
       },
+      expect: 403,
+    });
+    await req(`/documents/invoice/${receivable._id}/share`, {
+      method: 'POST',
+      cookie: bobMemberCookie,
+      body: { expiresInDays: 30 },
+      expect: 403,
+    });
+    await req('/orgs/current', {
+      method: 'PATCH',
+      cookie: bobMemberCookie,
+      body: { name: 'Member rename attempt' },
       expect: 403,
     });
     await req('/accounting/rebuild', {

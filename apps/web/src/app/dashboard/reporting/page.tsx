@@ -5,6 +5,7 @@ import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowUpRight, Scale, TrendingUp, Waves, type LucideIcon } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
+import { useAuth } from '@/lib/auth';
 import { formatDate } from '@/lib/format';
 import {
   defaultReportPeriod,
@@ -72,8 +73,9 @@ function ReportingContent() {
   const activeTab: ReportTab = isReportTab(tabParam) ? tabParam : 'cash-flow';
   const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0];
 
+  const { session } = useAuth();
   const [period, setPeriod] = useState<ReportPeriod>(defaultReportPeriod);
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState(session?.org?.baseCurrency ?? 'USD');
 
   const range = useMemo(() => reportPeriodRange(period), [period]);
   const query = useMemo(

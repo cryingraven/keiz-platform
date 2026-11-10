@@ -11,6 +11,7 @@ import { ChatModule } from './chat/chat.module';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { RolesGuard } from './common/roles.guard';
 import { DemoModule } from './demo/demo.module';
+import { DocumentsModule } from './documents/documents.module';
 import { HealthController } from './health/health.controller';
 import { IndexerModule } from './indexer/indexer.module';
 import { InvoicesModule } from './invoices/invoices.module';
@@ -40,6 +41,7 @@ import { VendorsModule } from './vendors/vendors.module';
     AuthModule,
     VendorsModule,
     InvoicesModule,
+    DocumentsModule,
     PaymentsModule,
     QueuesModule,
     ReceivablesModule,

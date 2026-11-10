@@ -57,6 +57,12 @@ export class Organization {
   /** Per-workspace on-chain AR collection contract. */
   @Prop({ type: OrganizationCollectionSchema })
   collection?: OrganizationCollection;
+
+  @Prop({ type: Date })
+  createdAt?: Date;
+
+  @Prop({ type: Date })
+  updatedAt?: Date;
 }
 
 export const OrganizationSchema = SchemaFactory.createForClass(Organization);

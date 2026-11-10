@@ -409,6 +409,44 @@ per currency: there is no FX translation, matching the payment limitation. Trial
 aging, cash flow, P&L, balance sheet and the journal are served by `accounting`; the
 reporting endpoints re-use the same immutable journal and render PDF/Excel exports.
 
+## 5.2 Shared bill and invoice links
+
+Both AP bills (`invoices`) and AR customer invoices (`receivables`) can be shared through a
+public bearer link or downloaded as a PDF. The public route never sees Mongo documents: the
+API resolves the token to a document, joins the organization and counterparty, and returns a
+sanitized DTO. Approvals, ledger entries, payment details, payout/bank details and internal
+ids are excluded.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor F as Finance
+  participant W as Web
+  participant A as API
+  participant DB as MongoDB
+  actor R as Recipient
+
+  F->>W: Create share link
+  W->>A: POST /documents/bill/:id/share
+  A->>DB: upsert document_shares · sha256(token)
+  A-->>W: raw token (shown once) + expiresAt
+
+  R->>A: GET /public/documents/:token
+  A->>DB: find active, unexpired share
+  A->>DB: load bill/invoice + org + counterparty
+  A-->>R: sanitized PublicDocument
+
+  R->>A: GET /public/documents/:token/pdf
+  A-->>R: PDFKit statement PDF
+
+  F->>A: DELETE /documents/:type/:id/share
+  A->>DB: set revokedAt
+```
+
+Only the SHA-256 hash of the token is stored. Public routes are `@Public()`, rate limited, and
+stop working immediately when the share is revoked, expires, or the document becomes `VOID`.
+The authenticated PDF route is org-scoped like every other invoice/receivable read.
+
 ---
 
 ## 6. Agent custody (OutLayer)

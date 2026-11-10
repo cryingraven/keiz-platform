@@ -83,14 +83,14 @@ function AccountingContent() {
       : 'overview';
   const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0];
 
-  const [currency, setCurrency] = useState('USD');
+  const { session } = useAuth();
+  const [currency, setCurrency] = useState(session?.org?.baseCurrency ?? 'USD');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(EMPTY_DATE_FILTER);
   const [manualOpen, setManualOpen] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
-  const { session } = useAuth();
   const canAdmin = ['ADMIN', 'OWNER'].includes(session?.role ?? 'MEMBER');
 
   const { summaryPath, journalFrom, journalTo } = useMemo(() => {

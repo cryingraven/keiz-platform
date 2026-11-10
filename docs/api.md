@@ -61,6 +61,8 @@ with reuse detection).
 
 | Method | Path | Role | Body | Notes |
 |---|---|---|---|---|
+| GET | `/current` | Member | — | Workspace profile: name, slug, base currency, network, timestamps. |
+| PATCH | `/current` | Admin | `{ name?, slug?, baseCurrency? }` | Slug is unique and lowercase-kebab. Base currency is the default for Accounting/Reporting. |
 | GET | `/current/collection` | Member | — | Per-workspace `keiz-collect` config or `null`. |
 | PATCH | `/current/collection` | Admin | `{ contractId, treasury, assetId, tokenContract, decimals, status }` | Validates org id, treasury, token allowlist and code hash against RPC before saving. |
 
@@ -125,6 +127,21 @@ with reuse detection).
 | POST | `/:id/issue` | Member | — | DRAFT → ISSUED; posts AR/revenue/tax. |
 | POST | `/:id/receipts` | Approver | `{ amount, receivedAt?, method?, reference?, txHash?, chainEventId?, receivableRef?, tokenContract?, sender? }` | Optimistic lock on `paidAmount`; posts cash/AR. |
 | POST | `/:id/void` | Admin | — | Posts a reversal. |
+
+## Shared documents — `/api/documents`, `/api/public/documents`
+
+| Method | Path | Role | Body / query | Notes |
+|---|---|---|---|---|
+| GET | `/documents/:type/:id/pdf` | Member | — | Authenticated PDF for `type=bill\|invoice`. |
+| GET | `/documents/:type/:id/share` | Member | — | Active-link metadata; never returns the token. |
+| POST | `/documents/:type/:id/share` | Approver | `{ expiresInDays? }` | Creates or rotates the hashed public token. |
+| DELETE | `/documents/:type/:id/share` | Approver | — | Revokes the link immediately. |
+| GET | `/public/documents/:token` | Public | — | Sanitized document JSON; rate limited. |
+| GET | `/public/documents/:token/pdf` | Public | — | Public PDF; rate limited. |
+
+`bill` maps to the AP `invoices` collection, `invoice` to AR `receivables`. Public
+responses exclude approvals, ledger entries, payment details, payout/bank details and
+any internal ids.
 
 ## Accounting — `/api/accounting`
 

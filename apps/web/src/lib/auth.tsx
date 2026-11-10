@@ -32,7 +32,7 @@ export type AuthMethod = 'wallet' | 'passkey' | 'recovery';
 
 export interface Session {
   user: { id: string; accountId: string; displayName: string | null } | null;
-  org: { id: string; name: string; slug: string } | null;
+  org: { id: string; name: string; slug: string; baseCurrency?: string } | null;
   role: string | null;
   authMethod?: AuthMethod | null;
 }

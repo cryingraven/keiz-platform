@@ -1,9 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
-import type { Role } from '@keiz/shared';
+import type { Role, UpdateOrganizationProfileInput } from '@keiz/shared';
 import { NearNetwork, walletNetwork } from '../common/network';
 import { Organization, OrganizationDocument } from './organization.schema';
 import { Membership, MembershipDocument } from './membership.schema';
@@ -277,6 +282,45 @@ export class UsersService {
     const membership = user ? await this.currentMembership(user) : null;
     const org = membership ? await this.orgs.findById(membership.orgId) : null;
     return { user, org, membership };
+  }
+
+  private organizationProfileView(org: OrganizationDocument) {
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      baseCurrency: org.baseCurrency ?? 'USD',
+      network: org.network ?? null,
+      createdAt: org.createdAt?.toISOString() ?? null,
+      updatedAt: org.updatedAt?.toISOString() ?? null,
+    };
+  }
+
+  async organizationProfile(orgId: string) {
+    const org = await this.orgs.findById(orgId);
+    if (!org) throw new NotFoundException('Workspace not found');
+    return this.organizationProfileView(org);
+  }
+
+  async updateOrganizationProfile(
+    orgId: string,
+    input: UpdateOrganizationProfileInput,
+  ) {
+    const org = await this.orgs.findById(orgId);
+    if (!org) throw new NotFoundException('Workspace not found');
+
+    if (input.slug && input.slug !== org.slug) {
+      const conflict = await this.orgs.exists({
+        slug: input.slug,
+        _id: { $ne: org._id },
+      });
+      if (conflict) throw new ConflictException('That workspace slug is already taken');
+      org.slug = input.slug;
+    }
+    if (input.name !== undefined) org.name = input.name;
+    if (input.baseCurrency !== undefined) org.baseCurrency = input.baseCurrency;
+    await org.save();
+    return this.organizationProfileView(org);
   }
 
   async listOrgs(userId: string) {

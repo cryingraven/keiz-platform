@@ -52,7 +52,7 @@ Unique index: `(orgId, userId)`. The last OWNER cannot be demoted or removed.
 |---|---|---|
 | `name` | string | Display name. |
 | `slug` | string | Unique, indexed. |
-| `baseCurrency` | string | Default `USD`. |
+| `baseCurrency` | string | Default `USD`; used as the default currency in Accounting and Reporting. |
 | `network` | `mainnet` \| `testnet` | Matches every member's network. Indexed. |
 | `collection` | embedded object? | Per-workspace AR collection config. |
 
@@ -238,6 +238,27 @@ Indexes: unique `(orgId, number)`; `(orgId, createdAt)`; `(orgId, status)`;
 
 Receipts use an optimistic lock on `paidAmount`: the update filter includes the previous
 value, so concurrent receipts cannot overpay.
+
+---
+
+## Shared documents
+
+### `document_shares`
+
+| Field | Type | Notes |
+|---|---|---|
+| `orgId` | string | Indexed. |
+| `documentType` | `bill` \| `invoice` | `bill` = AP invoice collection, `invoice` = AR receivable. |
+| `documentId` | string | Document id. |
+| `tokenHash` | string | SHA-256 of the bearer token; unique. Raw token is returned once. |
+| `expiresAt` | Date | Public link expiry. Indexed. |
+| `revokedAt` | Date \| null | Null while active. |
+| `createdByUserId` | string | |
+| `viewCount` | number | Incremented by public views. |
+| `lastViewedAt` | Date \| null | |
+
+Indexes: unique `(orgId, documentType, documentId)` and unique `tokenHash`. One share
+record is rotated in place so old links invalidate immediately.
 
 ---
 

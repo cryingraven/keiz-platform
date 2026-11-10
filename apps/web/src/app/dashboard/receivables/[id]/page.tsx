@@ -8,17 +8,21 @@ import {
   ChevronRight,
   CircleSlash,
   Copy,
+  Download,
   HandCoins,
   Plus,
   Receipt as ReceiptIcon,
+  Share2,
   ShieldCheck,
 } from 'lucide-react';
 import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { downloadApiFile } from '@/lib/download';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { useConfirm, useToast } from '@/components/feedback';
+import { ShareDocumentDialog } from '@/components/documents/share-dialog';
 import {
   Button,
   Card,
@@ -110,6 +114,8 @@ export default function ReceivableDetailPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const confirm = useConfirm();
   const toast = useToast();
@@ -119,6 +125,17 @@ export default function ReceivableDetailPage() {
   const canAdmin = ['ADMIN', 'OWNER'].includes(role);
 
   const customer = customers.data?.find((item) => item._id === receivable.data?.customerId);
+
+  async function downloadPdf() {
+    setDownloading(true);
+    try {
+      await downloadApiFile(`/documents/invoice/${id}/pdf`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not download the PDF', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function act(action: 'issue' | 'void') {
     if (!receivable.data) return;
@@ -178,6 +195,8 @@ export default function ReceivableDetailPage() {
   const canRecord = canReceipt && ['ISSUED', 'PARTIALLY_PAID'].includes(data.status);
   const canVoid =
     canAdmin && !['PAID', 'VOID'].includes(data.status) && (data.receipts?.length ?? 0) === 0;
+  const canShare =
+    canReceipt && ['ISSUED', 'PARTIALLY_PAID', 'PAID'].includes(data.status);
   const stepIndex =
     data.status === 'PAID'
       ? 3
@@ -189,17 +208,34 @@ export default function ReceivableDetailPage() {
 
   return (
     <div>
-      <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1.5 text-[12px] text-muted">
-        <Link href="/dashboard" className="transition hover:text-ink">
-          Workspace
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <Link href="/dashboard/receivables" className="transition hover:text-ink">
-          Receivables
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <span className="font-num font-medium text-ink">{data.number}</span>
-      </nav>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[12px] text-muted">
+          <Link href="/dashboard" className="transition hover:text-ink">
+            Workspace
+          </Link>
+          <ChevronRight className="h-3 w-3" />
+          <Link href="/dashboard/receivables" className="transition hover:text-ink">
+            Receivables
+          </Link>
+          <ChevronRight className="h-3 w-3" />
+          <span className="font-num font-medium text-ink">{data.number}</span>
+        </nav>
+        <div className="flex items-center gap-2">
+          {canShare ? (
+            <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-3.5 w-3.5" /> Share
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={downloading}
+            onClick={() => void downloadPdf()}
+          >
+            {downloading ? null : <Download className="h-3.5 w-3.5" />} Download PDF
+          </Button>
+        </div>
+      </div>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -502,6 +538,14 @@ export default function ReceivableDetailPage() {
           }}
         />
       ) : null}
+
+      <ShareDocumentDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        documentType="invoice"
+        documentId={data._id}
+        documentNumber={data.number}
+      />
     </div>
   );
 }

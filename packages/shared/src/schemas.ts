@@ -193,6 +193,26 @@ export const orgCollectionSchema = z.object({
   status: z.enum(['PENDING', 'ACTIVE', 'PAUSED', 'DISABLED']).default('ACTIVE'),
 });
 
+export const orgSlugSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(80)
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    'Use lowercase letters, numbers and single hyphens',
+  );
+
+export const updateOrganizationProfileSchema = z
+  .object({
+    name: z.string().trim().min(2).max(80).optional(),
+    slug: orgSlugSchema.optional(),
+    baseCurrency: currencySchema.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'Provide at least one workspace field to update',
+  });
+
 const journalAmount = z
   .string()
   .max(40)
@@ -277,6 +297,9 @@ export type CreateReceivableInput = z.infer<typeof createReceivableSchema>;
 export type RecordReceiptInput = z.infer<typeof recordReceiptSchema>;
 export type CollectionQuoteInput = z.infer<typeof collectionQuoteSchema>;
 export type OrgCollectionInput = z.infer<typeof orgCollectionSchema>;
+export type UpdateOrganizationProfileInput = z.infer<
+  typeof updateOrganizationProfileSchema
+>;
 export type ManualJournalInput = z.infer<typeof manualJournalSchema>;
 export type JournalLineInput = z.infer<typeof journalLineSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
@@ -322,6 +345,12 @@ export const reportQuerySchema = z.object({
   currency: currencySchema.optional(),
   from: isoDateQuery,
   to: isoDateQuery,
+});
+
+export const documentTypeSchema = z.enum(['bill', 'invoice']);
+
+export const createDocumentShareSchema = z.object({
+  expiresInDays: z.coerce.number().int().min(1).max(365).default(30),
 });
 
 export const reportStatementSchema = z.enum([
@@ -378,6 +407,8 @@ export type JournalExportQuery = z.infer<typeof journalExportQuerySchema>;
 export type AgingQuery = z.infer<typeof agingQuerySchema>;
 export type TrialBalanceQuery = z.infer<typeof trialBalanceQuerySchema>;
 export type ReportQuery = z.infer<typeof reportQuerySchema>;
+export type DocumentType = z.infer<typeof documentTypeSchema>;
+export type CreateDocumentShareInput = z.infer<typeof createDocumentShareSchema>;
 export type ReportStatement = z.infer<typeof reportStatementSchema>;
 export type ReportExportQuery = z.infer<typeof reportExportQuerySchema>;
 

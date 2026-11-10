@@ -140,7 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
         >
           {(orgs.data ?? []).map((org) => (
             <option key={org.id} value={org.id} className="text-ink">
-              {org.name}
+              {org.id === session.org?.id ? session.org?.name ?? org.name : org.name}
             </option>
           ))}
         </select>

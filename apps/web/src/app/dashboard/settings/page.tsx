@@ -1,13 +1,33 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Cable, Fingerprint, KeyRound, Settings, Trash2 } from 'lucide-react';
+import {
+  Building2,
+  Cable,
+  Check,
+  Copy,
+  Fingerprint,
+  KeyRound,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { useApi } from '@/lib/hooks';
 import { useAuth, type PasskeySummary } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { useConfirm, useToast } from '@/components/feedback';
 import { Badge, Button, Card, Input, Label, Select, Spinner } from '@/components/ui';
+
+interface WorkspaceProfile {
+  id: string;
+  name: string;
+  slug: string;
+  baseCurrency: string;
+  network: 'mainnet' | 'testnet' | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
 
 interface Collection {
   contractId: string;
@@ -22,8 +42,10 @@ interface Collection {
 
 export default function SettingsPage() {
   const collection = useApi<Collection | null>('/orgs/current/collection');
+  const profile = useApi<WorkspaceProfile>('/orgs/current');
   const {
     session,
+    refresh,
     passkeyBusy,
     passkeySupported,
     addPasskey,
@@ -33,6 +55,14 @@ export default function SettingsPage() {
     error: authError,
   } = useAuth();
   const canEdit = ['ADMIN', 'OWNER'].includes(session?.role ?? '');
+  const [profileForm, setProfileForm] = useState<{
+    name: string;
+    slug: string;
+    baseCurrency: string;
+  } | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [form, setForm] = useState<Collection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +122,58 @@ export default function SettingsPage() {
     setForm(collection.data ?? null);
   }, [collection.data]);
 
+  useEffect(() => {
+    setProfileForm(
+      profile.data
+        ? {
+            name: profile.data.name,
+            slug: profile.data.slug,
+            baseCurrency: profile.data.baseCurrency,
+          }
+        : null,
+    );
+  }, [profile.data]);
+
+  const profileDirty =
+    Boolean(profileForm && profile.data) &&
+    (profileForm!.name !== profile.data!.name ||
+      profileForm!.slug !== profile.data!.slug ||
+      profileForm!.baseCurrency !== profile.data!.baseCurrency);
+
+  async function saveProfile() {
+    if (!profileForm) return;
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      await api('/orgs/current', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: profileForm.name.trim(),
+          slug: profileForm.slug.trim(),
+          baseCurrency: profileForm.baseCurrency,
+        }),
+      });
+      await profile.reload();
+      await refresh();
+      toast('Workspace updated');
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : 'Could not update the workspace');
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function copyWorkspaceId() {
+    if (!profile.data) return;
+    try {
+      await navigator.clipboard.writeText(profile.data.id);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setProfileError('Could not copy the workspace id');
+    }
+  }
+
   function update<K extends keyof Collection>(key: K, value: Collection[K]) {
     setForm((current) =>
       current
@@ -150,10 +232,150 @@ export default function SettingsPage() {
     <div>
       <PageHeader
         title="Settings"
-        description="Workspace-level on-chain collection configuration."
+        description="Your workspace profile, AR collection contract and security."
       />
 
       <Card className="max-w-2xl p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-semibold">
+              <Building2 className="h-4 w-4 text-brand" /> Workspace profile
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
+              The name and slug identify this workspace in the sidebar, session and shared
+              documents. The base currency is used as the default in reports and accounting.
+            </p>
+          </div>
+          {profile.data?.network ? (
+            <Badge>{profile.data.network === 'mainnet' ? 'Mainnet' : 'Testnet'}</Badge>
+          ) : null}
+        </div>
+
+        {profile.loading ? (
+          <div className="mt-4 flex items-center gap-2 text-sm text-muted">
+            <Spinner /> Loading workspace
+          </div>
+        ) : profile.error ? (
+          <p className="mt-4 rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-[12px] text-rose">
+            {profile.error}
+          </p>
+        ) : profileForm ? (
+          <div className="mt-5 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="ws-name">Workspace name</Label>
+                <Input
+                  id="ws-name"
+                  value={profileForm.name}
+                  disabled={!canEdit}
+                  onChange={(event) =>
+                    setProfileForm((current) =>
+                      current ? { ...current, name: event.target.value } : current,
+                    )
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="ws-slug">Slug</Label>
+                <Input
+                  id="ws-slug"
+                  value={profileForm.slug}
+                  disabled={!canEdit}
+                  onChange={(event) =>
+                    setProfileForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            slug: event.target.value
+                              .toLowerCase()
+                              .replace(/[^a-z0-9-]/g, ''),
+                          }
+                        : current,
+                    )
+                  }
+                />
+                <p className="mt-1 text-[11px] text-muted">
+                  Lowercase letters, numbers and single hyphens. Must be unique.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="ws-currency">Base currency</Label>
+                <Select
+                  id="ws-currency"
+                  value={profileForm.baseCurrency}
+                  disabled={!canEdit}
+                  onChange={(event) =>
+                    setProfileForm((current) =>
+                      current ? { ...current, baseCurrency: event.target.value } : current,
+                    )
+                  }
+                >
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="SGD">SGD</option>
+                  <option value="IDR">IDR</option>
+                </Select>
+              </div>
+              <div>
+                <Label>Network</Label>
+                <div className="flex h-[42px] items-center rounded-xl border border-line bg-paper px-3 text-[13px] text-muted">
+                  {profile.data?.network
+                    ? `NEAR ${profile.data.network}`
+                    : 'Not configured'}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-2 rounded-xl border border-line bg-paper/60 px-3 py-2.5 text-[12px] text-muted sm:grid-cols-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 text-[11px] uppercase tracking-wider">Workspace id</span>
+                <span className="font-num truncate text-ink">{profile.data?.id ?? '—'}</span>
+                <button
+                  type="button"
+                  onClick={() => void copyWorkspaceId()}
+                  className="shrink-0 rounded p-1 transition hover:bg-surface hover:text-ink"
+                  aria-label="Copy workspace id"
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5 text-mint" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+              <div className="sm:text-right">
+                {profile.data?.createdAt
+                  ? `Created ${formatDate(profile.data.createdAt)}`
+                  : 'Workspace'}
+              </div>
+            </div>
+
+            {profileError ? (
+              <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+                {profileError}
+              </p>
+            ) : null}
+
+            {canEdit ? (
+              <div className="flex justify-end">
+                <Button
+                  loading={profileBusy}
+                  disabled={!profileDirty}
+                  onClick={() => void saveProfile()}
+                >
+                  Save workspace
+                </Button>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted">
+                Only an ADMIN or OWNER can change workspace settings.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </Card>
+
+      <Card className="mt-5 max-w-2xl p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="flex items-center gap-1.5 text-sm font-semibold">
