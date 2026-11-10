@@ -4,6 +4,7 @@ import { Memory } from '@mastra/memory';
 import { MongoDBStore } from '@mastra/mongodb';
 import { ConfigService } from '@nestjs/config';
 import { AccountingService } from '../accounting/accounting.service';
+import { AgentJobsService } from '../agent/agent-jobs.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -52,6 +53,13 @@ Creating records:
 - Only pass submit:true or issue:true when the user explicitly says to submit or issue. Issuing AR posts to the ledger; submitting AP does not.
 - Never approve a bill, record a receipt or move funds from chat.
 
+Agent economy:
+- list-agent-providers shows the specialist agents the workspace can hire. Call it before hire-agent; never invent a provider, capability, account or price.
+- hire-agent spends the workspace agent budget and runs the provider immediately after confirmation. It requires ADMIN or OWNER.
+- Only hire when the user explicitly asks for a specialist or a job. Do not hire to answer a normal read question.
+- Report the provider, cost, status and result summary. If policy blocks the hire, say why and stop.
+- Hires currently settle in mock mode; never claim an on-chain transfer.
+
 ${ACCOUNTING_GUIDE}`;
 
 /** Extract the database name from a Mongo URI when MONGODB_DB_NAME is unset. */
@@ -72,6 +80,7 @@ export interface MastraDeps {
   vendors: VendorsService;
   payments: PaymentsService;
   agent: AgentService;
+  jobs: AgentJobsService;
   accounting: AccountingService;
   receivables: ReceivablesService;
 }
@@ -108,6 +117,7 @@ export function createKeizMastra(deps: MastraDeps): KeizMastra {
     vendors: deps.vendors,
     payments: deps.payments,
     agent: deps.agent,
+    jobs: deps.jobs,
     accounting: deps.accounting,
     receivables: deps.receivables,
   });

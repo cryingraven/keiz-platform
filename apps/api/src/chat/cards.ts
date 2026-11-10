@@ -1,6 +1,8 @@
 import { formatUnits } from '@keiz/shared';
 import type {
   AgentActionCard,
+  AgentJobCardRow,
+  AgentProviderCardRow,
   ChatCard,
   ChatCardLink,
   ChatMoney,
@@ -540,6 +542,94 @@ export function agentActionListCard(actions: AgentActionLike[]): ChatCard {
   };
 }
 
+export interface AgentProviderLike {
+  _id: unknown;
+  name: string;
+  description: string;
+  capability: string;
+  priceUsd: string;
+  asset: string;
+  active: boolean;
+}
+
+export function agentProviderRow(provider: AgentProviderLike): AgentProviderCardRow {
+  return {
+    id: String(provider._id),
+    name: provider.name,
+    description: provider.description,
+    capability: provider.capability,
+    priceUsd: provider.priceUsd,
+    asset: provider.asset,
+    active: provider.active,
+  };
+}
+
+export function agentProviderListCard(providers: AgentProviderLike[]): ChatCard {
+  return {
+    kind: 'agent-provider-list',
+    title: 'Agent providers',
+    subtitle: `${providers.length} available specialist(s)`,
+    link: link('/dashboard/agent', 'Open agent wallet'),
+    data: { providers: providers.map(agentProviderRow) },
+  };
+}
+
+export interface AgentJobLike {
+  _id: unknown;
+  providerId: string;
+  providerName: string;
+  capability: string;
+  title: string;
+  task: string;
+  costUsd: string;
+  status: string;
+  payment?: { method?: string; status?: string; txHash?: string; paidAt?: Date | string };
+  resultSummary?: string;
+  error?: string;
+  createdAt?: Date | string;
+  completedAt?: Date | string;
+}
+
+export function agentJobRow(job: AgentJobLike): AgentJobCardRow {
+  const id = String(job._id);
+  return {
+    id,
+    providerId: job.providerId,
+    providerName: job.providerName,
+    capability: job.capability,
+    title: job.title,
+    task: job.task,
+    costUsd: job.costUsd,
+    status: job.status,
+    paymentMethod: job.payment?.method ?? 'mock',
+    resultSummary: job.resultSummary,
+    error: job.error,
+    createdAt: iso(job.createdAt),
+    completedAt: job.completedAt ? iso(job.completedAt) : undefined,
+    link: link('/dashboard/agent', 'Open agent economy'),
+  };
+}
+
+export function agentJobCard(job: AgentJobLike): ChatCard {
+  return {
+    kind: 'agent-job',
+    title: job.providerName,
+    subtitle: `${job.capability} · $${job.costUsd} · ${job.status}`,
+    link: link('/dashboard/agent', 'Open agent economy'),
+    data: { job: agentJobRow(job) },
+  };
+}
+
+export function agentJobListCard(jobs: AgentJobLike[]): ChatCard {
+  return {
+    kind: 'agent-job-list',
+    title: 'Agent jobs',
+    subtitle: `${jobs.length} hire(s)`,
+    link: link('/dashboard/agent', 'Open agent economy'),
+    data: { jobs: jobs.map(agentJobRow) },
+  };
+}
+
 export interface JournalEntryLike {
   _id: unknown;
   date: Date | string;
@@ -619,6 +709,9 @@ const TOOL_ALIASES: Record<string, string> = {
   createCustomer: 'create-customer',
   createBill: 'create-bill',
   createReceivable: 'create-receivable',
+  listAgentProviders: 'list-agent-providers',
+  hireAgent: 'hire-agent',
+  listAgentJobs: 'list-agent-jobs',
 };
 
 export function normalizeToolName(toolName: string): string {
@@ -644,6 +737,9 @@ const RISKY_TOOLS: Record<string, ChatRisk> = {
   'create-customer': 'write',
   'create-bill': 'write',
   'create-receivable': 'write',
+  'list-agent-providers': 'read',
+  'hire-agent': 'spend',
+  'list-agent-jobs': 'read',
 };
 
 export function toolRisk(toolName: string): ChatRisk {
@@ -697,6 +793,12 @@ export function describeToolCall(
       return `Create ${args.submit ? 'and submit ' : ''}a bill for ${String(args.vendor ?? 'a vendor')}`;
     case 'create-receivable':
       return `Create ${args.issue ? 'and issue ' : ''}a customer invoice for ${String(args.customer ?? 'a customer')}`;
+    case 'list-agent-providers':
+      return 'Read available agent providers';
+    case 'hire-agent':
+      return `Hire ${String(args.provider ?? 'an agent')} for $${String(args.budgetUsd ?? 'the listed price')}`;
+    case 'list-agent-jobs':
+      return 'Read recent agent jobs';
     default:
       return `Run ${rawToolName}`;
   }

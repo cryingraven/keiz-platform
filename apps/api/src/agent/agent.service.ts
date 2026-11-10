@@ -253,6 +253,64 @@ export class AgentService {
     return (cents / 100).toFixed(2);
   }
 
+  /**
+   * Preview a spend without reserving it. Used by agent jobs before a human
+   * confirms the hire, and re-checked again at execution time.
+   */
+  async previewSpend(orgId: string, amountUsd: string, asset: string) {
+    const wallet = await this.wallets.findOne({ orgId });
+    if (!wallet) throw new NotFoundException('Create an agent wallet first');
+    const spentTodayUsd = await this.spentTodayUsd(orgId);
+    if (wallet.provider === 'outlayer') {
+      return {
+        allowed: true,
+        requiresApproval: false,
+        reason: 'Delegated to the OutLayer custody policy',
+        delegated: true,
+        spentTodayUsd,
+        reservedCents: 0,
+        policyDecision: { decision: 'delegated', provider: 'outlayer' },
+      };
+    }
+    const decision = evaluatePolicy({
+      policy: wallet.policy,
+      amountUsd,
+      asset,
+      spentTodayUsd,
+    });
+    return {
+      ...decision,
+      delegated: false,
+      spentTodayUsd,
+      reservedCents: 0,
+      policyDecision: { ...decision },
+    };
+  }
+
+  /** Atomically reserve the local daily budget. OutLayer delegates at signing time. */
+  async authorizeSpend(orgId: string, amountUsd: string, asset: string) {
+    const preview = await this.previewSpend(orgId, amountUsd, asset);
+    if (!preview.allowed || preview.delegated) return preview;
+    const wallet = await this.wallets.findOne({ orgId });
+    if (!wallet) throw new NotFoundException('Create an agent wallet first');
+    const cents = Number(parseUnits(amountUsd, 2));
+    const limitCents = Number(parseUnits(wallet.policy.dailyLimitUsd, 2));
+    if (!(await this.reserveDaily(orgId, cents, limitCents))) {
+      return {
+        ...preview,
+        allowed: false,
+        reason: 'Daily limit exceeded',
+        reservedCents: 0,
+        policyDecision: { ...preview.policyDecision, allowed: false, reason: 'Daily limit exceeded' },
+      };
+    }
+    return { ...preview, reservedCents: cents };
+  }
+
+  async releaseSpend(orgId: string, reservedCents: number) {
+    if (reservedCents > 0) await this.releaseDaily(orgId, reservedCents);
+  }
+
   private async reserveDaily(orgId: string, cents: number, limitCents: number): Promise<boolean> {
     const day = this.dayKey();
     const seeded = await this.spentTodayCents(orgId);

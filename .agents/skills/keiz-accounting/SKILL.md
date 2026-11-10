@@ -106,15 +106,18 @@ derived from the due date, never stored.
 | Create a customer | `create-customer` (draft record) |
 | Create an AP bill | `create-bill` (DRAFT; optional submit, no ledger posting) |
 | Create an AR customer invoice | `create-receivable` (DRAFT; optional issue, posts AR) |
+| Available specialist agents | `list-agent-providers` |
+| Hire a specialist agent | `hire-agent` (spend; ADMIN/OWNER, policy-checked, mock settlement) |
+| Recent agent hires | `list-agent-jobs` |
 
 ## Assistant behaviour
 
 1. For every request that needs data or an action, call `plan-actions` first and wait for the
    user to approve the plan.
 2. Read-only tools run automatically after the plan is approved. Write/drafting tools
-   (`propose-payment`, `create-vendor`, `create-customer`, `create-bill`, `create-receivable`)
-   get a separate UI confirmation. Never ask for confirmation in text and never retry a declined
-   write.
+   (`propose-payment`, `create-vendor`, `create-customer`, `create-bill`, `create-receivable`,
+   `hire-agent`) get a separate UI confirmation. Never ask for confirmation in text and never
+   retry a declined write.
 3. Creation tools start in DRAFT. Only set `submit` or `issue` when the user explicitly asks.
    Issuing AR posts to the ledger; submitting AP does not.
 4. Resolve an existing vendor or customer before creating a bill or customer invoice. Never

@@ -487,6 +487,48 @@ async function main() {
       },
     });
 
+    const providers = await req<Array<{ slug: string; capability: string; priceUsd: string }>>(
+      '/agent/providers',
+      { cookie: aliceCookie },
+    );
+    assert(providers.length >= 3, 'agent providers are seeded');
+    assert(
+      providers.some((provider) => provider.capability === 'tax-review'),
+      'tax reviewer is available',
+    );
+    const jobInvoice = await approvedInvoice('INV-AGENT-JOB', '100.00');
+    const job = await req<{ _id: string; status: string; providerName: string }>('/agent/jobs', {
+      method: 'POST',
+      cookie: aliceCookie,
+      body: {
+        provider: 'tax-reviewer',
+        task: 'Review INV-AGENT-JOB tax math',
+        budgetUsd: '1.00',
+        input: { invoiceNumber: 'INV-AGENT-JOB' },
+      },
+    });
+    assert(job.status === 'APPROVED', 'hire is approved within policy');
+    const executedJob = await req<{
+      status: string;
+      resultSummary?: string;
+      payment?: { method?: string; status?: string };
+    }>(`/agent/jobs/${job._id}/execute`, { method: 'POST', cookie: aliceCookie });
+    assert(executedJob.status === 'DONE', 'agent job completes');
+    assert(executedJob.payment?.method === 'mock', 'job settlement is explicitly mock');
+    assert(
+      executedJob.resultSummary?.includes('no issues'),
+      `provider returned a result (got "${executedJob.resultSummary}")`,
+    );
+    const jobList = await req<Array<{ _id: string; status: string }>>('/agent/jobs', {
+      cookie: aliceCookie,
+    });
+    assert(
+      jobList.some((row) => row._id === job._id && row.status === 'DONE'),
+      'completed job is listed',
+    );
+    void jobInvoice;
+    pass('agent can hire a specialist, spend within policy and consume the result');
+
     const chatResponse = await fetch(`${BASE}/chat/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: aliceCookie },

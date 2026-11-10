@@ -304,6 +304,14 @@ export type ManualJournalInput = z.infer<typeof manualJournalSchema>;
 export type JournalLineInput = z.infer<typeof journalLineSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type AgentPolicyInput = z.infer<typeof agentPolicySchema>;
+
+export const hireAgentSchema = z.object({
+  provider: z.string().min(1).max(80),
+  task: z.string().min(3).max(1000),
+  budgetUsd: positiveDecimal.optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+});
+export type HireAgentInput = z.infer<typeof hireAgentSchema>;
 export type ProposeAgentPaymentInput = z.infer<typeof proposeAgentPaymentSchema>;
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 

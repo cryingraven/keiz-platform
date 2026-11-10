@@ -36,6 +36,8 @@ NEAR is part of the product, not a badge:
 - **NEAR Intents / 1Click** for cross-chain vendor payouts and customer collection.
 - **NEAR AI Cloud** for private inference in the finance assistant.
 - **OutLayer / Intel TDX** for optional policy-bound agent custody.
+- **Agent jobs** for hiring specialist sub-agents from the assistant, with a policy-checked
+  budget and a structured result (mock settlement in this build).
 - **`keiz-collect`** for on-chain receivables and **`keiz-vault`** for a policy-bound
   treasury contract.
 
@@ -51,9 +53,9 @@ Include every track the project genuinely fits. One submission covers them all.
 | Track id | Fit | Evidence to show |
 |---|---|---|
 | `realworld` | Strongest | AP/AR, approval flow, stablecoin payouts, receipts, reporting. |
-| `business` | Strong | Treasury-style AP/AR, approvals, AI finance assistant, agent spending. |
-| `agents` | Strong | Assistant drafts proposals; policy-bound agent wallet cannot move funds alone. |
-| `security` | Strong | RBAC, separation of duties, caps, atomic daily spend, NEP-413 full-access check, TEE custody. |
+| `business` | Strong | Treasury-style AP/AR, approvals, AI finance assistant, agent spending and specialist hiring. |
+| `agents` | Strong | Assistant lists and hires specialist sub-agents, pays them within the agent policy, and consumes the result. The agent wallet cannot move funds alone. |
+| `security` | Strong | RBAC, separation of duties, caps, atomic daily spend, policy-checked agent hires, NEP-413 full-access check, TEE custody. |
 | `privacy` | Conditional | Include only if the demo shows NEAR AI Cloud/TEE-backed inference or custody. |
 | `defi` | No | The product uses Intents for settlement, but it is not a DEX, vault or lending product. |
 | `thesis`, `swarms`, `games`, `nfts`, `memecoins`, `social`, `open` | No | No direct fit; do not pad the track list. |
@@ -97,8 +99,9 @@ Work through this list with the human.
   document it.
 - [ ] Hosted demo, if used, stays up through 2026-11-18 and ideally 2026-11-25.
 - [x] Known limits are documented honestly: 1Click is mainnet-only, OutLayer cross-chain
-  Intents are mainnet-only, destination payout verification is incomplete, and the AP
-  vault is not wired to invoice approval.
+  Intents are mainnet-only, destination payout verification is incomplete, the AP vault is
+  not wired to invoice approval, and agent hires settle in mock mode rather than via an
+  on-chain agent-to-agent transfer.
 
 ### Docs reconciled before judges read them
 
@@ -106,7 +109,7 @@ Work through this list with the human.
   and one **Continue with a NEAR wallet** selector; the recovery-key UI is hidden.
 - [x] `README.md` → “API surface”: add `/accounting/reports`,
   `/accounting/reports/export`, and the AP/AR/payments date-filter query params.
-- [x] `README.md` → “Verification”: refresh test and smoke counts.
+- [x] `README.md` → “Verification”: refresh test and smoke counts (88 unit tests, 58 smoke checks).
 - [x] `docs/README.md`: remove the recovery-key wording from the login link.
 - [x] `docs/integrations.md`: server-side PDF/XLSX report exports now exist; CSV export
   remains client-side.
@@ -165,8 +168,11 @@ What would you want automated first: bill approvals or customer follow-up?
    P&L and the balance sheet, then export PDF and Excel.
 5. **Assistant** — ask “What do we owe this week?” or “Who has not paid?”, show the plan
    approval and a payment proposal that cannot move funds.
-6. **Guardrail** — show the agent wallet policy blocking a spend above its limit.
-7. **Close** — repo link and one specific question for feedback.
+6. **Agent economy** — ask “Hire the tax reviewer for INV-1001.” Show the provider list,
+   the hire confirmation, the policy check, and the returned tax-review result. The job
+   appears under `/dashboard/agent` with its cost and mock settlement.
+7. **Guardrail** — show the agent wallet policy blocking a spend above its limit.
+8. **Close** — repo link and one specific question for feedback.
 
 Keep architecture slides and setup out of the video. Show one complete user moment.
 
@@ -210,8 +216,8 @@ routed to approvers, paid in the vendor's preferred stablecoin on their chain, a
 customer receipts update the books automatically. NEAR is part of the product: NEP-413
 signs users in, NEAR Intents handles cross-chain settlement, NEAR AI Cloud provides
 private inference for the finance assistant, and OutLayer/TEE-enforced policy limits the
-agent wallet. The assistant can read the books and draft proposals, but only a human can
-approve money movement.
+agent wallet. The assistant can read the books, draft proposals, and hire specialist
+sub-agents for bounded jobs within that policy. Only a human can approve money movement.
 ```
 
 ---

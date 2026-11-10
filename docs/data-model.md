@@ -354,6 +354,50 @@ again at execution; custody policy is delegated to OutLayer.
 
 Unique index: `(orgId, day)`.
 
+### `agent_providers`
+
+Seeded specialist agents available to hire. Global registry; no secrets.
+
+| Field | Type | Notes |
+|---|---|---|
+| `slug` | string | Unique, indexed. |
+| `name`, `description` | string | |
+| `capability` | string | `tax-review`, `collections-draft`, `receipt-match`. Indexed with `active`. |
+| `priceUsd` | string | Fixed per job in this slice. |
+| `asset` | string | Default `nep141:usdc.near`. |
+| `accountId` | string | Provider payout account; used in the real rail, not the mock demo. |
+| `mode` | `local` \| `http` | Local handlers are deterministic and offline. |
+| `active` | boolean | |
+
+### `agent_jobs`
+
+One hire of a specialist agent. Replaces nothing in `agent_actions`; it is a separate
+economic job with its own result.
+
+| Field | Type | Notes |
+|---|---|---|
+| `orgId` | string | Indexed. |
+| `walletId` | string | Parent agent wallet. |
+| `providerId`, `providerName`, `capability` | string | Resolved server-side. |
+| `title`, `task` | string | |
+| `input` | object? | Provider-specific (invoice number, receivable number). |
+| `budgetUsd`, `costUsd`, `asset` | string | `costUsd` is the provider price; the budget is the human-approved ceiling. |
+| `kind` | `HIRE` \| `API` | API is reserved for the paid-service slice. |
+| `status` | enum | `QUOTED`, `PENDING_APPROVAL`, `APPROVED`, `EXECUTING`, `PAID`, `DONE`, `BLOCKED`, `FAILED`, `CANCELLED`. |
+| `policyDecision` | object? | Per-tx, daily, approval threshold and block reason. |
+| `approvedByUserId` | string? | |
+| `payment` | object? | `method` (`mock` in this build), `status`, `txHash`, `paidAt`. |
+| `result` | object? | Structured provider output. |
+| `resultSummary` | string? | Human-readable result used by cards. |
+| `error` | string? | |
+| `completedAt` | Date? | |
+
+Indexes: `(orgId, createdAt)`, `(orgId, status)`.
+
+Execution is claimed atomically (`APPROVED → EXECUTING`), the daily budget is reserved with
+the same `agent_daily_spend` conditional `$inc`, and the reservation is released on failure.
+Hires currently settle in mock mode; no on-chain agent-to-agent transfer is claimed.
+
 ---
 
 ## Chain and operations

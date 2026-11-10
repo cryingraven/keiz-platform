@@ -171,6 +171,17 @@ any internal ids.
 | POST | `/actions` | Member | `{ invoiceId, asset, reason? }` | Creates a proposal; custody proposals are auto-approved. |
 | POST | `/actions/:id/decision` | Admin | `?decision=APPROVE\|REJECT` | |
 | POST | `/actions/:id/execute` | Admin | — | Atomic `APPROVED → EXECUTING`; custody runs `withdrawDryRun` first. |
+| GET | `/providers` | Member | — | Seeded specialist agents, capabilities and prices. |
+| GET | `/jobs` | Member | — | Recent agent hires for this org. |
+| GET | `/jobs/:id` | Member | — | One hire with policy decision, payment, result and error. |
+| POST | `/jobs` | Admin | `{ provider, task, budgetUsd?, input? }` | Creates a hire. Above the approval threshold it is `PENDING_APPROVAL`; otherwise `APPROVED`. |
+| POST | `/jobs/:id/approve` | Admin | — | `PENDING_APPROVAL → APPROVED`. |
+| POST | `/jobs/:id/execute` | Admin | — | Atomic `APPROVED → EXECUTING`; re-checks policy, reserves daily spend and runs the provider. |
+| POST | `/jobs/:id/cancel` | Admin | — | Cancels a quoted, pending or approved hire. |
+
+Agent hires reuse the same `agent_wallets` policy and `agent_daily_spend` reservation as
+payment proposals. The current build settles hires in **mock** mode; the job records
+`payment.method = "mock"`, and no on-chain transfer is claimed.
 
 ## Chat — `/api/chat`
 
@@ -184,14 +195,16 @@ any internal ids.
 | DELETE | `/threads/:id` | Member | — | Deletes the thread. |
 
 Every request that needs tools first emits `plan-actions`, then suspends for the plan approval.
-After the plan is approved, read-only tools run automatically; only write/drafting tools
-(`propose-payment`, and any future `write`/`spend` tool) suspend for an explicit
-approve/decline. The stream ends with `done.suspended: true` while an approval is pending.
+After the plan is approved, read-only tools run automatically; write/drafting and spend tools
+(`propose-payment`, `create-vendor`, `create-customer`, `create-bill`, `create-receivable`,
+`hire-agent`) suspend for an explicit approve/decline. The stream ends with
+`done.suspended: true` while an approval is pending.
 `card` events carry the detailed `ChatCard` envelope used by the custom UI; every card has a
 `link` to the relevant detail page.
 
 Tool calls receive `orgId` from the request context, never from model output. Chat can create
-payment proposals but cannot execute them.
+records, hire agents within policy, and create payment proposals, but it cannot approve bills,
+execute payments or move funds.
 
 ## Indexer — `/api/indexer`
 

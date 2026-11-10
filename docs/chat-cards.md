@@ -67,6 +67,9 @@ Money is always `{ currency, decimals, minor, formatted }`. `minor` is an intege
 | `payment` | `/dashboard/payments/{id}` |
 | `agent-action-list` | `/dashboard/agent`; each row → its invoice |
 | `agent-action` | its invoice |
+| `agent-provider-list` | `/dashboard/agent` |
+| `agent-job` | `/dashboard/agent` |
+| `agent-job-list` | `/dashboard/agent` |
 | `journal-list` | `/dashboard/accounting?entry={id}` |
 | `plan` | `/dashboard/agent` |
 
@@ -86,9 +89,15 @@ Links are built server-side from record ids. The model never supplies a URL.
 | `list-payments` / `get-payment` | `payment-list` / `payment` | none |
 | `list-agent-actions` | `agent-action-list` | none |
 | `journal-summary` | `journal-list` | none |
+| `create-vendor` / `create-customer` | `vendor` / `customer` | required |
+| `create-bill` / `create-receivable` | `invoice` / `receivable` | required |
+| `list-agent-providers` | `agent-provider-list` | none |
+| `hire-agent` | `agent-job` | required |
+| `list-agent-jobs` | `agent-job-list` | none |
 | `propose-payment` | `agent-action` | required |
 
-`propose-payment` only creates an agent action. It never moves funds.
+`propose-payment` only creates an agent action. It never moves funds. `hire-agent` spends
+the agent budget within policy; the current settlement is mock.
 
 ## Files
 

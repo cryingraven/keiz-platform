@@ -89,7 +89,8 @@ Mock payments are the default (`PAYMENTS_MODE=mock`), so this path needs no main
 - **Agent wallet** — two providers:
   - **OutLayer custody** (when `OUTLAYER_ENABLED=true`): the agent gets an OutLayer wallet, API key, NEAR implicit account and Intents balance. Keys live in an Intel TDX enclave; spending policy is encrypted on-chain and enforced before signing. KEIZ stores only the encrypted API key.
   - **Local** (fallback): generated ed25519 keypair, AES-256-GCM at rest, local USD caps. Useful for the offline/mock demo.
-- **AI assistant** — a Mastra agent over bills, receivables, customers, vendors, payments, agent actions, the journal, spend and the books. It must first emit an **action plan**; read-only tools then run automatically, while write/drafting tools request a **confirmation** in the UI. It can create vendors, customers, AP bills and AR customer invoices; creation previews use entity-specific cards (line items, computed totals, payout details) instead of raw JSON. Bills start DRAFT and can be submitted; customer invoices start DRAFT and can be issued (which posts AR). It can create payment *proposals* but has no path to move funds or approve bills. Streams tokens, plans, cards and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback with the same plan/approval protocol (creation requires the NEAR AI agent).
+- **Agent economy** — a small sub-agent job board. The assistant can list specialist providers (Tax Reviewer, Collections Writer, Reconciliation Agent), hire one for a bounded task, and return a structured result. Hires use the same per-transaction, daily-cap and approval-threshold policy as agent payments, are claimed atomically, and are visible in `/dashboard/agent`. Settlement is currently **mock**; no on-chain agent-to-agent transfer is claimed.
+- **AI assistant** — a Mastra agent over bills, receivables, customers, vendors, payments, agent actions, the journal, spend and the books. It must first emit an **action plan**; read-only tools then run automatically, while write/drafting tools request a **confirmation** in the UI. It can create vendors, customers, AP bills and AR customer invoices; creation previews use entity-specific cards (line items, computed totals, payout details) instead of raw JSON. Bills start DRAFT and can be submitted; customer invoices start DRAFT and can be issued (which posts AR). It can list and hire specialist sub-agents for bounded jobs, and create payment *proposals*, but it has no path to approve bills or execute payments. Streams tokens, plans, cards and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback with the same plan/approval protocol (creation requires the NEAR AI agent).
 - **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. The vault is operated separately from the app today. See `contracts/README.md`.
 - **Workspace operations** — team members and roles, org switching, vendor/customer edit + archive, draft-bill edit, and per-workspace AR collection settings that are validated against the deployed contract before activation.
 - **History indexing** — every payment transition is appended to `payment_events`; on-chain deposits are normalised into `chain_events` with a unique `(txHash, eventIndex)` index so re-polling cannot duplicate rows.
@@ -196,6 +197,13 @@ GET  /api/agent/stats
 GET/POST /api/agent/actions
 POST /api/agent/actions/:id/decision
 POST /api/agent/actions/:id/execute
+
+GET  /api/agent/providers          specialist agents available to hire
+GET  /api/agent/jobs               recent hires and results
+POST /api/agent/jobs               ADMIN/OWNER, create a hire
+POST /api/agent/jobs/:id/approve   ADMIN/OWNER
+POST /api/agent/jobs/:id/execute   ADMIN/OWNER
+POST /api/agent/jobs/:id/cancel    ADMIN/OWNER
 
 POST /api/chat/messages          SSE: meta | thread | plan | card | approval | text | tool | done | error
 GET  /api/chat/approvals?threadId=  pending approvals for a thread
@@ -328,6 +336,7 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 - Passkeys authenticate and hold a self-custodial NEAR key. A passkey account signs its own deposits; a wallet account can add a passkey from Settings (the wallet approves an on-chain `AddKey` first).
 - OutLayer custody execution requires a configured policy (`dryRun.policy_check.decision` must be `allowed` or `requires_approval`). No-policy wallets are blocked. Actions remain `EXECUTING` until OutLayer reports `success`, and only USD invoices can be paid through custody.
 - In-app OutLayer multisig approval signing is not wired; pending custody approvals link to the OutLayer dashboard.
+- Agent hires run through the local agent wallet and record **mock** settlement only. A real agent-to-agent payout rail (1Click or custody) is not wired; OutLayer custody wallets cannot execute agent jobs yet.
 - Cross-chain custody payouts are mainnet-only (OutLayer has no testnet Intents solvers).
 - The payment/outlayer/indexer pollers are durable BullMQ jobs. The API process only produces; run the worker (`pnpm worker`) next to it. Redis is required in dev/prod; tests use `QUEUES_ENABLED=false`.
 - Mastra semantic recall is disabled (`semanticRecall: false`, `vector: false`) because standalone MongoDB has no Atlas Search. Message history works; vector search would need Atlas or another vector store.

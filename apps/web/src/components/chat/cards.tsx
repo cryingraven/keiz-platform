@@ -5,6 +5,7 @@ import { useState } from 'react';
 import {
   ArrowUpRight,
   BookOpen,
+  Briefcase,
   Building2,
   Check,
   CreditCard,
@@ -467,6 +468,84 @@ export function ChatCardView({ card }: { card: ChatCard }) {
         </CardShell>
       );
 
+    case 'agent-provider-list':
+      return (
+        <CardShell card={card}>
+          {card.data.providers.length === 0 ? (
+            <EmptyRows label="No specialist agents are available." />
+          ) : (
+            <div className="space-y-0.5">
+              {card.data.providers.map((provider) => (
+                <div
+                  key={provider.id}
+                  className="flex items-start justify-between gap-2 rounded-lg px-2 py-1.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] font-medium">{provider.name}</p>
+                    <p className="truncate text-[11px] text-muted">
+                      {provider.capability} · {provider.description}
+                    </p>
+                  </div>
+                  <span className="font-num shrink-0 text-[11px] text-muted">
+                    ${provider.priceUsd}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardShell>
+      );
+
+    case 'agent-job': {
+      const job = card.data.job;
+      return (
+        <CardShell card={card}>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat label="Provider" value={job.providerName} />
+            <Stat label="Cost" value={`$${job.costUsd}`} />
+            <Stat label="Status" value={humanize(job.status)} />
+            <Stat label="Settlement" value={humanize(job.paymentMethod)} />
+          </div>
+          <p className="mt-2 text-[11px] text-muted">{job.task}</p>
+          {job.resultSummary ? (
+            <p className="mt-2 rounded-lg bg-paper px-2.5 py-2 text-[11px] leading-relaxed text-ink">
+              {job.resultSummary}
+            </p>
+          ) : job.error ? (
+            <p className="mt-2 rounded-lg bg-rose-soft px-2.5 py-2 text-[11px] text-rose">
+              {job.error}
+            </p>
+          ) : null}
+        </CardShell>
+      );
+    }
+
+    case 'agent-job-list':
+      return (
+        <CardShell card={card}>
+          {card.data.jobs.length === 0 ? (
+            <EmptyRows label="No agent hires yet." />
+          ) : (
+            <div className="space-y-0.5">
+              {card.data.jobs.map((job) => (
+                <RowLink
+                  key={job.id}
+                  href={job.link.href}
+                  title={job.providerName}
+                  meta={job.task}
+                  right={
+                    <span className="flex items-center gap-1.5">
+                      <StatusPill status={job.status} />
+                      <span className="font-num">${job.costUsd}</span>
+                    </span>
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </CardShell>
+      );
+
     case 'journal-list':
       return (
         <CardShell card={card}>
@@ -674,10 +753,12 @@ export function CardKindIcon({ kind }: { kind: ChatCard['kind'] }) {
             ? Users
             : kind.startsWith('payment')
               ? CreditCard
-              : kind.startsWith('agent')
-                ? Landmark
-                : kind.startsWith('journal')
-                  ? ScrollText
-                  : BookOpen;
+              : kind.startsWith('agent-job') || kind.startsWith('agent-provider')
+                ? Briefcase
+                : kind.startsWith('agent')
+                  ? Landmark
+                  : kind.startsWith('journal')
+                    ? ScrollText
+                    : BookOpen;
   return <Icon className="h-3.5 w-3.5" />;
 }

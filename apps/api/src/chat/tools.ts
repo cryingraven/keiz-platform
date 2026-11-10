@@ -3,6 +3,9 @@ import { z } from 'zod';
 import {
   agentActionCardEnvelopeSchema,
   agentActionListCardSchema,
+  agentJobCardSchema,
+  agentJobListCardSchema,
+  agentProviderListCardSchema,
   booksSummaryCardSchema,
   chatToolErrorSchema,
   createCustomerSchema,
@@ -12,6 +15,7 @@ import {
   currencySchema,
   customerCardSchema,
   customerListCardSchema,
+  hireAgentSchema,
   invoiceCardSchema,
   invoiceListCardSchema,
   journalListCardSchema,
@@ -24,6 +28,7 @@ import {
   vendorListCardSchema,
 } from '@keiz/shared';
 import { AccountingService } from '../accounting/accounting.service';
+import { AgentJobsService } from '../agent/agent-jobs.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -32,6 +37,9 @@ import { VendorsService } from '../vendors/vendors.service';
 import {
   agentActionCard,
   agentActionListCard,
+  agentJobCard,
+  agentJobListCard,
+  agentProviderListCard,
   booksSummaryCard,
   customerCard,
   customerListCard,
@@ -47,6 +55,8 @@ import {
   vendorCard,
   vendorListCard,
   type AgentActionLike,
+  type AgentJobLike,
+  type AgentProviderLike,
   type CustomerLike,
   type InvoiceLike,
   type JournalEntryLike,
@@ -105,7 +115,7 @@ function requireUser(context: ToolContext | undefined): string {
   return userId;
 }
 
-function canCreateVendors(context: ToolContext | undefined): boolean {
+function isAdmin(context: ToolContext | undefined): boolean {
   const role = context?.requestContext?.get('role');
   return role === 'ADMIN' || role === 'OWNER';
 }
@@ -263,6 +273,7 @@ export interface ChatToolDeps {
   vendors: VendorsService;
   payments: PaymentsService;
   agent: AgentService;
+  jobs: AgentJobsService;
   accounting: AccountingService;
   receivables: ReceivablesService;
 }
@@ -610,7 +621,7 @@ export function createChatTools(deps: ChatToolDeps) {
     beforeApproval: requirePlan,
     execute: async (input, context) => {
       const orgId = requireOrg(context as ToolContext);
-      if (!canCreateVendors(context as ToolContext)) {
+      if (!isAdmin(context as ToolContext)) {
         return { error: 'Only an ADMIN or OWNER can create vendors.' };
       }
       const parsed = createVendorSchema.safeParse(input);
@@ -845,6 +856,60 @@ export function createChatTools(deps: ChatToolDeps) {
     },
   });
 
+  const listAgentProviders = createTool({
+    id: 'list-agent-providers',
+    description:
+      'List specialist agents available to hire, their capability and price. Use before hiring.',
+    inputSchema: z.object({}),
+    outputSchema: agentProviderListCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    execute: async (_input, context) => {
+      requireOrg(context as ToolContext);
+      const rows = (await deps.jobs.listProviders()) as unknown as AgentProviderLike[];
+      return agentProviderListCard(rows);
+    },
+  });
+
+  const hireAgent = createTool({
+    id: 'hire-agent',
+    description:
+      'Hire a specialist agent for a bounded task. Requires ADMIN or OWNER. The provider and price come from the provider registry; never invent them. Spends the workspace agent budget and returns a job with the provider result.',
+    inputSchema: hireAgentSchema,
+    outputSchema: agentJobCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    requireApproval: true,
+    beforeApproval: requirePlan,
+    execute: async (input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      const userId = requireUser(context as ToolContext);
+      if (!isAdmin(context as ToolContext)) {
+        return { error: 'Only an ADMIN or OWNER can hire agents.' };
+      }
+      try {
+        const job = await deps.jobs.hire(orgId, userId, input, {
+          approvalGranted: true,
+          executeNow: true,
+        });
+        return agentJobCard(job as unknown as AgentJobLike);
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+    },
+  });
+
+  const listAgentJobs = createTool({
+    id: 'list-agent-jobs',
+    description: 'List recent agent hires with provider, cost, status and result summary.',
+    inputSchema: z.object({}),
+    outputSchema: agentJobListCardSchema.or(chatToolErrorSchema),
+    requestContextSchema,
+    execute: async (_input, context) => {
+      const orgId = requireOrg(context as ToolContext);
+      const rows = (await deps.jobs.listJobs(orgId)) as unknown as AgentJobLike[];
+      return agentJobListCard(rows);
+    },
+  });
+
   const planActions = createPlanTool();
 
   return {
@@ -868,6 +933,9 @@ export function createChatTools(deps: ChatToolDeps) {
     createCustomer,
     createBill,
     createReceivable,
+    listAgentProviders,
+    hireAgent,
+    listAgentJobs,
   };
 }
 

@@ -208,6 +208,18 @@ If OutLayer ever exposes a policy-write API, the minimal change is a `PATCH
 /agent/wallet/policy` branch for custody wallets; until then, do not silently allow an
 unrestricted custody wallet to spend.
 
+### 4.1 Agent jobs (mock settlement)
+
+`agent_jobs` reuses the local agent policy but does not move real funds:
+
+- Providers are seeded from `agent_providers`; the model never supplies a payout account.
+- `AgentJobsService` calls `AgentService.previewSpend` before creating a job and
+  `authorizeSpend` again at execution, so the per-tx, daily and approval rules still apply.
+- The daily reservation is released if the provider handler fails.
+- Settlement is recorded as `payment.method = "mock"`; there is no 1Click or OutLayer
+  transfer in this slice. Do not claim an on-chain agent-to-agent payment until that rail
+  is implemented and tested.
+
 ---
 
 ## 5. Partially implemented: destination payout verification

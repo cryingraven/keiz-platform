@@ -46,6 +46,22 @@ export const TERMINAL_PAYMENT_STATUSES: PaymentStatus[] = [
   'NEEDS_REVIEW',
 ];
 
+export const AGENT_JOB_STATUSES = [
+  'QUOTED',
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'EXECUTING',
+  'PAID',
+  'DONE',
+  'BLOCKED',
+  'FAILED',
+  'CANCELLED',
+] as const;
+export type AgentJobStatus = (typeof AGENT_JOB_STATUSES)[number];
+
+export const AGENT_JOB_KINDS = ['HIRE', 'API'] as const;
+export type AgentJobKind = (typeof AGENT_JOB_KINDS)[number];
+
 export const AGENT_ACTION_STATUSES = [
   'PENDING_APPROVAL',
   'APPROVED',

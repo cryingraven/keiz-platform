@@ -511,6 +511,49 @@ stateDiagram-v2
   EXECUTING --> APPROVED: error before any side effect
 ```
 
+## 6.1 Agent economy (sub-agent jobs)
+
+The assistant can hire a specialist provider for a bounded job. This is a separate
+`agent_jobs` collection, not an `agent_actions` payment: it has a task, provider, input,
+result and its own state machine.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Web
+  participant A as API
+  participant J as AgentJobsService
+  participant P as AgentPolicy
+  participant R as Provider
+  participant DB as MongoDB
+
+  W->>A: POST /agent/jobs
+  A->>J: resolve provider
+  J->>P: preview per-tx + daily + threshold
+  alt blocked
+    J->>DB: AgentJob BLOCKED + reason
+  else needs approval
+    J->>DB: AgentJob PENDING_APPROVAL
+    W->>A: POST /agent/jobs/:id/approve
+  else within policy
+    J->>DB: AgentJob APPROVED
+  end
+  W->>A: POST /agent/jobs/:id/execute
+  A->>J: atomic APPROVED → EXECUTING
+  J->>P: authorize + reserve daily budget
+  J->>R: run tax-review / collections / reconciliation
+  R-->>J: structured result
+  J->>DB: AgentJob DONE + mock payment
+```
+
+State: `QUOTED → PENDING_APPROVAL → APPROVED → EXECUTING → DONE`, with `BLOCKED`,
+`FAILED` and `CANCELLED` branches. The provider result is a structured object and a
+summary; the UI renders both the result and the policy decision.
+
+Settlement is intentionally mock in this slice. The provider registry carries a
+`accountId` and the job carries a payment object, but the app does not claim an on-chain
+agent-to-agent transfer. Reuse `agent_daily_spend`; do not add a second spend ledger.
+
 ---
 
 ## 7. AI assistant
@@ -523,10 +566,11 @@ The agent is plan-first and human-in-the-loop:
 
 1. `plan-actions` is the only tool allowed before a plan is approved. A
    `beforeToolCall` hook blocks every other tool until `planApproved` is set.
-2. Read-only tools run automatically after plan approval. Write/drafting tools
-   (`propose-payment`, plus future `write`/`spend` tools) use
-   `requireApproval: true`; Mastra suspends and emits `tool-call-approval`, the API
-   maps it to an SSE `approval` event, and the UI renders a custom confirmation card.
+2. Read-only tools run automatically after plan approval. Write/drafting/spend tools
+   (`propose-payment`, `create-vendor`, `create-customer`, `create-bill`,
+   `create-receivable`, `hire-agent`) use `requireApproval: true`; Mastra suspends and
+   emits `tool-call-approval`, the API maps it to an SSE `approval` event, and the UI
+   renders a custom confirmation card.
 3. `POST /chat/approvals` verifies the suspended run belongs to the caller via
    `listSuspendedRuns({ threadId, resourceId })`, then calls
    `approveToolCall` / `declineToolCall` and streams the continuation.
@@ -539,6 +583,10 @@ The agent is plan-first and human-in-the-loop:
    `submit` moves a bill to `SUBMITTED` (no posting), while optional `issue`
    moves a customer invoice to `ISSUED` and posts AR. `create-vendor` is
    ADMIN/OWNER only. Chat cannot approve bills, record receipts or move funds.
+6. Agent economy tools (`list-agent-providers`, `hire-agent`, `list-agent-jobs`)
+   let the assistant hire a seeded specialist. `hire-agent` is a `spend` tool:
+   ADMIN/OWNER only, policy-checked against the same per-tx, daily and approval
+   thresholds, and executed via the `agent_jobs` service. Settlement is mock.
 
 ```mermaid
 sequenceDiagram
@@ -852,8 +900,8 @@ flowchart LR
 
 | Suite | Covers |
 |---|---|
-| `pnpm test` | 84 unit tests (69 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, OutLayer status map |
-| `pnpm --filter @keiz/api smoke` | 50 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, passkey endpoint fencing |
+| `pnpm test` | 88 unit tests (73 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, creation tools, OutLayer status map |
+| `pnpm --filter @keiz/api smoke` | 58 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, agent hire + policy spend, passkey endpoint fencing |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
 | `pnpm --filter @keiz/api smoke:mastra` | Mastra plan suspension, approve/resume, typed cards, request-scoped tools, memory, thread isolation |
 | `pnpm contracts:test` | collect message parsing and vault policy validation |

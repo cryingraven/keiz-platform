@@ -15,6 +15,9 @@ export const CHAT_CARD_KINDS = [
   'payment',
   'agent-action',
   'agent-action-list',
+  'agent-provider-list',
+  'agent-job',
+  'agent-job-list',
   'journal-list',
   'plan',
 ] as const;
@@ -163,6 +166,35 @@ export const agentActionCardSchema = z.object({
   link: chatCardLinkSchema,
 });
 export type AgentActionCard = z.infer<typeof agentActionCardSchema>;
+
+export const agentProviderCardRowSchema = z.object({
+  id,
+  name: z.string().max(120),
+  description: z.string().max(300),
+  capability: z.string().max(80),
+  priceUsd: z.string().max(40),
+  asset: z.string().max(200),
+  active: z.boolean(),
+});
+export type AgentProviderCardRow = z.infer<typeof agentProviderCardRowSchema>;
+
+export const agentJobCardRowSchema = z.object({
+  id,
+  providerId: z.string().max(80),
+  providerName: z.string().max(120),
+  capability: z.string().max(80),
+  title: z.string().max(160),
+  task: z.string().max(1000),
+  costUsd: z.string().max(40),
+  status: statusString,
+  paymentMethod: z.string().max(40),
+  resultSummary: z.string().max(1000).optional(),
+  error: z.string().max(1000).optional(),
+  createdAt: dateString,
+  completedAt: dateString.optional(),
+  link: chatCardLinkSchema,
+});
+export type AgentJobCardRow = z.infer<typeof agentJobCardRowSchema>;
 
 export const journalLineCardSchema = z.object({
   accountCode: z.string().max(20),
@@ -358,6 +390,24 @@ export const agentActionCardEnvelopeSchema = z.object({
   data: z.object({ action: agentActionCardSchema }),
 });
 
+export const agentProviderListCardSchema = z.object({
+  kind: z.literal('agent-provider-list'),
+  ...baseShape,
+  data: z.object({ providers: z.array(agentProviderCardRowSchema).max(100) }),
+});
+
+export const agentJobCardSchema = z.object({
+  kind: z.literal('agent-job'),
+  ...baseShape,
+  data: z.object({ job: agentJobCardRowSchema }),
+});
+
+export const agentJobListCardSchema = z.object({
+  kind: z.literal('agent-job-list'),
+  ...baseShape,
+  data: z.object({ jobs: z.array(agentJobCardRowSchema).max(100) }),
+});
+
 export const journalListCardSchema = z.object({
   kind: z.literal('journal-list'),
   ...baseShape,
@@ -385,6 +435,9 @@ export const chatCardSchema = z.discriminatedUnion('kind', [
   paymentCardSchema,
   agentActionCardEnvelopeSchema,
   agentActionListCardSchema,
+  agentProviderListCardSchema,
+  agentJobCardSchema,
+  agentJobListCardSchema,
   journalListCardSchema,
   planCardSchema,
 ]);

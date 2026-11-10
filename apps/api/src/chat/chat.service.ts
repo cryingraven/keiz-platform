@@ -355,13 +355,16 @@ export class ChatService {
           };
         }
         if (
-          normalized === 'create-vendor' &&
+          ['create-vendor', 'hire-agent'].includes(normalized) &&
           !['ADMIN', 'OWNER'].includes(String(active.get('role')))
         ) {
           return {
             proceed: false as const,
             output: {
-              error: 'Only an ADMIN or OWNER can create vendors. Ask a workspace admin to add it.',
+              error:
+                normalized === 'create-vendor'
+                  ? 'Only an ADMIN or OWNER can create vendors. Ask a workspace admin to add it.'
+                  : 'Only an ADMIN or OWNER can hire agents.',
             },
           };
         }

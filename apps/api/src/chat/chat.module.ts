@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AccountingModule } from '../accounting/accounting.module';
 import { AccountingService } from '../accounting/accounting.service';
 import { AgentModule } from '../agent/agent.module';
+import { AgentJobsService } from '../agent/agent-jobs.service';
 import { AgentService } from '../agent/agent.service';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { InvoicesService } from '../invoices/invoices.service';
@@ -44,6 +45,7 @@ export class MastraLifecycle implements OnModuleDestroy {
         VendorsService,
         PaymentsService,
         AgentService,
+        AgentJobsService,
         AccountingService,
         ReceivablesService,
       ],
@@ -53,6 +55,7 @@ export class MastraLifecycle implements OnModuleDestroy {
         vendors: VendorsService,
         payments: PaymentsService,
         agent: AgentService,
+        jobs: AgentJobsService,
         accounting: AccountingService,
         receivables: ReceivablesService,
       ) =>
@@ -62,6 +65,7 @@ export class MastraLifecycle implements OnModuleDestroy {
           vendors,
           payments,
           agent,
+          jobs,
           accounting,
           receivables,
         }),

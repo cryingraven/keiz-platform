@@ -19,6 +19,7 @@ import { api } from '@/lib/api';
 import { formatDollars, formatMoney, humanize, shortAddress } from '@/lib/format';
 import { formatUnits } from '@keiz/shared';
 import { PageHeader } from '@/components/shell';
+import { AgentEconomy } from '@/components/agent-economy';
 import { useConfirm, useToast } from '@/components/feedback';
 import {
   NearIntentsLogo,
@@ -432,6 +433,8 @@ export default function AgentPage() {
               </Card>
             </div>
           </div>
+
+          <AgentEconomy canAdmin={canAdmin} />
         </>
       )}
 
