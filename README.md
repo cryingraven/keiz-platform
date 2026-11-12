@@ -307,6 +307,10 @@ See `.env.example`. The important ones:
 
 Generate a master key with `openssl rand -hex 32`.
 
+## Deployment
+
+Production uses GHCR images and a Coolify Docker Compose stack with `web`, `api`, `worker` and `redis`. MongoDB stays on Atlas and is not part of the compose file. See [docs/deployment.md](./docs/deployment.md) for the image workflow, GHCR credentials, Coolify setup and the production env checklist.
+
 ## Verification
 
 ```bash

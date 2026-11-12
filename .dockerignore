@@ -1,0 +1,23 @@
+# Keep the build context small and never bake local secrets into an image.
+.git
+.github
+.agents
+docs
+node_modules
+**/node_modules
+**/.next
+**/dist
+.turbo
+coverage
+contracts/target
+*.log
+.DS_Store
+
+.env
+.env.*
+!.env.example
+!.env.coolify.example
+
+**/*.tsbuildinfo
+submission-guide.md
+skills-lock.json

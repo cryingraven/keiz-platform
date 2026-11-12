@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+
+# Build context is the repository root so the web app can resolve the
+# @keiz/shared workspace package.
+FROM node:24-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=true \
+    NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
+FROM deps AS build
+# NEXT_PUBLIC_* values are inlined by Next at build time. Changing the chain
+# network or the API proxy target requires rebuilding the web image.
+ARG API_URL=http://api:3001
+ARG CHAIN_NETWORK=mainnet
+ARG NEXT_PUBLIC_CHAIN_NETWORK=mainnet
+ARG NEXT_PUBLIC_NEAR_NETWORK=
+ENV API_URL=$API_URL \
+    CHAIN_NETWORK=$CHAIN_NETWORK \
+    NEXT_PUBLIC_CHAIN_NETWORK=$NEXT_PUBLIC_CHAIN_NETWORK \
+    NEXT_PUBLIC_NEAR_NETWORK=$NEXT_PUBLIC_NEAR_NETWORK
+COPY . .
+RUN pnpm --filter @keiz/shared build \
+ && pnpm --filter @keiz/web build
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# output: 'standalone' emits a server bundle under apps/web.
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
+
+USER node
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]

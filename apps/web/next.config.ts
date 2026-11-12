@@ -47,6 +47,11 @@ const configuredNetwork =
 const chainNetwork = configuredNetwork === 'mainnet' ? 'mainnet' : 'testnet';
 
 const nextConfig: NextConfig = {
+  // Standalone output keeps the runtime image small: only the traced server and
+  // its dependencies are copied. The tracing root must be the monorepo root so
+  // the @keiz/shared workspace package is included.
+  output: 'standalone',
+  outputFileTracingRoot: repoRoot,
   // Explicitly inline public env. Turbopack computes NEXT_PUBLIC_* before
   // next.config runs, so values loaded from the repo root need to be declared.
   env: {
