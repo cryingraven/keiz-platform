@@ -12,8 +12,11 @@ import { Model } from 'mongoose';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import {
+  AgentIntentsDepositInput,
   AgentPolicy,
   AgentPolicyInput,
+  AgentSwapInput,
+  AgentSwapQuoteInput,
   DEFAULT_AGENT_POLICY,
   ProposeAgentPaymentInput,
   formatUnits,
@@ -25,6 +28,7 @@ import { VendorsService } from '../vendors/vendors.service';
 import { OutlayerService } from '../outlayer/outlayer.service';
 import { QueueProducer } from '../queues/queue-producer.service';
 import { PaymentIntentsService } from '../payments/payment-intents.service';
+import { PaymentProviderFactory } from '../payments/payment-provider.factory';
 import { PaymentsService } from '../payments/payments.service';
 import { walletNetwork } from '../common/network';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
@@ -49,6 +53,7 @@ export class AgentService {
     private readonly invoices: InvoicesService,
     private readonly vendors: VendorsService,
     private readonly payments: PaymentsService,
+    private readonly providers: PaymentProviderFactory,
     private readonly outlayer: OutlayerService,
     private readonly config: ConfigService,
     private readonly queue: QueueProducer,
@@ -60,6 +65,31 @@ export class AgentService {
       this.config.get<string>('AGENT_WALLET_MASTER_KEY') || undefined,
       this.config.get<string>('JWT_SECRET'),
     );
+  }
+
+  /**
+   * The NEAR NEP-141 contract behind the Intents USDC balance. Resolve it from
+   * the provider token list; never hardcode an asset id.
+   */
+  private async intentsUsdcToken() {
+    try {
+      const tokens = await this.providers.get().getTokens();
+      const usdc = tokens.find(
+        (token) =>
+          token.blockchain.toLowerCase() === 'near' &&
+          token.symbol.toUpperCase() === 'USDC',
+      );
+      if (!usdc) return null;
+      return {
+        symbol: 'USDC',
+        assetId: usdc.assetId,
+        tokenContract: usdc.contractAddress ?? usdc.assetId.replace(/^nep141:/, ''),
+        decimals: usdc.decimals,
+      };
+    } catch (error) {
+      this.logger.warn(`Could not resolve Intents USDC token: ${(error as Error).message}`);
+      return null;
+    }
   }
 
   private sanitize(wallet: AgentWalletDocument | (AgentWallet & { _id?: unknown })) {
@@ -98,7 +128,12 @@ export class AgentService {
       }
     }
 
-    return { ...base, custody, handoffUrl };
+    return {
+      ...base,
+      custody,
+      handoffUrl,
+      intentsUsdcToken: await this.intentsUsdcToken(),
+    };
   }
 
   private async createLocalWallet(orgId: string) {
@@ -219,6 +254,249 @@ export class AgentService {
     wallet.status = input.active ? 'ACTIVE' : 'PAUSED';
     await wallet.save();
     return this.sanitize(wallet);
+  }
+
+  private async custodyForSwap(orgId: string) {
+    const wallet = await this.wallets.findOne({ orgId }).select('+outlayerApiKeyEncrypted');
+    if (!wallet) throw new NotFoundException('Create an agent wallet first');
+    if (wallet.provider !== 'outlayer' || !wallet.outlayerApiKeyEncrypted) {
+      throw new BadRequestException('OutLayer custody is not enabled for this wallet');
+    }
+    if (!this.outlayer.isEnabled) {
+      throw new ServiceUnavailableException('OutLayer custody is disabled');
+    }
+    return { wallet, apiKey: this.decryptOutlayerKey(wallet) };
+  }
+
+  private async swapTokens(apiKey: string) {
+    try {
+      const [wnear, usdc] = await Promise.all([
+        this.outlayer.resolveToken(apiKey, 'near', 'WNEAR'),
+        this.outlayer.resolveToken(apiKey, 'near', 'USDC'),
+      ]);
+      if (wnear.decimals !== 24) {
+        throw new Error(`Unexpected wNEAR decimals: ${wnear.decimals}`);
+      }
+      return { wnear, usdc };
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `OutLayer does not list wNEAR/USDC on NEAR: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private amountToYocto(amountNear: string): bigint {
+    let amount: bigint;
+    try {
+      amount = BigInt(parseUnits(amountNear, 24));
+    } catch {
+      throw new BadRequestException('Amount must be a valid NEAR decimal');
+    }
+    if (amount <= 0n) throw new BadRequestException('Amount must be positive');
+    return amount;
+  }
+
+  /** Quote NEAR -> Intents USDC, including the gas reserve check. */
+  async swapQuote(orgId: string, input: AgentSwapQuoteInput) {
+    const { apiKey } = await this.custodyForSwap(orgId);
+    const { wnear, usdc } = await this.swapTokens(apiKey);
+    const amount = this.amountToYocto(input.amountNear);
+    let nativeBalanceRaw: string;
+    try {
+      const balance = await this.outlayer.getBalance(apiKey, { chain: 'near' });
+      nativeBalanceRaw = balance.balance ?? '0';
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `Could not read the custody NEAR balance: ${(error as Error).message}`,
+      );
+    }
+    const reserve = BigInt(parseUnits('0.1', 24));
+    const nativeBalance = BigInt(nativeBalanceRaw);
+    if (nativeBalance <= reserve || amount + reserve > nativeBalance) {
+      throw new BadRequestException(
+        `Amount exceeds the available NEAR balance (${formatUnits(
+          (nativeBalance > reserve ? nativeBalance - reserve : 0n).toString(),
+          24,
+        )} NEAR after reserve)`,
+      );
+    }
+
+    let quote;
+    try {
+      quote = await this.outlayer.swapQuote(apiKey, {
+        token_in: wnear.tokenId,
+        token_out: usdc.tokenId,
+        amount_in: amount.toString(),
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `Could not quote the NEAR -> USDC swap: ${(error as Error).message}`,
+      );
+    }
+
+    return {
+      nativeBalance: nativeBalanceRaw,
+      nativeBalanceFormatted: formatUnits(nativeBalanceRaw, 24),
+      tokenIn: wnear,
+      tokenOut: usdc,
+      amountIn: amount.toString(),
+      amountInFormatted: formatUnits(amount.toString(), 24),
+      amountOut: quote.amount_out,
+      amountOutFormatted: quote.amount_out
+        ? formatUnits(quote.amount_out, usdc.decimals)
+        : undefined,
+      minAmountOut: quote.min_amount_out,
+      minAmountOutFormatted: quote.min_amount_out
+        ? formatUnits(quote.min_amount_out, usdc.decimals)
+        : undefined,
+      deadline: quote.deadline,
+    };
+  }
+
+  /**
+   * Wrap native NEAR to wNEAR when needed, then swap into the Intents USDC
+   * balance. OutLayer enforces policy and may return pending_approval.
+   */
+  async swap(orgId: string, input: AgentSwapInput) {
+    const quote = await this.swapQuote(orgId, { amountNear: input.amountNear });
+    const { apiKey } = await this.custodyForSwap(orgId);
+    const { wnear, usdc } = await this.swapTokens(apiKey);
+    const amount = BigInt(quote.amountIn);
+
+    const wnearContract = wnear.tokenId.startsWith('nep141:')
+      ? wnear.tokenId.slice('nep141:'.length)
+      : 'wrap.near';
+    const balance = await this.outlayer.getBalance(apiKey, {
+      chain: 'near',
+      token: wnearContract,
+    });
+    const current = BigInt(balance.balance ?? '0');
+    if (current < amount) {
+      const wrapAmount = amount - current;
+      let wrapped;
+      try {
+        wrapped = await this.outlayer.call(apiKey, {
+          receiver_id: wnearContract,
+          method_name: 'near_deposit',
+          args: {},
+          gas: '30000000000000',
+          deposit: wrapAmount.toString(),
+          idempotencyKey: `agent-swap-wrap-${orgId}-${Date.now()}`,
+        });
+      } catch (error) {
+        throw new ServiceUnavailableException(
+          `Could not wrap NEAR: ${(error as Error).message}`,
+        );
+      }
+      if (wrapped.status !== 'success') {
+        return {
+          requestId: wrapped.request_id,
+          status: wrapped.status,
+          stage: 'wrap' as const,
+          approvalId: wrapped.approval_id ?? undefined,
+          required: wrapped.required ?? undefined,
+          approved: wrapped.approved ?? undefined,
+        };
+      }
+    }
+
+    let swapped;
+    try {
+      swapped = await this.outlayer.swap(apiKey, {
+        token_in: wnear.tokenId,
+        token_out: usdc.tokenId,
+        amount_in: amount.toString(),
+        min_amount_out: input.minAmountOut ?? quote.minAmountOut,
+        idempotencyKey: `agent-swap-${orgId}-${Date.now()}`,
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `Could not submit the swap: ${(error as Error).message}`,
+      );
+    }
+
+    return {
+      requestId: swapped.request_id,
+      status: swapped.status,
+      stage: 'swap' as const,
+      amountOut: swapped.amount_out,
+      intentHash: swapped.intent_hash,
+    };
+  }
+
+  async swapStatus(orgId: string, requestId: string) {
+    const { apiKey } = await this.custodyForSwap(orgId);
+    const request = await this.outlayer.getRequest(apiKey, requestId);
+    return {
+      requestId: request.request_id,
+      type: request.type,
+      status: request.status,
+      result: request.result,
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+    };
+  }
+
+  /**
+   * Move on-chain USDC held by the custody account into intents.near, where
+   * OutLayer withdrawals and swaps spend from.
+   */
+  async depositIntents(orgId: string, input: AgentIntentsDepositInput) {
+    const { apiKey } = await this.custodyForSwap(orgId);
+    let usdc;
+    try {
+      usdc = await this.outlayer.resolveToken(apiKey, 'near', 'USDC');
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `OutLayer does not list USDC on NEAR: ${(error as Error).message}`,
+      );
+    }
+
+    const balance = await this.outlayer.getBalance(apiKey, {
+      chain: 'near',
+      token: usdc.tokenId.replace(/^nep141:/, ''),
+    });
+    const available = BigInt(balance.balance ?? '0');
+    let amount: bigint;
+    try {
+      amount = input.amountUsdc
+        ? BigInt(parseUnits(input.amountUsdc, usdc.decimals))
+        : available;
+    } catch {
+      throw new BadRequestException('Amount must be a valid USDC decimal');
+    }
+    if (amount <= 0n) {
+      throw new BadRequestException('No on-chain USDC is available to move');
+    }
+    if (amount > available) {
+      throw new BadRequestException(
+        `Amount exceeds the on-chain USDC balance (${formatUnits(
+          available.toString(),
+          usdc.decimals,
+        )} USDC)`,
+      );
+    }
+
+    let response;
+    try {
+      response = await this.outlayer.intentsDeposit(apiKey, {
+        token: usdc.tokenId,
+        amount: amount.toString(),
+        idempotencyKey: `agent-intents-deposit-${orgId}-${Date.now()}`,
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `Could not deposit USDC into Intents: ${(error as Error).message}`,
+      );
+    }
+
+    return {
+      requestId: response.request_id,
+      status: response.status,
+      txHash: response.tx_hash ?? undefined,
+      amount: amount.toString(),
+      amountFormatted: formatUnits(amount.toString(), usdc.decimals),
+    };
   }
 
   private dayKey(): string {
@@ -768,6 +1046,7 @@ export class AgentService {
       provider: wallet?.provider ?? null,
       custodyAvailable: this.outlayer.isEnabled,
       custody,
+      intentsUsdcToken: await this.intentsUsdcToken(),
       network: this.outlayer.networkName,
     };
   }

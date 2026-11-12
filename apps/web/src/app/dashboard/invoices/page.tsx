@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Download, FileText, Plus, Search } from 'lucide-react';
+import { Building2, ChevronLeft, ChevronRight, Download, FileText, Plus, Search } from 'lucide-react';
 import { formatUnits } from '@keiz/shared';
 import { useApi } from '@/lib/hooks';
+import { useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import {
   DateFilterValue,
@@ -18,6 +19,7 @@ import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { DateRangeFilter } from '@/components/date-range-filter';
 import { InvoiceForm } from '@/components/invoice-form';
+import { VendorForm } from '@/components/vendor-form';
 import { Button, Card, EmptyState, ErrorState, Input, Select, StatusPill, TableSkeleton } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
@@ -101,6 +103,9 @@ function BillsContent() {
 
   const [query, setQuery] = useState(params.get('q') ?? '');
   const [formOpen, setFormOpen] = useState(false);
+  const [vendorOpen, setVendorOpen] = useState(false);
+  const { session } = useAuth();
+  const canAdmin = ['ADMIN', 'OWNER'].includes(session?.role ?? '');
   const paramsRef = useRef<URLSearchParams>(params);
 
   useEffect(() => {
@@ -227,6 +232,11 @@ function BillsContent() {
             >
               <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
+            {canAdmin ? (
+              <Button variant="secondary" onClick={() => setVendorOpen(true)}>
+                <Building2 className="h-3.5 w-3.5" /> New vendor
+              </Button>
+            ) : null}
             <Button onClick={() => setFormOpen(true)}>
               <Plus className="h-3.5 w-3.5" /> New bill
             </Button>
@@ -407,6 +417,12 @@ function BillsContent() {
         vendors={vendors.data ?? []}
         onClose={() => setFormOpen(false)}
         onCreated={() => void invoices.reload()}
+      />
+      <VendorForm
+        key={vendorOpen ? 'open' : 'closed'}
+        open={vendorOpen}
+        onClose={() => setVendorOpen(false)}
+        onCreated={() => void vendors.reload()}
       />
     </div>
   );

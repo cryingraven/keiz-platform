@@ -23,6 +23,8 @@ export interface OutlayerWalletInfo {
   publicKey: string;
   nativeBalance: string;
   intentsUsdc: string;
+  /** NEP-141 USDC held directly by the custody account. */
+  onChainUsdc: string;
   frozen: boolean;
   policy: Record<string, unknown> | null;
   /** Non-fatal custody API failures; balances may be stale/zero when present. */
@@ -133,14 +135,30 @@ export class OutlayerService {
     ]);
 
     let intentsUsdc = '0';
+    let onChainUsdc = '0';
     try {
       const usdc = await this.resolveToken(apiKey, 'near', 'USDC');
-      const balance = await client.getBalance({
-        chain: 'near',
-        token: usdc.tokenId,
-        source: 'intents',
-      });
-      intentsUsdc = balance.balance ?? '0';
+      const usdcContract = usdc.tokenId.replace(/^nep141:/, '');
+      const [intents, onchain] = await Promise.all([
+        client
+          .getBalance({
+            chain: 'near',
+            token: usdc.tokenId,
+            source: 'intents',
+          })
+          .catch((error) => {
+            capture('intentsBalance', error);
+            return null;
+          }),
+        client
+          .getBalance({ chain: 'near', token: usdcContract })
+          .catch((error) => {
+            capture('onchainBalance', error);
+            return null;
+          }),
+      ]);
+      intentsUsdc = intents?.balance ?? '0';
+      onChainUsdc = onchain?.balance ?? '0';
     } catch (error) {
       capture('intentsBalance', error);
       // no Intents balance or token catalog unavailable
@@ -151,6 +169,7 @@ export class OutlayerService {
       publicKey: address?.public_key ?? '',
       nativeBalance: native?.balance ?? '0',
       intentsUsdc,
+      onChainUsdc,
       frozen: Boolean((policy as { frozen?: boolean } | null)?.frozen),
       policy: (policy as Record<string, unknown> | null) ?? null,
       errors: errors.length > 0 ? errors : undefined,
@@ -214,6 +233,60 @@ export class OutlayerService {
       amount: params.amount,
       token: params.token,
     });
+  }
+
+  async getBalance(
+    apiKey: string,
+    opts: { chain?: 'near'; token?: string; source?: 'chain' | 'intents' },
+  ) {
+    return this.client(apiKey).getBalance(opts);
+  }
+
+  async call(
+    apiKey: string,
+    params: {
+      receiver_id: string;
+      method_name: string;
+      args?: Record<string, unknown>;
+      args_base64?: string;
+      gas?: string;
+      deposit?: string;
+      idempotencyKey?: string;
+    },
+  ) {
+    return this.client(apiKey).call(params);
+  }
+
+  async swapQuote(
+    apiKey: string,
+    params: {
+      token_in: string;
+      token_out: string;
+      amount_in: string;
+      min_amount_out?: string;
+    },
+  ) {
+    return this.client(apiKey).swapQuote(params);
+  }
+
+  async swap(
+    apiKey: string,
+    params: {
+      token_in: string;
+      token_out: string;
+      amount_in: string;
+      min_amount_out?: string;
+      idempotencyKey?: string;
+    },
+  ) {
+    return this.client(apiKey).swap(params);
+  }
+
+  async intentsDeposit(
+    apiKey: string,
+    params: { token: string; amount: string; idempotencyKey?: string },
+  ) {
+    return this.client(apiKey).intentsDeposit(params);
   }
 
   async getRequest(apiKey: string, requestId: string) {

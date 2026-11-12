@@ -304,6 +304,27 @@ export const proposeAgentPaymentSchema = z.object({
   reason: z.string().max(1000).optional(),
 });
 
+export const agentSwapQuoteSchema = z.object({
+  amountNear: positiveDecimal,
+});
+
+export const agentSwapSchema = z.object({
+  amountNear: positiveDecimal,
+  minAmountOut: z
+    .string()
+    .regex(/^\d+$/, 'minAmountOut must be an integer in token minor units')
+    .optional(),
+});
+
+export type AgentSwapQuoteInput = z.infer<typeof agentSwapQuoteSchema>;
+export type AgentSwapInput = z.infer<typeof agentSwapSchema>;
+
+export const agentIntentsDepositSchema = z.object({
+  amountUsdc: positiveDecimal.optional(),
+});
+
+export type AgentIntentsDepositInput = z.infer<typeof agentIntentsDepositSchema>;
+
 export const chatRequestSchema = z.object({
   message: z.string().min(1).max(4000),
   threadId: z.string().optional(),

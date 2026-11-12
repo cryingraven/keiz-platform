@@ -1,10 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDownToLine,
+  ArrowLeftRight,
   Bot,
   Check,
+  Copy,
   KeyRound,
   Lock,
   Play,
@@ -16,6 +19,7 @@ import {
 import { useApi } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
+import { chainNetwork } from '@/lib/network';
 import { formatDollars, formatMoney, humanize, shortAddress } from '@/lib/format';
 import { formatUnits } from '@keiz/shared';
 import { PageHeader } from '@/components/shell';
@@ -34,6 +38,7 @@ import {
   ErrorState,
   Input,
   Label,
+  Modal,
   SectionTitle,
   Select,
   Spinner,
@@ -45,8 +50,15 @@ interface CustodyInfo {
   publicKey: string;
   nativeBalance: string;
   intentsUsdc: string;
+  onChainUsdc: string;
   frozen: boolean;
   policy: Record<string, unknown> | null;
+}
+interface IntentsToken {
+  symbol: string;
+  assetId: string;
+  tokenContract: string;
+  decimals: number;
 }
 interface AgentWallet {
   _id: string;
@@ -57,6 +69,7 @@ interface AgentWallet {
   outlayerNetwork?: 'mainnet' | 'testnet';
   handoffUrl?: string | null;
   custody?: CustodyInfo | null;
+  intentsUsdcToken?: IntentsToken | null;
   policy: {
     perTxLimitUsd: string;
     dailyLimitUsd: string;
@@ -74,7 +87,45 @@ interface Stats {
   provider?: string | null;
   custodyAvailable?: boolean;
   custody?: CustodyInfo | null;
+  intentsUsdcToken?: IntentsToken | null;
   network?: 'mainnet' | 'testnet';
+}
+interface SwapToken {
+  tokenId: string;
+  symbol: string;
+  decimals: number;
+  chain: string;
+}
+interface SwapQuote {
+  nativeBalance: string;
+  nativeBalanceFormatted: string;
+  tokenIn: SwapToken;
+  tokenOut: SwapToken;
+  amountIn: string;
+  amountInFormatted: string;
+  amountOut?: string;
+  amountOutFormatted?: string;
+  minAmountOut?: string;
+  minAmountOutFormatted?: string;
+  deadline?: string;
+}
+interface SwapRequest {
+  requestId: string;
+  status: string;
+  stage: 'wrap' | 'swap';
+  amountOut?: string;
+  intentHash?: string;
+  approvalId?: string;
+  required?: number;
+  approved?: number;
+}
+interface SwapStatus {
+  requestId: string;
+  type?: string;
+  status: string;
+  result?: unknown;
+  createdAt?: string;
+  updatedAt?: string;
 }
 interface Action {
   _id: string;
@@ -110,12 +161,30 @@ export default function AgentPage() {
   const invoices = useApi<Invoice[]>('/invoices');
   const tokens = useApi<Token[]>('/payments/tokens');
   const { session } = useAuth();
+  const toast = useToast();
+  const confirm = useConfirm();
   const canManagePolicy = session?.role === 'OWNER';
   const canAdmin = ['OWNER', 'ADMIN'].includes(session?.role ?? '');
 
   const [creating, setCreating] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [depositing, setDepositing] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapAmount, setSwapAmount] = useState('1');
+  const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
+  const [swapRequest, setSwapRequest] = useState<SwapRequest | null>(null);
+  const [swapBusy, setSwapBusy] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
+  const swapPoll = useApi<SwapStatus>(
+    swapRequest?.requestId
+      ? `/agent/wallet/swap/${encodeURIComponent(swapRequest.requestId)}`
+      : null,
+    { pollMs: 2_000 },
+  );
+  const swapStatus = swapPoll.data?.status ?? swapRequest?.status;
+  const swapFinished = useRef<string | null>(null);
   const isCustody = wallet.data?.provider === 'outlayer';
   const custody = wallet.data?.custody ?? stats.data?.custody ?? null;
 
@@ -124,6 +193,26 @@ export default function AgentPage() {
     (invoices.data ?? []).forEach((invoice) => map.set(invoice._id, invoice.number));
     return map;
   }, [invoices.data]);
+
+  useEffect(() => {
+    if (!swapRequest || !swapStatus) return;
+    if (swapFinished.current === swapRequest.requestId) return;
+    if (
+      !['success', 'failed', 'refunded', 'pending_approval', 'rejected'].includes(
+        swapStatus,
+      )
+    ) {
+      return;
+    }
+    swapFinished.current = swapRequest.requestId;
+    if (swapStatus === 'success') {
+      toast('Swap complete');
+      void wallet.reload();
+      void stats.reload();
+    } else if (['failed', 'refunded', 'rejected'].includes(swapStatus)) {
+      setSwapError(`Swap ended as ${swapStatus}`);
+    }
+  }, [swapStatus, swapRequest, toast, wallet, stats]);
 
   async function createWallet() {
     setCreating(true);
@@ -150,8 +239,103 @@ export default function AgentPage() {
       setUpgrading(false);
     }
   }
+  async function copyUsdcContract() {
+    if (!usdcToken) return;
+    try {
+      await navigator.clipboard.writeText(usdcToken.tokenContract);
+      setCopiedToken(true);
+      window.setTimeout(() => setCopiedToken(false), 1500);
+    } catch {
+      setError('Could not copy the USDC contract address');
+    }
+  }
+
+  async function depositOnChainUsdc() {
+    if (!custody || !hasOnChainUsdc) return;
+    const ok = await confirm({
+      title: 'Move USDC to Intents?',
+      body: `Move ${onChainUsdc} USDC from the custody account into its intents.near balance so the agent can pay vendors.`,
+      confirmLabel: 'Move to Intents',
+    });
+    if (!ok) return;
+    setDepositing(true);
+    setError(null);
+    try {
+      const result = await api<{
+        requestId: string;
+        status: string;
+        amountFormatted: string;
+      }>('/agent/wallet/intents-deposit', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      if (result.status === 'pending_approval') {
+        toast('Approve the deposit in OutLayer', 'info');
+      } else {
+        toast(`Moved ${result.amountFormatted} USDC to Intents`);
+      }
+      await Promise.all([wallet.reload(), stats.reload()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not move USDC to Intents');
+    } finally {
+      setDepositing(false);
+    }
+  }
+
+  function openSwap() {
+    setSwapOpen(true);
+    setSwapQuote(null);
+    setSwapRequest(null);
+    setSwapError(null);
+    setSwapAmount('1');
+    swapFinished.current = null;
+  }
+
+  async function getSwapQuote() {
+    if (!swapAmount.trim()) return;
+    setSwapBusy(true);
+    setSwapError(null);
+    try {
+      const quote = await api<SwapQuote>(
+        `/agent/wallet/swap/quote?amountNear=${encodeURIComponent(swapAmount.trim())}`,
+      );
+      setSwapQuote(quote);
+    } catch (err) {
+      setSwapError(err instanceof Error ? err.message : 'Could not quote the swap');
+    } finally {
+      setSwapBusy(false);
+    }
+  }
+
+  async function submitSwap() {
+    if (!swapQuote) return;
+    setSwapBusy(true);
+    setSwapError(null);
+    try {
+      const request = await api<SwapRequest>('/agent/wallet/swap', {
+        method: 'POST',
+        body: JSON.stringify({
+          amountNear: swapQuote.amountInFormatted,
+          minAmountOut: swapQuote.minAmountOut,
+        }),
+      });
+      setSwapRequest(request);
+    } catch (err) {
+      setSwapError(err instanceof Error ? err.message : 'Could not submit the swap');
+    } finally {
+      setSwapBusy(false);
+    }
+  }
   const nativeNear = custody ? formatUnits(custody.nativeBalance, 24) : '0';
   const intentsUsdc = custody ? formatUnits(custody.intentsUsdc, 6) : '0';
+  const onChainUsdc = custody ? formatUnits(custody.onChainUsdc ?? '0', 6) : '0';
+  const hasOnChainUsdc = custody
+    ? BigInt(custody.onChainUsdc ?? '0') > 0n
+    : false;
+  const usdcToken = wallet.data?.intentsUsdcToken ?? stats.data?.intentsUsdcToken ?? null;
+  const network = wallet.data?.outlayerNetwork ?? stats.data?.network ?? chainNetwork;
+  const explorerBase =
+    network === 'testnet' ? 'https://testnet.nearblocks.io' : 'https://nearblocks.io';
 
   return (
     <div>
@@ -159,7 +343,25 @@ export default function AgentPage() {
         title="Agent wallet"
         description="Policy-bound custody for the AI agent — a TEE-held key, spending rules, and human approvals."
         actions={
-          wallet.data || !canAdmin ? null : (
+          wallet.data ? (
+            <div className="flex items-center gap-2">
+              <Badge
+                className={
+                  isCustody
+                    ? 'border-brand/20 bg-brand-soft text-brand-deep'
+                    : wallet.data.policy.active
+                      ? 'border-mint/20 bg-mint-soft text-mint'
+                      : 'border-line bg-paper text-muted'
+                }
+                dot
+              >
+                {isCustody ? 'Custody' : wallet.data.policy.active ? 'Active' : 'Paused'}
+              </Badge>
+              <Badge className="border-line bg-paper capitalize text-muted">
+                {wallet.data.outlayerNetwork ?? stats.data?.network ?? chainNetwork}
+              </Badge>
+            </div>
+          ) : !canAdmin ? null : (
             <Button loading={creating} onClick={() => void createWallet()}>
               <Plus className="h-3.5 w-3.5" /> Create agent wallet
             </Button>
@@ -198,63 +400,111 @@ export default function AgentPage() {
         </Card>
       ) : (
         <>
-          {isCustody ? (
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Card className="p-5">
-                <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted">
-                  <NearProtocolIcon className="h-3 w-3" /> Native NEAR
-                </p>
-                <p className="font-num mt-1 text-2xl font-semibold">{nativeNear}</p>
-                <p className="mt-0.5 text-[11px] text-muted">on the custody account</p>
-              </Card>
-              <Card className="p-5">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Intents USDC</p>
-                <p className="font-num mt-1 text-2xl font-semibold">{intentsUsdc}</p>
-                <NearIntentsLogo className="mt-2 h-3.5 w-auto" />
-                <p className="mt-0.5 text-[11px] text-muted">available for gasless payouts</p>
-              </Card>
-              <Card className="p-5">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Waiting approval</p>
-                <p className="font-num mt-1 text-2xl font-semibold">
-                  {stats.data?.pendingApprovals ?? 0}
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted">
-                  {custody?.frozen ? 'wallet frozen in OutLayer' : 'multisig / policy queue'}
-                </p>
-              </Card>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Card className="p-5">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Spent today</p>
-                <p className="font-num mt-1 text-2xl font-semibold">
-                  {formatDollars(stats.data?.spentTodayUsd ?? '0')}
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted">
-                  limit {formatDollars(wallet.data.policy.dailyLimitUsd)} / day
-                </p>
-              </Card>
-              <Card className="p-5">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Per transaction</p>
-                <p className="font-num mt-1 text-2xl font-semibold">
-                  {formatDollars(wallet.data.policy.perTxLimitUsd)}
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted">hard block above this</p>
-              </Card>
-              <Card className="p-5">
-                <p className="text-[11px] uppercase tracking-wider text-muted">Auto-approve</p>
-                <p className="font-num mt-1 text-2xl font-semibold">
-                  {formatDollars(wallet.data.policy.approvalThresholdUsd)}
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted">
-                  {stats.data?.pendingApprovals ?? 0} above threshold
-                </p>
-              </Card>
-            </div>
-          )}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {isCustody ? (
+              <>
+                <Card className="p-5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-wider text-muted">Intents USDC</p>
+                    {canAdmin ? (
+                      <button
+                        type="button"
+                        onClick={openSwap}
+                        className="rounded p-1 text-muted transition hover:bg-surface-raised hover:text-ink"
+                        aria-label="Swap NEAR to Intents USDC"
+                        title="Swap NEAR to Intents USDC"
+                      >
+                        <ArrowLeftRight className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="font-num mt-1 text-2xl font-semibold">{intentsUsdc}</p>
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
+                    <NearIntentsLogo className="h-3.5 w-auto" /> spendable for payouts
+                  </div>
+                </Card>
+                <Card className="p-5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-wider text-muted">
+                      On-chain USDC
+                    </p>
+                    {canAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => void depositOnChainUsdc()}
+                        disabled={depositing || !hasOnChainUsdc}
+                        className="rounded p-1 text-muted transition hover:bg-surface-raised hover:text-ink disabled:opacity-40"
+                        aria-label="Move on-chain USDC to Intents"
+                        title="Move on-chain USDC to Intents"
+                      >
+                        {depositing ? (
+                          <Spinner className="h-3.5 w-3.5" />
+                        ) : (
+                          <ArrowDownToLine className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="font-num mt-1 text-2xl font-semibold">{onChainUsdc}</p>
+                  <p className="mt-0.5 text-[11px] text-muted">in the custody account</p>
+                </Card>
+                <Card className="p-5">
+                  <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted">
+                    <NearProtocolIcon className="h-3 w-3" /> Native NEAR
+                  </p>
+                  <p className="font-num mt-1 text-2xl font-semibold">{nativeNear}</p>
+                  <p className="mt-0.5 text-[11px] text-muted">gas and swaps</p>
+                </Card>
+                <Card className="p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-muted">Waiting approval</p>
+                  <p className="font-num mt-1 text-2xl font-semibold">
+                    {stats.data?.pendingApprovals ?? 0}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    {custody?.frozen ? 'wallet frozen in OutLayer' : 'multisig / policy queue'}
+                  </p>
+                </Card>
+              </>
+            ) : (
+              <>
+                <Card className="p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-muted">Spent today</p>
+                  <p className="font-num mt-1 text-2xl font-semibold">
+                    {formatDollars(stats.data?.spentTodayUsd ?? '0')}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    limit {formatDollars(wallet.data.policy.dailyLimitUsd)} / day
+                  </p>
+                </Card>
+                <Card className="p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-muted">Daily limit</p>
+                  <p className="font-num mt-1 text-2xl font-semibold">
+                    {formatDollars(wallet.data.policy.dailyLimitUsd)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">per workspace day</p>
+                </Card>
+                <Card className="p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-muted">Per transaction</p>
+                  <p className="font-num mt-1 text-2xl font-semibold">
+                    {formatDollars(wallet.data.policy.perTxLimitUsd)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">hard block above this</p>
+                </Card>
+                <Card className="p-5">
+                  <p className="text-[11px] uppercase tracking-wider text-muted">Auto-approve</p>
+                  <p className="font-num mt-1 text-2xl font-semibold">
+                    {formatDollars(wallet.data.policy.approvalThresholdUsd)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    {stats.data?.pendingApprovals ?? 0} above threshold
+                  </p>
+                </Card>
+              </>
+            )}
+          </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-            <div className="space-y-4">
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <div className="order-2 space-y-4">
               <Card className="p-5">
                 <div className="flex items-center justify-between">
                   <SectionTitle
@@ -300,6 +550,36 @@ export default function AgentPage() {
                       </p>
                     </div>
                   ) : null}
+                  {isCustody && usdcToken ? (
+                    <div className="rounded-xl bg-paper px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wider text-muted">
+                        USDC contract
+                      </p>
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <a
+                          href={`${explorerBase}/address/${usdcToken.tokenContract}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`${usdcToken.tokenContract} · ${usdcToken.assetId}`}
+                          className="font-num min-w-0 truncate text-[11px] text-ink transition hover:text-brand"
+                        >
+                          {shortAddress(usdcToken.tokenContract, 8)}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => void copyUsdcContract()}
+                          className="shrink-0 rounded p-0.5 text-muted transition hover:text-ink"
+                          aria-label="Copy USDC contract address"
+                        >
+                          {copiedToken ? (
+                            <Check className="h-3 w-3 text-mint" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 {isCustody ? (
@@ -314,8 +594,8 @@ export default function AgentPage() {
                     <div className="mt-3 rounded-xl border border-line px-3 py-2.5 text-[11px] leading-relaxed text-muted">
                       <p className="font-medium text-ink">Fund this wallet</p>
                       <p className="mt-1">
-                        Send USDC/USDT to the custody account, or fund its Intents balance from
-                        another chain in the OutLayer dashboard.
+                        Send NEAR (for gas and swaps) or USDC/USDT to the custody account, or fund
+                        its Intents balance from another chain in the OutLayer dashboard.
                       </p>
                     </div>
                     {wallet.data.handoffUrl ? (
@@ -391,9 +671,23 @@ export default function AgentPage() {
                   </p>
                 </Card>
               )}
+
+              <Card className="p-5">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-mint" />
+                  <div>
+                    <p className="text-[13px] font-medium">How the leash works</p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-muted">
+                      {isCustody
+                        ? 'OutLayer decrypts the on-chain policy inside Intel TDX and enforces it before every signature. Set per-transaction and velocity limits in the custody handoff before funding the wallet.'
+                        : 'Proposals are checked when created and re-checked at execution. Assets outside the allowlist are blocked, and pausing the wallet blocks everything.'}
+                    </p>
+                  </div>
+                </div>
+              </Card>
             </div>
 
-            <div className="space-y-4">
+            <div className="order-1 space-y-4">
               <ProposeForm
                 invoices={(invoices.data ?? []).filter((invoice) => invoice.status === 'APPROVED')}
                 wallet={wallet.data}
@@ -438,19 +732,151 @@ export default function AgentPage() {
         </>
       )}
 
-      <Card className="mt-4 p-5">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-4 w-4 text-mint" />
-          <div>
-            <p className="text-[14px] font-medium">How the leash works</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">
-              {isCustody
-                ? 'OutLayer decrypts the on-chain policy inside Intel TDX and enforces it before every signature. This workspace delegates policy to the custody wallet: set per-transaction and velocity limits in the handoff before funding it. A custody wallet with no policy is unrestricted.'
-                : 'Proposals are checked when created and re-checked at execution time, so tightening a limit instantly invalidates stale approvals. Assets outside the allowlist are blocked before a quote is ever requested. Pausing the wallet blocks everything.'}
-            </p>
-          </div>
+      <Modal
+        open={swapOpen}
+        onClose={() => setSwapOpen(false)}
+        title="Swap to Intents USDC"
+        description="Convert the agent's NEAR into USDC in its intents.near balance. OutLayer enforces the custody policy."
+      >
+        <div className="space-y-3">
+          {!swapQuote ? (
+            <>
+              <div>
+                <Label htmlFor="swap-amount">Amount (NEAR)</Label>
+                <Input
+                  id="swap-amount"
+                  inputMode="decimal"
+                  value={swapAmount}
+                  placeholder="1.0"
+                  onChange={(event) => setSwapAmount(event.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-muted">
+                  Available {nativeNear} NEAR. The swap keeps at least 0.1 NEAR for gas.
+                </p>
+              </div>
+              {swapError ? (
+                <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+                  {swapError}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setSwapOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  loading={swapBusy}
+                  disabled={!swapAmount.trim()}
+                  onClick={() => void getSwapQuote()}
+                >
+                  Get quote
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2 rounded-xl border border-line bg-paper px-3 py-3 text-[13px]">
+                <Row label="You pay" value={`${swapQuote.amountInFormatted} NEAR`} />
+                <Row
+                  label="You receive"
+                  value={`~${swapQuote.amountOutFormatted ?? '—'} USDC`}
+                />
+                <Row
+                  label="Minimum out"
+                  value={`${swapQuote.minAmountOutFormatted ?? '—'} USDC`}
+                />
+                <Row label="Route" value="NEAR → wNEAR → Intents USDC" />
+              </div>
+
+              {swapStatus ? (
+                <p
+                  className={
+                    swapStatus === 'success'
+                      ? 'text-[12px] text-mint'
+                      : ['failed', 'refunded', 'rejected'].includes(swapStatus)
+                        ? 'text-[12px] text-rose'
+                        : 'flex items-center gap-2 text-[12px] text-muted'
+                  }
+                >
+                  {['processing', 'pending_deposit', 'pending_approval'].includes(swapStatus) ? (
+                    <Spinner className="h-3.5 w-3.5" />
+                  ) : null}
+                  {swapStatus === 'success'
+                    ? 'Swap complete. Intents USDC will refresh in a moment.'
+                    : swapStatus === 'pending_approval'
+                      ? 'Waiting for OutLayer approval.'
+                      : `Swap status: ${humanize(swapStatus)}`}
+                </p>
+              ) : null}
+
+              {swapStatus === 'pending_approval' ? (
+                wallet.data?.handoffUrl ? (
+                  <a
+                    href={wallet.data.handoffUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-[12px] font-medium text-brand hover:underline"
+                  >
+                    Open the custody handoff to approve <Play className="h-3 w-3" />
+                  </a>
+                ) : (
+                  <p className="text-[11px] text-muted">
+                    Ask the workspace owner to approve this swap in OutLayer.
+                  </p>
+                )
+              ) : null}
+
+              {swapStatus === 'pending_approval' ? (
+                <div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={swapBusy}
+                    onClick={() => {
+                      setSwapRequest(null);
+                      setSwapError(null);
+                      swapFinished.current = null;
+                      void submitSwap();
+                    }}
+                  >
+                    Retry after approval
+                  </Button>
+                </div>
+              ) : null}
+
+              {swapError ? (
+                <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+                  {swapError}
+                </p>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setSwapQuote(null);
+                    setSwapRequest(null);
+                    setSwapError(null);
+                    swapFinished.current = null;
+                  }}
+                >
+                  Change amount
+                </Button>
+                <Button
+                  loading={swapBusy}
+                  disabled={
+                    swapStatus === 'success' ||
+                    swapStatus === 'pending_approval' ||
+                    swapStatus === 'processing'
+                  }
+                  onClick={() => void submitSwap()}
+                >
+                  {swapStatus === 'success' ? 'Done' : 'Swap now'}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
-      </Card>
+      </Modal>
     </div>
   );
 }

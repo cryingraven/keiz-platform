@@ -1,8 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   agentDecisionQuerySchema,
+  agentIntentsDepositSchema,
   agentPolicySchema,
+  agentSwapQuoteSchema,
+  agentSwapSchema,
+  AgentIntentsDepositInput,
   AgentPolicyInput,
+  AgentSwapInput,
+  AgentSwapQuoteInput,
   hireAgentSchema,
   HireAgentInput,
   proposeAgentPaymentSchema,
@@ -45,6 +51,39 @@ export class AgentController {
     @Body(new ZodBody(agentPolicySchema)) body: AgentPolicyInput,
   ) {
     return this.agent.updatePolicy(user.orgId, body);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Get('wallet/swap/quote')
+  swapQuote(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodBody(agentSwapQuoteSchema)) query: AgentSwapQuoteInput,
+  ) {
+    return this.agent.swapQuote(user.orgId, query);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post('wallet/swap')
+  swap(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(agentSwapSchema)) body: AgentSwapInput,
+  ) {
+    return this.agent.swap(user.orgId, body);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Get('wallet/swap/:id')
+  swapStatus(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.agent.swapStatus(user.orgId, id);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post('wallet/intents-deposit')
+  depositIntents(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(agentIntentsDepositSchema)) body: AgentIntentsDepositInput,
+  ) {
+    return this.agent.depositIntents(user.orgId, body);
   }
 
   @Get('stats')
