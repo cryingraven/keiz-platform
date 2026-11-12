@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AccountingModule } from '../accounting/accounting.module';
+import { NumberingModule } from '../numbering/numbering.module';
 import { UsersModule } from '../users/users.module';
 import { Invoice, InvoiceSchema } from './invoice.schema';
 import { InvoicesController } from './invoices.controller';
@@ -10,6 +11,7 @@ import { InvoicesService } from './invoices.service';
   imports: [
     UsersModule,
     AccountingModule,
+    NumberingModule,
     MongooseModule.forFeature([{ name: Invoice.name, schema: InvoiceSchema }]),
   ],
   controllers: [InvoicesController],

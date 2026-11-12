@@ -152,16 +152,6 @@ function shortError(error: unknown): string {
   return message.length > 120 ? `${message.slice(0, 117)}...` : message;
 }
 
-function nextNumber(rows: Array<{ number: string }>, prefix: string): string {
-  const values = rows
-    .map((row) => row.number)
-    .filter((number) => number.startsWith(`${prefix}-`))
-    .map((number) => Number(number.slice(prefix.length + 1)))
-    .filter((value) => Number.isInteger(value));
-  const next = (values.length ? Math.max(...values) : 1000) + 1;
-  return `${prefix}-${next}`;
-}
-
 async function resolveVendor(
   orgId: string,
   query: string,
@@ -309,7 +299,7 @@ export function createChatTools(deps: ChatToolDeps) {
 
   const getInvoice = createTool({
     id: 'get-invoice',
-    description: 'Get one bill by its invoice number, for example INV-1042.',
+    description: 'Get one bill by its document number, for example BIL-26/11/00001.',
     inputSchema: z.object({ number: z.string().min(1) }),
     outputSchema: invoiceCardSchema.or(chatToolErrorSchema),
     requestContextSchema,
@@ -426,7 +416,7 @@ export function createChatTools(deps: ChatToolDeps) {
 
   const getReceivable = createTool({
     id: 'get-receivable',
-    description: 'Get one customer invoice by its receivable number, for example AR-2001.',
+    description: 'Get one customer invoice by its document number, for example INV-26/11/0001.',
     inputSchema: z.object({ number: z.string().min(1) }),
     outputSchema: receivableCardSchema.or(chatToolErrorSchema),
     requestContextSchema,
@@ -533,7 +523,9 @@ export function createChatTools(deps: ChatToolDeps) {
       'List recent journal entries with debit/credit lines. Use for ledgers, postings and audit questions.',
     inputSchema: z.object({
       currency: z.enum(['USD', 'EUR', 'SGD', 'IDR']).optional(),
-      sourceType: z.enum(['invoice', 'receivable', 'receipt', 'manual', 'opening']).optional(),
+      sourceType: z
+        .enum(['invoice', 'receivable', 'receipt', 'manual', 'opening', 'expense', 'revenue'])
+        .optional(),
       limit: z.number().int().min(1).max(50).optional(),
     }),
     outputSchema: journalListCardSchema.or(chatToolErrorSchema),
@@ -686,10 +678,9 @@ export function createChatTools(deps: ChatToolDeps) {
   const createBill = createTool({
     id: 'create-bill',
     description:
-      'Create an AP bill (vendor invoice) for an existing vendor. Resolve the vendor by name or email; never invent a vendor id. Creates a DRAFT and, only when the user explicitly asks, submits it. Submitting does not post to the ledger.',
+      'Create an AP bill (vendor invoice) for an existing vendor. Resolve the vendor by name or email; never invent a vendor id. The API assigns the BIL-YY/MM/XXXXX number. Creates a DRAFT and, only when the user explicitly asks, submits it. Submitting does not post to the ledger.',
     inputSchema: z.object({
       vendor: z.string().min(1).max(200),
-      number: z.string().min(1).max(64).optional(),
       issueDate: z.string().min(1).max(40).optional(),
       dueDate: z.string().min(1).max(40).optional(),
       dueInDays: chatDueInDaysSchema.optional(),
@@ -720,11 +711,8 @@ export function createChatTools(deps: ChatToolDeps) {
       } catch (error) {
         return { error: (error as Error).message };
       }
-      const rows = (await deps.invoices.list(orgId, {})) as InvoiceLike[];
-      const number = input.number ?? nextNumber(rows, 'INV');
       const parsed = createInvoiceSchema.safeParse({
         vendorId: String(vendor._id),
-        number,
         issueDate,
         dueDate,
         currency: input.currency,
@@ -772,10 +760,9 @@ export function createChatTools(deps: ChatToolDeps) {
   const createReceivable = createTool({
     id: 'create-receivable',
     description:
-      'Create an AR customer invoice (receivable) for an existing customer. Resolve the customer by name or email; never invent a customer id. Creates a DRAFT and, only when the user explicitly asks, issues it. Issuing posts AR to the ledger.',
+      'Create an AR customer invoice (receivable) for an existing customer. Resolve the customer by name or email; never invent a customer id. The API assigns the INV-YY/MM/XXXX number. Creates a DRAFT and, only when the user explicitly asks, issues it. Issuing posts AR to the ledger.',
     inputSchema: z.object({
       customer: z.string().min(1).max(200),
-      number: z.string().min(1).max(64).optional(),
       issueDate: z.string().min(1).max(40).optional(),
       dueDate: z.string().min(1).max(40).optional(),
       dueInDays: chatDueInDaysSchema.optional(),
@@ -806,11 +793,8 @@ export function createChatTools(deps: ChatToolDeps) {
       } catch (error) {
         return { error: (error as Error).message };
       }
-      const rows = (await deps.receivables.list(orgId, {})) as ReceivableLike[];
-      const number = input.number ?? nextNumber(rows, 'AR');
       const parsed = createReceivableSchema.safeParse({
         customerId: String(customer._id),
-        number,
         issueDate,
         dueDate,
         currency: input.currency,

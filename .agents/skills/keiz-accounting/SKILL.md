@@ -57,6 +57,35 @@ Postings:
 Receipts use an optimistic lock on `paidAmount`; concurrent receipts cannot overpay. Overdue is
 derived from the due date, never stored.
 
+## Direct expenses and revenue
+
+Direct entries are single cash movements outside the AP/AR subledgers. Writes are
+ADMIN/OWNER only; every workspace member can read the lists and the journal.
+
+| Entry | Debit | Credit | Number |
+|---|---|---|---|
+| Direct expense | Expense account (default 5100) | Cash account (default 1010) | `EXP-YY/MM/XXXXX` |
+| Direct revenue | Cash account (default 1010) | Revenue account (default 4000) | `REV-YY/MM/XXXX` |
+
+The account must match the kind (`EXPENSE` for expenses, `REVENUE` for revenue) and the cash
+account must be an `ASSET`. Both post a balanced, immutable journal entry with
+`sourceType: expense|revenue`, `event: MANUAL` and no dedupe key.
+
+## Document numbering
+
+Numbers are allocated server-side from `document_counters`, keyed by `(orgId, kind, period)`
+where the period is the business date's UTC `YY/MM`:
+
+- Vendor bill: `BIL-YY/MM/XXXXX`
+- Customer invoice: `INV-YY/MM/XXXX`
+- Direct expense: `EXP-YY/MM/XXXXX`
+- Direct revenue: `REV-YY/MM/XXXX`
+
+The allocation is an atomic `$inc` and the series resets monthly. The number is immutable
+after creation. Explicit numbers are only for imports, the demo seed and tests; the UI and
+chat never send one. Padding is a minimum width, so a series grows past its width instead
+of wrapping.
+
 ## Ledger invariants
 
 - The journal is append-only. Never update or delete an entry; corrections are reversal entries.
@@ -73,7 +102,8 @@ derived from the due date, never stored.
 - Storage is an integer minor-unit string plus `decimals`.
 - Tool results expose both `minor` and a formatted major-unit string. Never re-scale them.
 - `formatMoney` expects minor units; `formatDollars` expects major units.
-- The ledger is per currency (USD, EUR, SGD, IDR) with no FX translation. Never add currencies.
+- The workspace base currency is fixed to USD. The ledger is still per transaction currency
+  (USD, EUR, SGD, IDR) with no FX translation. Never add currencies.
 - `spend-summary` is invoice pipeline totals by status. `books-summary` is ledger balances and
   the trial balance. Do not mix them.
 - Aging is AP or AR by due date.

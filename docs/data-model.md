@@ -52,7 +52,7 @@ Unique index: `(orgId, userId)`. The last OWNER cannot be demoted or removed.
 |---|---|---|
 | `name` | string | Display name. |
 | `slug` | string | Unique, indexed. |
-| `baseCurrency` | string | Default `USD`; used as the default currency in Accounting and Reporting. |
+| `baseCurrency` | string | Always `USD`. Transaction and ledger currencies remain per-currency (USD/EUR/SGD/IDR). |
 | `network` | `mainnet` \| `testnet` | Matches every member's network. Indexed. |
 | `collection` | embedded object? | Per-workspace AR collection config. |
 | `paymentSettings` | embedded object? | `arMode` (`CONTRACT` \| `TREASURY` \| `OFF`), `treasuryAccountId?`, `arAssetId?`. |
@@ -90,7 +90,7 @@ Index: `(orgId, createdAt)`.
 |---|---|---|
 | `orgId` | string | Indexed. |
 | `vendorId` | string | Indexed. |
-| `number` | string | Unique per org. |
+| `number` | string | Unique per org. Generated as `BIL-YY/MM/XXXXX` from the issue-date month; immutable once created. |
 | `issueDate`, `dueDate` | Date | |
 | `currency` | string | Default `USD`; one of USD/EUR/SGD/IDR at the API boundary. |
 | `decimals` | number | Default 2. |
@@ -217,7 +217,7 @@ Index: `(orgId, createdAt)`.
 |---|---|---|
 | `orgId` | string | Indexed. |
 | `customerId` | string | Indexed. |
-| `number` | string | Unique per org. |
+| `number` | string | Unique per org. Generated as `INV-YY/MM/XXXX` from the issue-date month; immutable once created. |
 | `issueDate`, `dueDate` | Date | |
 | `currency` | string | Default `USD`. |
 | `decimals` | number | Default 2. |
@@ -308,6 +308,22 @@ record is rotated in place so old links invalidate immediately.
 
 Unique index: `(orgId, code)`.
 
+### `document_counters`
+
+Atomic monthly document series, one row per workspace, kind and UTC month.
+
+| Field | Type | Notes |
+|---|---|---|
+| `orgId` | string | Indexed. |
+| `kind` | `BILL` \| `INVOICE` \| `EXPENSE` \| `REVENUE` | |
+| `period` | string | UTC `YY/MM` from the document's business date. |
+| `seq` | number | Incremented with an atomic `$inc`; never reset within a period. |
+
+Unique index: `(orgId, kind, period)`. Formatting lives in `@keiz/shared`
+(`formatDocumentNumber`): bills `BIL-YY/MM/XXXXX`, customer invoices `INV-YY/MM/XXXX`,
+direct expenses `EXP-YY/MM/XXXXX`, direct revenue `REV-YY/MM/XXXX`. Padding is a minimum
+width; sequences grow rather than wrap.
+
 ### `journal_entries`
 
 Immutable. Corrections are reversal entries.
@@ -317,7 +333,8 @@ Immutable. Corrections are reversal entries.
 | `orgId` | string | Indexed. |
 | `date` | Date | Business date, not insert date. |
 | `memo` | string | |
-| `sourceType` | `invoice` \| `receivable` \| `receipt` \| `manual` \| `opening` | |
+| `number` | string? | Direct-entry document number: `EXP-YY/MM/XXXXX` or `REV-YY/MM/XXXX`. |
+| `sourceType` | `invoice` \| `receivable` \| `receipt` \| `manual` \| `opening` \| `expense` \| `revenue` | |
 | `sourceId` | string | |
 | `event` | `APPROVED` \| `PAID` \| `VOID` \| `ISSUED` \| `RECEIVED` \| `REVERSED` \| `OPENING` \| `MANUAL` | |
 | `currency` | string | Per-currency ledger; no FX translation. |
@@ -328,8 +345,9 @@ Immutable. Corrections are reversal entries.
 | `lines[]` | embedded | `accountId`, `accountCode`, `accountName`, `debit`, `credit` (strings). |
 
 `lines` must balance (sum debit = sum credit) and cannot be zero-value. Indexes:
-`(orgId, date)`, `(orgId, sourceType, sourceId)`, `(orgId, lines.accountCode, date)`, and
-unique partial `(orgId, dedupeKey)` when `dedupeKey` exists.
+`(orgId, date)`, `(orgId, sourceType, sourceId)`, `(orgId, lines.accountCode, date)`,
+unique partial `(orgId, dedupeKey)` when `dedupeKey` exists, and unique partial
+`(orgId, number)` when `number` exists.
 
 System dedupe keys: `invoice:<id>:APPROVED|PAID|VOID`,
 `receivable:<id>:ISSUED|VOID`, `receipt:<receiptId>:RECEIVED`,

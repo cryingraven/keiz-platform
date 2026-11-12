@@ -92,7 +92,6 @@ export class DemoService {
     for (const spec of specs) {
       const invoice = await this.invoicesService.create(orgId, userId, {
         vendorId: vendors[spec.vendor]._id.toString(),
-        number: spec.number,
         issueDate: daysFromNow(-14),
         dueDate: daysFromNow(spec.due),
         currency: 'USD',
@@ -221,7 +220,6 @@ export class DemoService {
     for (const spec of arSpecs) {
       const receivable = await this.receivables.create(orgId, userId, {
         customerId: customers[spec.customer].id,
-        number: spec.number,
         issueDate: daysFromNow(-20),
         dueDate: daysFromNow(spec.due),
         currency: 'USD',

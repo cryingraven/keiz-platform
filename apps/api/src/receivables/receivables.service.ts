@@ -20,6 +20,7 @@ import {
 } from '@keiz/shared';
 import { AccountingService } from '../accounting/accounting.service';
 import { dateRange } from '../common/date-range';
+import { NumberingService } from '../numbering/numbering.service';
 import { Customer, CustomerDocument } from './customer.schema';
 import { Receivable, ReceivableDocument } from './receivable.schema';
 
@@ -31,6 +32,7 @@ export class ReceivablesService {
     @InjectModel(Customer.name) private readonly customers: Model<CustomerDocument>,
     @InjectModel(Receivable.name) private readonly receivables: Model<ReceivableDocument>,
     private readonly accounting: AccountingService,
+    private readonly numbering: NumberingService,
   ) {}
 
   listCustomers(orgId: string, options: { includeArchived?: boolean; query?: string } = {}) {
@@ -200,12 +202,15 @@ export class ReceivablesService {
       throw new BadRequestException((error as Error).message);
     }
 
+    const issueDate = input.issueDate ? new Date(input.issueDate) : new Date();
+    const number = input.number ?? (await this.numbering.next(orgId, 'INVOICE', issueDate));
+
     try {
       const receivable = await this.receivables.create({
         orgId,
         customerId: input.customerId,
-        number: input.number,
-        issueDate: input.issueDate ? new Date(input.issueDate) : new Date(),
+        number,
+        issueDate,
         dueDate: new Date(input.dueDate),
         currency: input.currency,
         decimals,
@@ -222,7 +227,7 @@ export class ReceivablesService {
       return receivable.toObject();
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
-        throw new ConflictException(`Receivable ${input.number} already exists`);
+        throw new ConflictException(`Receivable ${number} already exists`);
       }
       throw error;
     }

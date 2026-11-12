@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { LoginVerifyInput } from '@keiz/shared';
+import { BASE_CURRENCY, LoginVerifyInput } from '@keiz/shared';
 import type { AuthMethod } from '../common/current-user.decorator';
 import { NearNetwork, walletNetwork } from '../common/network';
 import { UsersService } from '../users/users.service';
@@ -185,7 +185,7 @@ export class AuthService {
         id: org!.id,
         name: org!.name,
         slug: org!.slug,
-        baseCurrency: org!.baseCurrency ?? 'USD',
+        baseCurrency: BASE_CURRENCY,
       },
       role: membership!.role,
       authMethod,
@@ -256,7 +256,7 @@ export class AuthService {
           id: org.id,
           name: org.name,
           slug: org.slug,
-          baseCurrency: org.baseCurrency ?? 'USD',
+          baseCurrency: BASE_CURRENCY,
         },
         role: membership.role,
         authMethod: (payload.amr as AuthMethod | undefined) ?? 'wallet',

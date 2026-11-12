@@ -17,7 +17,7 @@ A B2B spend workspace: vendor bills (AP), customer invoices (AR), a **double-ent
 | Payments | NEAR Intents 1Click (with a deterministic mock provider) |
 | AI | Mastra agent + NEAR AI Cloud (`nearai/...`), local fallback |
 | Chain data | NEAR RPC + append-only Mongo event log |
-| Accounting | Per-org chart of accounts, immutable journal, AP/AR subledgers |
+| Accounting | Per-org chart of accounts, immutable journal, AP/AR subledgers, direct expense/revenue; USD base currency |
 | Agent custody | OutLayer (Intel TDX + NEAR MPC) — optional |
 
 ## Hackathon disclosure
@@ -70,11 +70,12 @@ pnpm worker                   # BullMQ worker (Redis)
 
 Open <http://localhost:3000>, sign in, and press **Load demo data** if needed. Then:
 
-1. **Bills (AP):** open `INV-1001`, approve it, request a quote and simulate settlement. Check that the invoice becomes `PAID` and the ledger has the expense, AP and cash postings.
-2. **Receivables (AR):** open `AR-2001`, record a partial receipt, and check the outstanding balance and cash posting.
-3. **Reporting:** choose monthly, quarterly or annual. Review inflow/outflow, profit & loss and the balance sheet, then export the report as PDF and Excel.
-4. **Assistant:** ask “What do we owe this week?” and approve the plan. Read-only tools run; a payment proposal needs a separate confirmation and still cannot move funds.
-5. **Share & pay (AR):** open a customer invoice, create a share link, then open it in an incognito window. The Pay panel follows the workspace AR mode: contract, treasury, or disabled.
+1. **Bills (AP):** open the first `BIL-YY/MM/XXXXX` bill, approve it, request a quote and simulate settlement. Check that the invoice becomes `PAID` and the ledger has the expense, AP and cash postings.
+2. **Receivables (AR):** open the first `INV-YY/MM/XXXX` customer invoice, record a partial receipt, and check the outstanding balance and cash posting.
+3. **Direct entries:** under **Books → Expenses** or **Revenue**, post a cash expense or receipt and check the `EXP-…` / `REV-…` journal entry.
+4. **Reporting:** choose monthly, quarterly or annual. Review inflow/outflow, profit & loss and the balance sheet, then export the report as PDF and Excel.
+5. **Assistant:** ask “What do we owe this week?” and approve the plan. Read-only tools run; a payment proposal needs a separate confirmation and still cannot move funds.
+6. **Share & pay (AR):** open a customer invoice, create a share link, then open it in an incognito window. The Pay panel follows the workspace AR mode: contract, treasury, or disabled.
 
 Mock payments are the default (`PAYMENTS_MODE=mock`), so this path needs no mainnet funds.
 
@@ -310,8 +311,8 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test                              # 99 unit tests (84 API + 15 shared)
-pnpm --filter @keiz/api smoke          # 59 end-to-end checks, in-memory Mongo
+pnpm test                              # 108 unit tests (84 API + 19 shared + 5 web)
+pnpm --filter @keiz/api smoke          # 61 end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 pnpm contracts:test                    # Rust contract unit tests

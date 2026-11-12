@@ -37,6 +37,7 @@ export interface JournalLine {
 
 export interface JournalEntry {
   _id: string;
+  number?: string;
   date: string;
   memo: string;
   event: string;

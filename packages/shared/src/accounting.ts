@@ -45,6 +45,8 @@ export const JOURNAL_SOURCE_TYPES = [
   'receipt',
   'manual',
   'opening',
+  'expense',
+  'revenue',
 ] as const;
 export type JournalSourceType = (typeof JOURNAL_SOURCE_TYPES)[number];
 

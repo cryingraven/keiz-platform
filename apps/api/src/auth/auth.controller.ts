@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { Throttle } from '@nestjs/throttler';
-import { loginChallengeSchema, loginVerifySchema, switchOrgSchema } from '@keiz/shared';
+import { BASE_CURRENCY, loginChallengeSchema, loginVerifySchema, switchOrgSchema } from '@keiz/shared';
 import { REFRESH_COOKIE, ACCESS_COOKIE } from '../common/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
 import { Public } from '../common/public.decorator';
@@ -96,7 +96,7 @@ export class AuthController {
         id: org.id,
         name: org.name,
         slug: org.slug,
-        baseCurrency: org.baseCurrency ?? 'USD',
+        baseCurrency: BASE_CURRENCY,
       },
       role: membership.role,
     };

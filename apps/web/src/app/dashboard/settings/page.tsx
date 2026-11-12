@@ -61,7 +61,6 @@ export default function SettingsPage() {
   const [profileForm, setProfileForm] = useState<{
     name: string;
     slug: string;
-    baseCurrency: string;
   } | null>(null);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -131,7 +130,6 @@ export default function SettingsPage() {
         ? {
             name: profile.data.name,
             slug: profile.data.slug,
-            baseCurrency: profile.data.baseCurrency,
           }
         : null,
     );
@@ -140,8 +138,7 @@ export default function SettingsPage() {
   const profileDirty =
     Boolean(profileForm && profile.data) &&
     (profileForm!.name !== profile.data!.name ||
-      profileForm!.slug !== profile.data!.slug ||
-      profileForm!.baseCurrency !== profile.data!.baseCurrency);
+      profileForm!.slug !== profile.data!.slug);
 
   async function saveProfile() {
     if (!profileForm) return;
@@ -153,7 +150,6 @@ export default function SettingsPage() {
         body: JSON.stringify({
           name: profileForm.name.trim(),
           slug: profileForm.slug.trim(),
-          baseCurrency: profileForm.baseCurrency,
         }),
       });
       await profile.reload();
@@ -302,22 +298,13 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div>
-                <Label htmlFor="ws-currency">Base currency</Label>
-                <Select
-                  id="ws-currency"
-                  value={profileForm.baseCurrency}
-                  disabled={!canEdit}
-                  onChange={(event) =>
-                    setProfileForm((current) =>
-                      current ? { ...current, baseCurrency: event.target.value } : current,
-                    )
-                  }
-                >
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="SGD">SGD</option>
-                  <option value="IDR">IDR</option>
-                </Select>
+                <Label>Base currency</Label>
+                <div className="flex h-[42px] items-center rounded-xl border border-line bg-paper px-3 text-[13px] text-muted">
+                  USD
+                </div>
+                <p className="mt-1 text-[11px] text-muted">
+                  The workspace base currency is fixed to USD.
+                </p>
               </div>
               <div>
                 <Label>Network</Label>

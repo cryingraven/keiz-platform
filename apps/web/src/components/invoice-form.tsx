@@ -54,9 +54,6 @@ export function InvoiceForm({
 }) {
   const isEdit = Boolean(invoice);
   const [vendorId, setVendorId] = useState(invoice?.vendorId ?? '');
-  const [number, setNumber] = useState(
-    invoice?.number ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`,
-  );
   const [issueDate, setIssueDate] = useState(invoice ? invoice.issueDate.slice(0, 10) : today());
   const [dueDate, setDueDate] = useState(invoice ? invoice.dueDate.slice(0, 10) : inDays(14));
   const [currency, setCurrency] = useState(invoice?.currency ?? 'USD');
@@ -79,7 +76,6 @@ export function InvoiceForm({
   useEffect(() => {
     if (!open) return;
     setVendorId(invoice?.vendorId ?? '');
-    setNumber(invoice?.number ?? `INV-${Math.floor(1000 + Math.random() * 9000)}`);
     setIssueDate(invoice ? invoice.issueDate.slice(0, 10) : today());
     setDueDate(invoice ? invoice.dueDate.slice(0, 10) : inDays(14));
     setCurrency(invoice?.currency ?? 'USD');
@@ -126,7 +122,7 @@ export function InvoiceForm({
   async function submit() {
     setAttempted(true);
     setError(null);
-    if (!vendorId || !number.trim() || invalid) {
+    if (!vendorId || invalid) {
       setError('Check the highlighted fields before saving.');
       return;
     }
@@ -136,7 +132,6 @@ export function InvoiceForm({
         method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify({
           vendorId,
-          number,
           issueDate: new Date(`${issueDate}T00:00:00Z`).toISOString(),
           dueDate: new Date(`${dueDate}T00:00:00Z`).toISOString(),
           currency,
@@ -151,7 +146,6 @@ export function InvoiceForm({
       if (!isEdit) {
         setLines([emptyLine()]);
         setNotes('');
-        setNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
         setAttempted(false);
       }
     } catch (err) {
@@ -199,19 +193,15 @@ export function InvoiceForm({
               ))}
             </Select>
           </Field>
-          <Field
-            id="number"
-            label="Invoice number"
-            error={attempted && !number.trim() ? 'Enter the bill number.' : null}
-          >
-            <Input
+          <div>
+            <span className="mb-1.5 block text-small font-medium text-ink">Bill number</span>
+            <div
               id="number"
-              value={number}
-              aria-invalid={attempted && !number.trim()}
-              aria-describedby={attempted && !number.trim() ? 'number-error' : undefined}
-              onChange={(e) => setNumber(e.target.value)}
-            />
-          </Field>
+              className="mt-1 flex h-9 items-center rounded-control border border-line bg-ink/[0.02] px-3 font-num text-small text-muted"
+            >
+              {invoice?.number ?? 'BIL-YY/MM/XXXXX · generated on save'}
+            </div>
+          </div>
           <div>
             <Label htmlFor="issue">Issue date</Label>
             <Input

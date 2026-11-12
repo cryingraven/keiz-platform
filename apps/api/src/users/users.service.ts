@@ -2,26 +2,46 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
-import type { Role, UpdateOrganizationProfileInput } from '@keiz/shared';
+import { BASE_CURRENCY, type Role, type UpdateOrganizationProfileInput } from '@keiz/shared';
 import { NearNetwork, walletNetwork } from '../common/network';
 import { Organization, OrganizationDocument } from './organization.schema';
 import { Membership, MembershipDocument } from './membership.schema';
 import { User, UserDocument } from './user.schema';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectModel(User.name) private readonly users: Model<UserDocument>,
     @InjectModel(Organization.name) private readonly orgs: Model<OrganizationDocument>,
     @InjectModel(Membership.name) private readonly memberships: Model<MembershipDocument>,
     private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Base currency is USD-only. Normalize rows created before that rule so the
+   * schema enum cannot reject an otherwise valid workspace save.
+   */
+  async onModuleInit() {
+    const result = await this.orgs.updateMany(
+      { baseCurrency: { $ne: BASE_CURRENCY } },
+      { $set: { baseCurrency: BASE_CURRENCY } },
+    );
+    if (result.modifiedCount > 0) {
+      this.logger.log(
+        `Normalized ${result.modifiedCount} workspace base currency to ${BASE_CURRENCY}`,
+      );
+    }
+  }
 
   /** The workspace the user last selected, falling back to their first membership. */
   private async currentMembership(user: UserDocument): Promise<MembershipDocument | null> {
@@ -289,7 +309,7 @@ export class UsersService {
       id: org.id,
       name: org.name,
       slug: org.slug,
-      baseCurrency: org.baseCurrency ?? 'USD',
+      baseCurrency: BASE_CURRENCY,
       network: org.network ?? null,
       createdAt: org.createdAt?.toISOString() ?? null,
       updatedAt: org.updatedAt?.toISOString() ?? null,
@@ -318,7 +338,7 @@ export class UsersService {
       org.slug = input.slug;
     }
     if (input.name !== undefined) org.name = input.name;
-    if (input.baseCurrency !== undefined) org.baseCurrency = input.baseCurrency;
+    org.baseCurrency = BASE_CURRENCY;
     await org.save();
     return this.organizationProfileView(org);
   }

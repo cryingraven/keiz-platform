@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { JOURNAL_SOURCE_TYPES } from './accounting';
 import { invoiceNumber, payoutChain, positiveDecimal, validatePayoutAddress } from './validation';
 import { RECEIPT_METHODS, RECEIVABLE_STATUSES, ROLES } from './types';
 
@@ -18,6 +19,9 @@ export const CURRENCY_DECIMALS: Record<string, number> = {
 };
 
 export const currencySchema = z.enum(['USD', 'EUR', 'SGD', 'IDR']);
+
+/** Workspace base currency. Only USD is supported; document currencies stay flexible. */
+export const BASE_CURRENCY = 'USD' as const;
 
 export const loginChallengeSchema = z.object({
   accountId: nearAccountId,
@@ -119,7 +123,8 @@ export const invoiceLineItemSchema = z.object({
 
 export const createInvoiceSchema = z.object({
   vendorId: z.string().min(1),
-  number: invoiceNumber,
+  /** Omitted on the normal path; the API generates BIL-YY/MM/XXXXX. */
+  number: invoiceNumber.optional(),
   issueDate: z.iso.datetime().optional(),
   dueDate: z.iso.datetime(),
   currency: currencySchema.default('USD'),
@@ -158,7 +163,8 @@ export const updateCustomerSchema = createCustomerSchema;
 
 export const createReceivableSchema = z.object({
   customerId: z.string().min(1),
-  number: invoiceNumber,
+  /** Omitted on the normal path; the API generates INV-YY/MM/XXXX. */
+  number: invoiceNumber.optional(),
   issueDate: z.iso.datetime().optional(),
   dueDate: z.iso.datetime(),
   currency: currencySchema.default('USD'),
@@ -242,7 +248,7 @@ export const updateOrganizationProfileSchema = z
   .object({
     name: z.string().trim().min(2).max(80).optional(),
     slug: orgSlugSchema.optional(),
-    baseCurrency: currencySchema.optional(),
+    baseCurrency: z.literal(BASE_CURRENCY).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'Provide at least one workspace field to update',
@@ -266,6 +272,22 @@ export const manualJournalSchema = z.object({
   currency: currencySchema.default('USD'),
   lines: z.array(journalLineSchema).min(2).max(50),
 });
+
+/** Direct expense/revenue: a single cash movement against one P&L account. */
+export const DIRECT_ENTRY_KINDS = ['EXPENSE', 'REVENUE'] as const;
+export type DirectEntryKind = (typeof DIRECT_ENTRY_KINDS)[number];
+
+export const createDirectEntrySchema = z.object({
+  date: z.iso.datetime().optional(),
+  amount: positiveDecimal,
+  currency: currencySchema.default('USD'),
+  /** Expense account for EXPENSE kind, revenue account for REVENUE kind. */
+  accountCode: z.string().min(1).max(20),
+  /** Cash/bank asset account. Defaults to 1010. */
+  cashAccountCode: z.string().min(1).max(20).default('1010'),
+  memo: z.string().min(1).max(500),
+});
+export type CreateDirectEntryInput = z.infer<typeof createDirectEntrySchema>;
 
 export const createPaymentSchema = z.object({
   invoiceId: z.string().min(1),
@@ -431,7 +453,7 @@ export const reportExportQuerySchema = reportQuerySchema.extend({
 
 export const journalQuerySchema = accountingQuerySchema.extend({
   accountCode: z.string().min(1).max(20).optional(),
-  sourceType: z.enum(['invoice', 'receivable', 'receipt', 'manual', 'opening']).optional(),
+  sourceType: z.enum(JOURNAL_SOURCE_TYPES).optional(),
   sourceId: z.string().min(1).max(64).optional(),
   q: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -442,7 +464,7 @@ export const journalQuerySchema = accountingQuerySchema.extend({
 
 export const journalExportQuerySchema = accountingQuerySchema.extend({
   accountCode: z.string().min(1).max(20).optional(),
-  sourceType: z.enum(['invoice', 'receivable', 'receipt', 'manual', 'opening']).optional(),
+  sourceType: z.enum(JOURNAL_SOURCE_TYPES).optional(),
   sourceId: z.string().min(1).max(64).optional(),
   q: z.string().trim().max(120).optional(),
   format: z.enum(['csv']).default('csv'),

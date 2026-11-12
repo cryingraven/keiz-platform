@@ -219,7 +219,6 @@ describe('creation tools', () => {
       'user-1',
       expect.objectContaining({
         vendorId: 'ven-1',
-        number: 'INV-1001',
         currency: 'USD',
         lineItems: lines,
       }),
@@ -284,7 +283,7 @@ describe('creation tools', () => {
     expect(deps.receivables.create).toHaveBeenCalledWith(
       'org-1',
       'user-1',
-      expect.objectContaining({ customerId: 'cus-1', number: 'AR-1001' }),
+      expect.objectContaining({ customerId: 'cus-1' }),
     );
     expect(deps.receivables.issue).toHaveBeenCalledWith('org-1', 'ar-new');
   });

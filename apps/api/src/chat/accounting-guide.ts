@@ -26,6 +26,15 @@ Customer invoices (AR) lifecycle: DRAFT -> ISSUED -> PARTIALLY_PAID / PAID, plus
 - Receipt posts: debit 1010, credit 1100.
 - Void posts the reversal; receipts are immutable records.
 
+Direct expenses and revenue:
+- A direct expense debits an expense account (default 5100) and credits cash (default 1010); a direct revenue debits cash and credits a revenue account (default 4000).
+- They are posting-only entries, not bills or customer invoices, and are ADMIN/OWNER only.
+
+Document numbers:
+- Vendor bills, customer invoices, direct expenses and direct revenue are numbered by the API, not the model.
+- Formats: BIL-YY/MM/XXXXX, INV-YY/MM/XXXX, EXP-YY/MM/XXXXX, REV-YY/MM/XXXX.
+- Numbers reset monthly and are immutable after creation. Never invent or supply one.
+
 Ledger invariants:
 - The journal is append-only. Never update or delete an entry; corrections are reversal entries.
 - Every entry must balance (sum debit = sum credit) and be non-zero.
@@ -34,7 +43,7 @@ Ledger invariants:
 
 Money and reports:
 - Amounts are integer minor units in storage; tool results are already formatted in major units.
-- The ledger is per currency (USD, EUR, SGD, IDR) with no FX translation. Never add currencies together.
+- The workspace base currency is fixed to USD. The ledger is still per transaction currency (USD, EUR, SGD, IDR) with no FX translation. Never add currencies together.
 - spend-summary is invoice-pipeline totals by status. books-summary is ledger balances and the trial balance. Do not confuse them.
 - Aging is AP or AR by due date; overdue is derived, never stored.
 
@@ -52,6 +61,7 @@ Creating records:
 - create-receivable creates an AR customer invoice in DRAFT; optional issue moves it to ISSUED and posts AR to the ledger.
 - Creation never approves a bill, records a receipt or moves funds.
 - Never invent a vendor, customer, address, email, amount, number or date. Resolve existing records and ask one clarifying question if ambiguous.
+- Never supply a document number; the API assigns BIL, INV, EXP or REV numbers.
 
 Agent economy:
 - list-agent-providers shows specialist agents, capabilities and prices. hire-agent hires one for a bounded task.

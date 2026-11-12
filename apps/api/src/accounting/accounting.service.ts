@@ -6,6 +6,8 @@ import {
   AccountType,
   CURRENCY_DECIMALS,
   CHART_OF_ACCOUNTS,
+  CreateDirectEntryInput,
+  DirectEntryKind,
   JournalEvent,
   JournalSourceType,
   ManualJournalInput,
@@ -15,6 +17,7 @@ import {
   signedBalance,
 } from '@keiz/shared';
 import { Invoice, InvoiceDocument } from '../invoices/invoice.schema';
+import { NumberingService } from '../numbering/numbering.service';
 import { Receivable, ReceivableDocument } from '../receivables/receivable.schema';
 import { Account, AccountDocument } from './account.schema';
 import {
@@ -37,6 +40,8 @@ export interface PostingInput {
   sourceType: JournalSourceType;
   sourceId: string;
   event: JournalEvent;
+  /** Optional document number, e.g. EXP-26/11/00001 for direct entries. */
+  number?: string;
   currency: string;
   decimals: number;
   lines: PostingLine[];
@@ -106,6 +111,7 @@ export class AccountingService {
     @InjectModel(JournalEntry.name) private readonly entries: Model<JournalEntryDocument>,
     @InjectModel(Invoice.name) private readonly invoices: Model<InvoiceDocument>,
     @InjectModel(Receivable.name) private readonly receivables: Model<ReceivableDocument>,
+    private readonly numbering: NumberingService,
   ) {}
 
   /** Idempotently seed the default chart for a workspace. */
@@ -186,6 +192,7 @@ export class AccountingService {
         orgId,
         date: input.date,
         memo: input.memo,
+        number: input.number,
         sourceType: input.sourceType,
         sourceId: input.sourceId,
         event: input.event,
@@ -329,6 +336,105 @@ export class AccountingService {
       postedByUserId: userId,
     });
     return result.entry;
+  }
+
+  /**
+   * Direct expense/revenue: one cash movement against one P&L account, named
+   * EXP-YY/MM/XXXXX or REV-YY/MM/XXXX. Accounts are validated before a number
+   * is reserved so a rejected request does not consume the series.
+   */
+  async postDirectEntry(
+    orgId: string,
+    userId: string,
+    kind: DirectEntryKind,
+    input: CreateDirectEntryInput,
+  ): Promise<JournalEntryDocument> {
+    const decimals = CURRENCY_DECIMALS[input.currency] ?? 2;
+    let amount: bigint;
+    try {
+      amount = parseUnits(input.amount, decimals);
+    } catch {
+      throw new BadRequestException(
+        `Amount must fit ${decimals} decimal places for ${input.currency}`,
+      );
+    }
+    if (amount <= 0n) throw new BadRequestException('Amount must be positive');
+
+    const chart = await this.ensureChart(orgId);
+    const byCode = new Map(chart.map((account) => [account.code, account]));
+    const account = byCode.get(input.accountCode);
+    if (!account) {
+      throw new BadRequestException(`Unknown account code ${input.accountCode}`);
+    }
+    if (account.archived) {
+      throw new BadRequestException(`Account ${account.code} is archived`);
+    }
+    const cash = byCode.get(input.cashAccountCode);
+    if (!cash) {
+      throw new BadRequestException(`Unknown cash account code ${input.cashAccountCode}`);
+    }
+    if (cash.archived) {
+      throw new BadRequestException(`Cash account ${cash.code} is archived`);
+    }
+    if (cash.type !== 'ASSET') {
+      throw new BadRequestException(
+        `Cash account ${cash.code} must be an ASSET account (currently ${cash.type})`,
+      );
+    }
+    if (kind === 'EXPENSE' && account.type !== 'EXPENSE') {
+      throw new BadRequestException(
+        `Expense account ${account.code} must be an EXPENSE account (currently ${account.type})`,
+      );
+    }
+    if (kind === 'REVENUE' && account.type !== 'REVENUE') {
+      throw new BadRequestException(
+        `Revenue account ${account.code} must be a REVENUE account (currently ${account.type})`,
+      );
+    }
+
+    const date = input.date ? new Date(input.date) : new Date();
+    const number = await this.numbering.next(orgId, kind, date);
+    const lines: PostingLine[] =
+      kind === 'EXPENSE'
+        ? [
+            { accountCode: account.code, debit: amount, credit: 0n },
+            { accountCode: cash.code, debit: 0n, credit: amount },
+          ]
+        : [
+            { accountCode: cash.code, debit: amount, credit: 0n },
+            { accountCode: account.code, debit: 0n, credit: amount },
+          ];
+
+    const result = await this.post(orgId, {
+      date,
+      memo: input.memo,
+      sourceType: kind === 'EXPENSE' ? 'expense' : 'revenue',
+      sourceId: new Types.ObjectId().toString(),
+      event: 'MANUAL',
+      number,
+      currency: input.currency,
+      decimals,
+      lines,
+      postedByUserId: userId,
+    });
+    return result.entry;
+  }
+
+  async listDirectEntries(
+    orgId: string,
+    kind: DirectEntryKind,
+    query: { currency?: string; from?: string; to?: string },
+  ) {
+    return this.entries
+      .find(
+        this.journalFilter(orgId, {
+          ...query,
+          sourceType: kind === 'EXPENSE' ? 'expense' : 'revenue',
+        }),
+      )
+      .sort({ date: -1, createdAt: -1, _id: -1 })
+      .limit(200)
+      .lean();
   }
 
   /** Demo/bootstrap opening cash. Idempotent per org and currency. */
@@ -527,6 +633,7 @@ export class AccountingService {
     if (query.q) {
       const needle = escapeRegExp(query.q);
       filter.$or = [
+        { number: { $regex: needle, $options: 'i' } },
         { memo: { $regex: needle, $options: 'i' } },
         { event: { $regex: needle, $options: 'i' } },
         { sourceType: { $regex: needle, $options: 'i' } },
@@ -592,6 +699,7 @@ export class AccountingService {
     const rows: string[][] = [
       [
         'date',
+        'number',
         'memo',
         'source_type',
         'event',
@@ -606,6 +714,7 @@ export class AccountingService {
       for (const line of entry.lines) {
         rows.push([
           entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10),
+          entry.number ?? '',
           entry.memo,
           entry.sourceType,
           entry.event,

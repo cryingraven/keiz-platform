@@ -250,21 +250,27 @@ async function main() {
     }>('/orgs/current', {
       method: 'PATCH',
       cookie: bobCookie,
-      body: { name: 'Bob Studio', slug: 'bob-studio', baseCurrency: 'EUR' },
+      body: { name: 'Bob Studio', slug: 'bob-studio', baseCurrency: 'USD' },
     });
     assert(updatedOrg.name === 'Bob Studio', 'workspace name updates');
     assert(updatedOrg.slug === 'bob-studio', 'workspace slug updates');
-    assert(updatedOrg.baseCurrency === 'EUR', 'workspace base currency updates');
+    assert(updatedOrg.baseCurrency === 'USD', 'workspace base currency is fixed to USD');
 
     const refreshedSession = await req<{
       org: { name: string; baseCurrency: string };
     }>('/auth/me', { cookie: bobCookie });
     assert(refreshedSession.org.name === 'Bob Studio', 'session reflects the new workspace name');
     assert(
-      refreshedSession.org.baseCurrency === 'EUR',
-      'session reflects the new base currency',
+      refreshedSession.org.baseCurrency === 'USD',
+      'session reports the USD base currency',
     );
 
+    await req('/orgs/current', {
+      method: 'PATCH',
+      cookie: bobCookie,
+      body: { baseCurrency: 'EUR' },
+      expect: 400,
+    });
     await req('/orgs/current', {
       method: 'PATCH',
       cookie: bobCookie,
@@ -277,7 +283,7 @@ async function main() {
       body: { slug: 'Bad Slug' },
       expect: 400,
     });
-    pass('workspace profile updates and validates slug/currency');
+    pass('workspace profile updates, base currency is fixed to USD and slug is validated');
     await req(`/invoices/${invoice._id}`, { cookie: bobCookie, expect: 404 });
     pass('another org cannot read the invoice');
 
@@ -670,12 +676,15 @@ async function main() {
     const seededInvoices = await req<Array<{ number: string }>>('/invoices', {
       cookie: carolCookie,
     });
-    assert(seededInvoices.some((row) => row.number === 'INV-1001'), 'demo data seeded');
+    assert(
+      seededInvoices.some((row) => /^BIL-\d{2}\/\d{2}\/\d{5}$/.test(row.number)),
+      'demo data seeded',
+    );
     const carolReceivables = await req<Array<{ number: string }>>('/receivables', {
       cookie: carolCookie,
     });
     assert(
-      carolReceivables.some((row) => row.number === 'AR-2002'),
+      carolReceivables.some((row) => /^INV-\d{2}\/\d{2}\/\d{4}$/.test(row.number)),
       'demo seed creates customer invoices',
     );
     const carolBooks = await req<{
@@ -1065,9 +1074,116 @@ async function main() {
       (journalExport.headers.get('content-type') ?? '').includes('text/csv'),
       'journal CSV content type is correct',
     );
-    assert(journalCsv.startsWith('date,memo,source_type,event'), 'journal CSV has a header row');
+    assert(journalCsv.startsWith('date,number,memo,source_type,event'), 'journal CSV has a header row');
     assert(journalCsv.split('\r\n').length > 2, 'journal CSV includes ledger lines');
     pass('journal exports all matching lines as CSV');
+
+    const autoBill = await req<{ number: string }>('/invoices', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        vendorId: (await req<Array<{ _id: string }>>('/vendors', { cookie: bobCookie }))[0]._id,
+        dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Auto number', quantity: '1', unitPrice: '1.00' }],
+      },
+    });
+    assert(/^BIL-\d{2}\/\d{2}\/\d{5}$/.test(autoBill.number), `bill number is BIL-YY/MM/XXXXX (got ${autoBill.number})`);
+    const secondBill = await req<{ number: string }>('/invoices', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        vendorId: (await req<Array<{ _id: string }>>('/vendors', { cookie: bobCookie }))[0]._id,
+        dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Auto number 2', quantity: '1', unitPrice: '1.00' }],
+      },
+    });
+    assert(secondBill.number !== autoBill.number, 'bill numbers increment');
+    const autoReceivable = await req<{ number: string }>('/receivables', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        customerId: (await req<Array<{ _id: string }>>('/customers', { cookie: bobCookie }))[0]._id,
+        dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        currency: 'USD',
+        taxBps: 0,
+        lineItems: [{ description: 'Auto number', quantity: '1', unitPrice: '1.00' }],
+      },
+    });
+    assert(
+      /^INV-\d{2}\/\d{2}\/\d{4}$/.test(autoReceivable.number),
+      `receivable number is INV-YY/MM/XXXX (got ${autoReceivable.number})`,
+    );
+    pass('bills and invoices get sequential monthly numbers');
+
+    const expense = await req<{
+      number: string;
+      sourceType: string;
+      lines: Array<{ accountCode: string; debit: string; credit: string }>;
+    }>('/accounting/expenses', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        amount: '12.34',
+        currency: 'USD',
+        accountCode: '5100',
+        cashAccountCode: '1010',
+        memo: 'Smoke direct expense',
+      },
+    });
+    assert(/^EXP-\d{2}\/\d{2}\/\d{5}$/.test(expense.number), `expense number is EXP-YY/MM/XXXXX (got ${expense.number})`);
+    assert(expense.sourceType === 'expense', 'expense source type is recorded');
+    assert(
+      expense.lines.some((line) => line.accountCode === '5100' && line.debit === '1234'),
+      'expense debits the expense account',
+    );
+    assert(
+      expense.lines.some((line) => line.accountCode === '1010' && line.credit === '1234'),
+      'expense credits cash',
+    );
+    const revenue = await req<{
+      number: string;
+      sourceType: string;
+      lines: Array<{ accountCode: string; debit: string; credit: string }>;
+    }>('/accounting/revenues', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        amount: '99.50',
+        currency: 'USD',
+        accountCode: '4000',
+        cashAccountCode: '1010',
+        memo: 'Smoke direct revenue',
+      },
+    });
+    assert(/^REV-\d{2}\/\d{2}\/\d{4}$/.test(revenue.number), `revenue number is REV-YY/MM/XXXX (got ${revenue.number})`);
+    assert(
+      revenue.lines.some((line) => line.accountCode === '1010' && line.debit === '9950'),
+      'revenue debits cash',
+    );
+    assert(
+      revenue.lines.some((line) => line.accountCode === '4000' && line.credit === '9950'),
+      'revenue credits the revenue account',
+    );
+    const expenseList = await req<Array<{ number: string }>>('/accounting/expenses', {
+      cookie: bobCookie,
+    });
+    assert(expenseList.some((row) => row.number === expense.number), 'direct expenses are listed');
+    await req('/accounting/expenses', {
+      method: 'POST',
+      cookie: bobCookie,
+      body: {
+        amount: '1.00',
+        currency: 'USD',
+        accountCode: '4000',
+        memo: 'Wrong account',
+      },
+      expect: 400,
+    });
+    pass('direct expenses and revenue post balanced numbered entries');
 
     const emptyFrom = encodeURIComponent('2000-01-01T00:00:00.000Z');
     const emptyTo = encodeURIComponent('2000-01-02T23:59:59.999Z');
@@ -1172,6 +1288,17 @@ async function main() {
     await req('/accounting/rebuild', {
       method: 'POST',
       cookie: bobMemberCookie,
+      expect: 403,
+    });
+    await req('/accounting/expenses', {
+      method: 'POST',
+      cookie: bobMemberCookie,
+      body: {
+        amount: '1.00',
+        currency: 'USD',
+        accountCode: '5100',
+        memo: 'Member expense attempt',
+      },
       expect: 403,
     });
     await req('/agent/wallet/policy', {

@@ -9,6 +9,8 @@ import {
   Clock,
   FileText,
   Plus,
+  Receipt,
+  TrendingUp,
   Wallet,
 } from 'lucide-react';
 import { useApi } from '@/lib/hooks';
@@ -16,6 +18,11 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDate, formatDollars, formatMoney, timeLeft } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
+import {
+  DirectEntryForm,
+  type AccountOption,
+  type DirectEntryKind,
+} from '@/components/direct-entry-form';
 import { Alert, Button, ButtonLink, Card, EmptyState, ErrorState, SectionTitle, Spinner, StatusPill } from '@/components/ui';
 import { cn } from '@/lib/utils';
 
@@ -107,10 +114,13 @@ export default function TodayPage() {
   const vendors = useApi<Vendor[]>('/vendors');
   const customers = useApi<Customer[]>('/customers');
   const books = useApi<Books>('/accounting/summary?currency=USD');
+  const accounts = useApi<AccountOption[]>('/accounting/accounts');
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [directKind, setDirectKind] = useState<DirectEntryKind | null>(null);
 
   const canApprove = ['APPROVER', 'ADMIN', 'OWNER'].includes(session?.role ?? '');
+  const canWriteBooks = session?.role === 'ADMIN' || session?.role === 'OWNER';
 
   const names = useMemo(() => {
     const vendorNames = new Map<string, string>();
@@ -260,6 +270,16 @@ export default function TodayPage() {
               <Button variant="secondary" loading={seeding} onClick={() => void seed()}>
                 Load demo data
               </Button>
+            ) : null}
+            {canWriteBooks ? (
+              <>
+                <Button variant="secondary" onClick={() => setDirectKind('EXPENSE')}>
+                  <Receipt className="h-3.5 w-3.5" /> New expense
+                </Button>
+                <Button variant="secondary" onClick={() => setDirectKind('REVENUE')}>
+                  <TrendingUp className="h-3.5 w-3.5" /> New revenue
+                </Button>
+              </>
             ) : null}
             <ButtonLink href="/dashboard/invoices">
               <Plus className="h-3.5 w-3.5" /> New bill
@@ -520,6 +540,16 @@ export default function TodayPage() {
           </Card>
         </div>
       </div>
+
+      <DirectEntryForm
+        open={directKind !== null}
+        kind={directKind ?? 'EXPENSE'}
+        accounts={accounts.data ?? []}
+        onClose={() => setDirectKind(null)}
+        onCreated={() => {
+          void books.reload();
+        }}
+      />
     </div>
   );
 }

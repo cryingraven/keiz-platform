@@ -7,15 +7,17 @@ import {
   ArrowLeftRight,
   BarChart3,
   BookOpen,
+  Bot,
   Building2,
   Contact,
   FileText,
   HandCoins,
   LayoutDashboard,
   Menu,
-  MessageSquare,
+  Receipt,
   ScrollText,
   Settings,
+  TrendingUp,
   Users,
   Wallet,
   X,
@@ -46,6 +48,8 @@ const NAV_GROUPS = [
     label: 'Books',
     items: [
       { href: '/dashboard/accounting', label: 'Accounting', icon: BookOpen },
+      { href: '/dashboard/expenses', label: 'Expenses', icon: Receipt },
+      { href: '/dashboard/revenue', label: 'Revenue', icon: TrendingUp },
       { href: '/dashboard/reporting', label: 'Reports', icon: BarChart3 },
     ],
   },
@@ -253,9 +257,10 @@ function ShellFrame({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => openAssistant()}
+              aria-label="Open AI assistant"
               className="hidden h-8 items-center gap-1.5 rounded-control px-2.5 text-small font-medium text-muted transition hover:bg-ink/[0.04] hover:text-ink sm:inline-flex"
             >
-              <MessageSquare className="h-3.5 w-3.5" /> Ask
+              <Bot className="h-3.5 w-3.5" /> Ask
             </button>
             <span
               className="hidden text-meta font-medium text-muted sm:inline"

@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { BASE_CURRENCY } from '@keiz/shared';
 import type { NearNetwork } from '../common/network';
 
 export type OrganizationDocument = HydratedDocument<Organization>;
@@ -65,7 +66,7 @@ export class Organization {
   @Prop({ required: true, unique: true, index: true })
   slug: string;
 
-  @Prop({ default: 'USD' })
+  @Prop({ default: BASE_CURRENCY, enum: [BASE_CURRENCY] })
   baseCurrency: string;
 
   /** The chain this workspace belongs to. Matches every member's network. */

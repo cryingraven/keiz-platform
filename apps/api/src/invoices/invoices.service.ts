@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -17,6 +18,7 @@ import {
 } from '@keiz/shared';
 import { AccountingService } from '../accounting/accounting.service';
 import { dateRange } from '../common/date-range';
+import { NumberingService } from '../numbering/numbering.service';
 import { UsersService } from '../users/users.service';
 import { Invoice, InvoiceDocument } from './invoice.schema';
 
@@ -28,6 +30,7 @@ export class InvoicesService {
     @InjectModel(Invoice.name) private readonly invoices: Model<InvoiceDocument>,
     private readonly users: UsersService,
     private readonly accounting: AccountingService,
+    private readonly numbering: NumberingService,
   ) {}
 
   async list(orgId: string, query: InvoiceListQuery) {
@@ -75,24 +78,34 @@ export class InvoicesService {
       throw new BadRequestException((error as Error).message);
     }
 
-    const invoice = await this.invoices.create({
-      orgId,
-      vendorId: input.vendorId,
-      number: input.number,
-      issueDate: input.issueDate ? new Date(input.issueDate) : new Date(),
-      dueDate: new Date(input.dueDate),
-      currency: input.currency,
-      decimals,
-      lineItems: totals.lines,
-      subtotal: totals.subtotal,
-      taxBps: input.taxBps,
-      taxAmount: totals.taxAmount,
-      total: totals.total,
-      status: 'DRAFT',
-      notes: input.notes,
-      createdByUserId: userId,
-    });
-    return invoice.toObject();
+    const issueDate = input.issueDate ? new Date(input.issueDate) : new Date();
+    const number = input.number ?? (await this.numbering.next(orgId, 'BILL', issueDate));
+
+    try {
+      const invoice = await this.invoices.create({
+        orgId,
+        vendorId: input.vendorId,
+        number,
+        issueDate,
+        dueDate: new Date(input.dueDate),
+        currency: input.currency,
+        decimals,
+        lineItems: totals.lines,
+        subtotal: totals.subtotal,
+        taxBps: input.taxBps,
+        taxAmount: totals.taxAmount,
+        total: totals.total,
+        status: 'DRAFT',
+        notes: input.notes,
+        createdByUserId: userId,
+      });
+      return invoice.toObject();
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        throw new ConflictException(`Bill ${number} already exists`);
+      }
+      throw error;
+    }
   }
 
   /** Draft-only edit. Totals are always recomputed, never taken from the client. */
@@ -112,7 +125,6 @@ export class InvoicesService {
     }
 
     invoice.vendorId = input.vendorId;
-    invoice.number = input.number;
     invoice.issueDate = input.issueDate ? new Date(input.issueDate) : invoice.issueDate;
     invoice.dueDate = new Date(input.dueDate);
     invoice.currency = input.currency;

@@ -36,7 +36,14 @@ export class JournalEntry {
   @Prop({ required: true })
   memo: string;
 
-  @Prop({ required: true, enum: ['invoice', 'receivable', 'receipt', 'manual', 'opening'] })
+  /** Document number for direct-expense/revenue entries, e.g. EXP-26/11/00001. */
+  @Prop()
+  number?: string;
+
+  @Prop({
+    required: true,
+    enum: ['invoice', 'receivable', 'receipt', 'manual', 'opening', 'expense', 'revenue'],
+  })
   sourceType: JournalSourceType;
 
   @Prop({ required: true })
@@ -76,4 +83,9 @@ JournalEntrySchema.index({ orgId: 1, 'lines.accountCode': 1, date: -1 });
 JournalEntrySchema.index(
   { orgId: 1, dedupeKey: 1 },
   { unique: true, partialFilterExpression: { dedupeKey: { $exists: true } } },
+);
+// Direct expense/revenue document numbers are unique per workspace.
+JournalEntrySchema.index(
+  { orgId: 1, number: 1 },
+  { unique: true, partialFilterExpression: { number: { $type: 'string' } } },
 );

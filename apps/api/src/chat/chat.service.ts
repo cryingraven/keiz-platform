@@ -813,7 +813,7 @@ export class ChatService {
       actions: [action('listInvoices', { limit: 5 })],
       render: (results) => {
         const text = renderCards(results);
-        return `I can help with bills, receivables, customers, vendors, payments, agent actions, spend, books and payment proposals.\n${text}\nTry: "show pending invoices", "spend summary", "books summary", or "pay INV-1042". Creating records needs the NEAR AI agent.`;
+        return `I can help with bills, receivables, customers, vendors, payments, agent actions, spend, books and payment proposals.\n${text}\nTry: "show pending invoices", "spend summary", "books summary", or "pay BIL-26/11/00001". Creating records needs the NEAR AI agent.`;
       },
     };
   }

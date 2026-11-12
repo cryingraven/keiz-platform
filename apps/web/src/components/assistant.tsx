@@ -94,7 +94,7 @@ interface ThreadDetail {
 const SUGGESTIONS = [
   'Spend summary for this workspace',
   'Show invoices waiting for approval',
-  'Pay INV-1001',
+  'Pay BIL-26/11/00001',
   'Which vendors do we have?',
 ];
 
@@ -168,12 +168,12 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           ref={triggerRef}
           type="button"
           onClick={() => openAssistant()}
-          aria-label="Open assistant"
+          aria-label="Open AI assistant"
           aria-haspopup="dialog"
           aria-expanded="false"
-          className="group fixed bottom-5 right-5 z-40 grid h-11 w-11 place-items-center rounded-full border border-line bg-surface text-ink shadow-panel transition hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:bottom-6 sm:right-6"
+          className="group fixed bottom-6 right-6 z-40 grid h-14 w-14 place-items-center rounded-full border border-line bg-surface text-brand shadow-panel transition hover:border-brand/30 hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 sm:bottom-8 sm:right-8"
         >
-          <MessageSquare className="h-4 w-4" />
+          <Bot className="h-6 w-6" />
           <span className="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded-control border border-line bg-surface px-2 py-1 text-meta font-medium text-ink opacity-0 shadow-panel transition group-hover:opacity-100 sm:block">
             Ask KEIZ
           </span>
@@ -734,8 +734,8 @@ function AssistantDialog({
               </div>
             ) : (threads.data?.length ?? 0) === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-paper text-muted">
-                  <MessageSquare className="h-5 w-5" />
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-soft text-brand">
+                  <Bot className="h-5 w-5" />
                 </span>
                 <p className="mt-1 text-sm font-semibold">No conversations yet</p>
                 <p className="max-w-xs text-[13px] text-muted">

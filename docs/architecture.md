@@ -96,7 +96,7 @@ flowchart LR
 flowchart TB
   subgraph Web["apps/web"]
     Login["/login<br/>passkey + wallets"]
-    Dash["/dashboard<br/>overview · bills · receivables<br/>customers · vendors · team"]
+    Dash["/dashboard<br/>overview · bills · receivables<br/>customers · vendors · team · expenses · revenue"]
     Ops["payments · accounting · agent<br/>audit · settings · assistant"]
     Lib["lib/auth · lib/passkey<br/>lib/chat-stream · lib/api · lib/csv"]
   end
@@ -148,6 +148,8 @@ Web routes (App Router, client-rendered):
 | `/dashboard/team` | Members and roles. |
 | `/dashboard/payments`, `/dashboard/payments/[id]` | Payment history, open quotes and payment timeline. |
 | `/dashboard/accounting` | Journal, trial balance, aging, manual entry. |
+| `/dashboard/expenses` | Direct cash expenses (`EXP-YY/MM/XXXXX`), ADMIN/OWNER writes. |
+| `/dashboard/revenue` | Direct cash revenue (`REV-YY/MM/XXXX`), ADMIN/OWNER writes. |
 | `/dashboard/reporting` | Cash flow, profit & loss, balance sheet, PDF/Excel export. |
 | `/dashboard/agent` | Agent wallet, policy, actions and custody handoff. |
 | `/dashboard/audit` | Append-only audit log (ADMIN/OWNER). |
@@ -801,6 +803,7 @@ erDiagram
   JOURNAL_ENTRY {
     string orgId FK
     date date
+    string number
     string sourceType
     string sourceId
     string dedupeKey
@@ -865,11 +868,14 @@ Key indexes and invariants:
   obligation per invoice across all rails.
 - `payments` is unique on `(orgId, invoiceId)` for `AWAITING_DEPOSIT`/`PROCESSING`,
   and on `(orgId, txHash)` and `(orgId, idempotencyKey)` when present.
-- `invoices` and `receivables` are unique on `(orgId, number)`.
+- `invoices` and `receivables` are unique on `(orgId, number)`. New numbers come from
+  `document_counters` (`BIL-YY/MM/XXXXX`, `INV-YY/MM/XXXX`) and are immutable.
+- `document_counters` is unique on `(orgId, kind, period)` and is incremented atomically.
 - `receivables.receipts.chainEventId` is a unique sparse index, so re-indexing a collect
   receipt cannot duplicate a row.
 - `journal_entries` is unique on `(orgId, dedupeKey)` when `dedupeKey` exists; manual entries
-  omit it. Journal rows are immutable.
+  omit it. Direct `expense`/`revenue` rows also have a unique `(orgId, number)`
+  (`EXP-YY/MM/XXXXX` / `REV-YY/MM/XXXX`). Journal rows are immutable.
 - `agent_daily_spend` is unique on `(orgId, day)` and updated with a conditional `$inc`.
 - `agent_wallets` is unique per org; `memberships` is unique on `(orgId, userId)`.
 - `auth_challenges` has a TTL index on `expiresAt`.
@@ -950,8 +956,8 @@ flowchart LR
 
 | Suite | Covers |
 |---|---|
-| `pnpm test` | 99 unit tests (84 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, creation tools, OutLayer status map, 1Click quote fields, payment settings, collection deploy |
-| `pnpm --filter @keiz/api smoke` | 59 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, agent hire + policy spend, passkey endpoint fencing, public share pay fencing |
+| `pnpm test` | 108 unit tests (84 API + 19 shared + 5 web): money math, document numbering, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, creation tools, OutLayer status map, 1Click quote fields, payment settings, collection deploy |
+| `pnpm --filter @keiz/api smoke` | 61 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, direct expense/revenue, document numbering, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, agent hire + policy spend, passkey endpoint fencing, public share pay fencing |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
 | `pnpm --filter @keiz/api smoke:mastra` | Mastra plan suspension, approve/resume, typed cards, request-scoped tools, memory, thread isolation |
 | `pnpm contracts:test` | collect message parsing and vault policy validation |

@@ -105,7 +105,7 @@ export function AgentEconomy({ canAdmin }: { canAdmin: boolean }) {
           ))}
         </div>
         <p className="mt-3 text-[11px] text-muted">
-          Ask the assistant to “hire the tax reviewer for INV-1001” to run a job. Hires are
+          Ask the assistant to “hire the tax reviewer for BIL-26/11/00001” to run a job. Hires are
           policy-checked and currently settle in mock mode.
         </p>
       </Card>

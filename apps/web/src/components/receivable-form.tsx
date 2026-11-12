@@ -47,7 +47,6 @@ export function ReceivableForm({
   onCreated: () => void;
 }) {
   const [customerId, setCustomerId] = useState('');
-  const [number, setNumber] = useState(`AR-${Math.floor(2000 + Math.random() * 8000)}`);
   const [issueDate, setIssueDate] = useState(today());
   const [dueDate, setDueDate] = useState(inDays(14));
   const [currency, setCurrency] = useState('USD');
@@ -61,7 +60,6 @@ export function ReceivableForm({
   useEffect(() => {
     if (!open) return;
     setCustomerId('');
-    setNumber(`AR-${Math.floor(2000 + Math.random() * 8000)}`);
     setIssueDate(today());
     setDueDate(inDays(14));
     setCurrency('USD');
@@ -83,7 +81,6 @@ export function ReceivableForm({
 
   const canSubmit =
     Boolean(customerId) &&
-    Boolean(number.trim()) &&
     lines.length > 0 &&
     lines.every(
       (line) =>
@@ -110,7 +107,6 @@ export function ReceivableForm({
         method: 'POST',
         body: JSON.stringify({
           customerId,
-          number,
           issueDate: new Date(`${issueDate}T00:00:00Z`).toISOString(),
           dueDate: new Date(`${dueDate}T00:00:00Z`).toISOString(),
           currency,
@@ -123,7 +119,6 @@ export function ReceivableForm({
       onClose();
       setLines([emptyLine()]);
       setNotes('');
-      setNumber(`AR-${Math.floor(2000 + Math.random() * 8000)}`);
       toast('Customer invoice created');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the invoice');
@@ -158,8 +153,13 @@ export function ReceivableForm({
             </Select>
           </div>
           <div>
-            <Label htmlFor="ar-number">Invoice number</Label>
-            <Input id="ar-number" value={number} onChange={(e) => setNumber(e.target.value)} />
+            <span className="mb-1.5 block text-small font-medium text-ink">Invoice number</span>
+            <div
+              id="ar-number"
+              className="mt-1 flex h-9 items-center rounded-control border border-line bg-ink/[0.02] px-3 font-num text-small text-muted"
+            >
+              INV-YY/MM/XXXX · generated on save
+            </div>
           </div>
           <div>
             <Label htmlFor="ar-issue">Issue date</Label>

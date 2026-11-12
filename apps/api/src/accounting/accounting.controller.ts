@@ -3,12 +3,14 @@ import type { Response } from 'express';
 import {
   AccountingQuery,
   AgingQuery,
+  CreateDirectEntryInput,
   JournalExportQuery,
   JournalQuery,
   ManualJournalInput,
   TrialBalanceQuery,
   accountingQuerySchema,
   agingQuerySchema,
+  createDirectEntrySchema,
   journalExportQuerySchema,
   journalQuerySchema,
   manualJournalSchema,
@@ -75,6 +77,44 @@ export class AccountingController {
     @Body(new ZodBody(manualJournalSchema)) body: ManualJournalInput,
   ) {
     return this.accounting.postManual(user.orgId, user.sub, body);
+  }
+
+  @Get('expenses')
+  expenses(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodBody(accountingQuerySchema)) query: AccountingQuery,
+  ) {
+    return this.accounting.listDirectEntries(user.orgId, 'EXPENSE', query);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Post('expenses')
+  createExpense(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(createDirectEntrySchema)) body: CreateDirectEntryInput,
+  ) {
+    return this.accounting.postDirectEntry(user.orgId, user.sub, 'EXPENSE', body);
+  }
+
+  @Get('revenues')
+  revenues(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodBody(accountingQuerySchema)) query: AccountingQuery,
+  ) {
+    return this.accounting.listDirectEntries(user.orgId, 'REVENUE', query);
+  }
+
+  /**
+   * Kept as a named route rather than a `:kind` param so the write role and
+   * body schema stay explicit; `DirectEntryKind` mapping lives in the service.
+   */
+  @Roles('ADMIN', 'OWNER')
+  @Post('revenues')
+  createRevenue(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(createDirectEntrySchema)) body: CreateDirectEntryInput,
+  ) {
+    return this.accounting.postDirectEntry(user.orgId, user.sub, 'REVENUE', body);
   }
 
   @Get('aging')

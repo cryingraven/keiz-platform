@@ -62,7 +62,7 @@ with reuse detection).
 | Method | Path | Role | Body | Notes |
 |---|---|---|---|---|
 | GET | `/current` | Member | — | Workspace profile: name, slug, base currency, network, timestamps. |
-| PATCH | `/current` | Admin | `{ name?, slug?, baseCurrency? }` | Slug is unique and lowercase-kebab. Base currency is the default for Accounting/Reporting. |
+| PATCH | `/current` | Admin | `{ name?, slug?, baseCurrency? }` | Slug is unique and lowercase-kebab. `baseCurrency` is USD-only; any other value is rejected with 400. |
 | GET | `/current/collection` | Member | — | Per-workspace `keiz-collect` config or `null`. |
 | PATCH | `/current/collection` | Admin | `{ contractId, treasury, assetId, tokenContract, decimals, status }` | Validates org id, treasury, token allowlist and code hash against RPC before saving. |
 | GET | `/current/payments` | Member | — | Effective AR mode (`CONTRACT` / `TREASURY` / `OFF`), treasury, asset and collection status. |
@@ -89,8 +89,8 @@ with reuse detection).
 | GET | `/` | Member | `?status=&vendorId=&from=&to=&dateField=` | Org-scoped list. `dateField` is `issueDate` (default), `dueDate` or `createdAt`. |
 | GET | `/summary` | Member | — | Counts/totals for the dashboard. |
 | GET | `/:id` | Member | — | One bill with approvals. |
-| POST | `/` | Member | `{ vendorId, number, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT; totals recomputed server-side. |
-| PATCH | `/:id` | Member | Same as create | DRAFT only. |
+| POST | `/` | Member | `{ vendorId, number?, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT; totals recomputed server-side. `number` is optional — the API assigns `BIL-YY/MM/XXXXX` from the issue-date month. An explicit number is accepted for imports. |
+| PATCH | `/:id` | Member | Same as create, minus `number` | DRAFT only; the document number is immutable. |
 | POST | `/:id/submit` | Member | — | DRAFT → SUBMITTED. |
 | POST | `/:id/decision` | Approver | `{ decision: "APPROVE"\|"REJECT", comment? }` | Separation of duties: creator cannot approve once another approver exists. |
 | POST | `/:id/void` | Admin | — | Posts a reversal; never edits the journal. |
@@ -128,7 +128,7 @@ with reuse detection).
 | GET | `/` | Member | `?status=&customerId=&currency=&from=&to=&dateField=` | `dateField` is `issueDate` (default), `dueDate` or `createdAt`. |
 | GET | `/summary` | Member | `?currency=&from=&to=&dateField=` | Outstanding/overdue totals; honors the same date filter. |
 | GET | `/:id` | Member | — | One receivable with receipts. |
-| POST | `/` | Member | `{ customerId, number, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT. |
+| POST | `/` | Member | `{ customerId, number?, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT. `number` is optional — the API assigns `INV-YY/MM/XXXX` from the issue-date month. An explicit number is accepted for imports. |
 | POST | `/:id/collection-quote` | Member | `{ originAsset, refundTo }` | 1Click quote. `CONTRACT` mode uses the collect contract + `customRecipientMsg`; `TREASURY` delivers to the workspace treasury. |
 | POST | `/:id/issue` | Member | — | DRAFT → ISSUED; posts AR/revenue/tax. |
 | POST | `/:id/receipts` | Approver | `{ amount, receivedAt?, method?, reference?, txHash?, chainEventId?, receivableRef?, tokenContract?, sender? }` | Optimistic lock on `paidAmount`; posts cash/AR. |
@@ -160,9 +160,13 @@ resolves both. Bills are not payable from a share link.
 | GET | `/accounts` | Member | — | Per-org chart of accounts. |
 | GET | `/summary` | Member | `?currency=&from=&to=` | |
 | GET | `/trial-balance` | Member | `?currency=&asOf=` | Must balance. |
-| GET | `/journal-entries` | Member | `?currency=&accountCode=&sourceType=&sourceId=&q=&page=&pageSize=` | Immutable journal. Returns `{ items, page, pageSize, total, totalPages }`. |
-| GET | `/journal-entries/export` | Member | `?currency=&from=&to=&accountCode=&sourceType=&sourceId=&q=&format=csv` | Exports all matching ledger lines as CSV. |
+| GET | `/journal-entries` | Member | `?currency=&accountCode=&sourceType=&sourceId=&q=&page=&pageSize=` | Immutable journal. `sourceType` also accepts `expense` and `revenue`. Returns `{ items, page, pageSize, total, totalPages }`. |
+| GET | `/journal-entries/export` | Member | `?currency=&from=&to=&accountCode=&sourceType=&sourceId=&q=&format=csv` | Exports all matching ledger lines as CSV, including the optional document `number`. |
 | POST | `/journal-entries` | Admin | `{ date?, memo, currency?, lines[] }` | Manual balanced entry. |
+| GET | `/expenses` | Member | `?currency=&from=&to=` | Direct expenses, newest first. Each entry carries an `EXP-YY/MM/XXXXX` number. |
+| POST | `/expenses` | Admin | `{ date?, amount, currency?, accountCode, cashAccountCode?, memo }` | Debits the expense account and credits cash; posts to the journal. |
+| GET | `/revenues` | Member | `?currency=&from=&to=` | Direct revenue, newest first. Each entry carries a `REV-YY/MM/XXXX` number. |
+| POST | `/revenues` | Admin | `{ date?, amount, currency?, accountCode, cashAccountCode?, memo }` | Debits cash and credits the revenue account; posts to the journal. |
 | GET | `/aging` | Member | `?side=AP\|AR&currency=` | |
 | GET | `/reports` | Member | `?currency=&from=&to=` | Cash flow, P&L and balance sheet for a period. |
 | GET | `/reports/export` | Member | `?currency=&from=&to=&format=pdf\|xlsx\|csv&report=cash-flow\|profit-and-loss\|balance-sheet\|all` | Downloads one statement or the full report pack. `report` defaults to `all`, `format` to `pdf`. |

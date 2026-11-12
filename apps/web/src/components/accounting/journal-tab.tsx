@@ -19,7 +19,15 @@ import {
 import { cn } from '@/lib/utils';
 import type { AccountOption, JournalPage } from './types';
 
-const SOURCE_TYPES = ['invoice', 'receivable', 'receipt', 'manual', 'opening'] as const;
+const SOURCE_TYPES = [
+  'invoice',
+  'receivable',
+  'receipt',
+  'manual',
+  'opening',
+  'expense',
+  'revenue',
+] as const;
 const PAGE_SIZES = [25, 50, 100] as const;
 
 function pageWindow(current: number, totalPages: number): number[] {
@@ -272,6 +280,9 @@ export function JournalTab({
                           {formatDate(entry.date)}
                         </td>
                         <td className="max-w-[260px] px-4 py-3">
+                          {entry.number ? (
+                            <p className="font-num text-[11px] text-muted">{entry.number}</p>
+                          ) : null}
                           <p className="truncate font-medium">{entry.memo}</p>
                         </td>
                         <td className="px-4 py-3">

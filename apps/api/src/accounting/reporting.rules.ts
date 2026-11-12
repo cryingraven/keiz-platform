@@ -122,6 +122,8 @@ const CASH_SOURCE_LABELS: Record<string, string> = {
   'invoice:PAID': 'Vendor payments',
   opening: 'Opening balance',
   manual: 'Manual entries',
+  expense: 'Direct expenses',
+  revenue: 'Direct revenue',
 };
 
 export function buildCashFlow(rows: CashSourceRow[]): CashFlowReport {
