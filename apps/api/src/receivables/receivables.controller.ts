@@ -51,7 +51,7 @@ export class ReceivablesController {
     @Param('id') id: string,
     @Body(new ZodBody(collectionQuoteSchema)) body: CollectionQuoteInput,
   ) {
-    return this.collection.quote(user.orgId, id, body);
+    return this.collection.quote(user.orgId, user.sub, id, body);
   }
 
   @Post()

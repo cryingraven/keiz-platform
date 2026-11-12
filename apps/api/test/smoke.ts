@@ -42,6 +42,9 @@ async function main() {
   process.env.MONGODB_URI = mongo.getUri('keiz_smoke');
   process.env.JWT_SECRET = 'smoke-secret-please-change-0123456789';
   process.env.APP_DOMAIN = 'localhost';
+  process.env.CHAIN_NETWORK = 'testnet';
+  process.env.NEXT_PUBLIC_CHAIN_NETWORK = 'testnet';
+  process.env.NEAR_NETWORK = 'testnet';
   process.env.PAYMENTS_MODE = 'mock';
   process.env.AGENT_WALLET_MASTER_KEY = 'a'.repeat(64);
   // Never let the smoke test spend a real relayer's gas.
@@ -931,6 +934,32 @@ async function main() {
     const revokedBill = await fetch(`${BASE}/public/documents/${billShare.token}`);
     assert(revokedBill.status === 404, 'revoked public links stop working');
     pass('bill and invoice shares expose sanitized documents and PDFs');
+
+    const payInfoResponse = await fetch(
+      `${BASE}/public/documents/${invoiceShare.token}/pay`,
+    );
+    const payInfo = (await payInfoResponse.json()) as {
+      enabled: boolean;
+      reason?: string;
+      mode: string;
+      providerMode: string;
+    };
+    assert(payInfoResponse.status === 200, 'public pay info is readable');
+    assert(payInfo.enabled === false, 'public pay is disabled in mock mode');
+    assert(
+      payInfo.reason?.includes('test mode') === true,
+      'public pay explains the test-mode restriction',
+    );
+    assert(
+      !JSON.stringify(payInfo).includes('receivableId'),
+      'public pay info never leaks internal ids',
+    );
+    const badPay = await fetch(
+      `${BASE}/public/documents/${'x'.repeat(32)}/pay`,
+    );
+    assert(badPay.status === 404, 'unknown public tokens cannot read pay info');
+    pass('public invoice pay info is token-scoped and disabled in mock mode');
+
 
     const voidable = await req<{ _id: string }>('/receivables', {
       method: 'POST',

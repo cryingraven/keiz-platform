@@ -7,20 +7,20 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains' });
 
 export const metadata: Metadata = {
-  title: 'KEIZ — bills, invoices and books in one place',
+  title: 'KEIZ — bills, invoices and the ledger behind them',
   description:
-    'Approve vendor bills, send customer invoices, pay across chains and keep a double-entry ledger in balance. TEE-backed custody and private AI inference.',
+    'Approve vendor bills, send customer invoices, pay across chains and keep a double-entry ledger. Sign in with a passkey or a NEAR wallet; the demo moves no funds.',
   openGraph: {
-    title: 'KEIZ — bills, invoices and books in one place',
+    title: 'KEIZ — bills, invoices and the ledger behind them',
     description:
-      'One workspace for vendor bills, customer invoices, approvals, payments and the books behind them. TEE-backed custody and private AI.',
+      'Approve vendor bills, send customer invoices, pay across chains and keep a double-entry ledger in balance.',
     type: 'website',
   },
   twitter: {
     card: 'summary',
-    title: 'KEIZ — bills, invoices and books in one place',
+    title: 'KEIZ — bills, invoices and the ledger behind them',
     description:
-      'One workspace for vendor bills, customer invoices, approvals, payments and the books behind them. TEE-backed custody and private AI.',
+      'Approve vendor bills, send customer invoices, pay across chains and keep a double-entry ledger in balance.',
   },
 };
 

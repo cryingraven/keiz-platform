@@ -193,6 +193,41 @@ export const orgCollectionSchema = z.object({
   status: z.enum(['PENDING', 'ACTIVE', 'PAUSED', 'DISABLED']).default('ACTIVE'),
 });
 
+/** Workspace-level AR rail selection. Contracts are optional. */
+export const AR_COLLECTION_MODES = ['CONTRACT', 'TREASURY', 'OFF'] as const;
+export const arCollectionMode = z.enum(AR_COLLECTION_MODES);
+export type ArCollectionMode = (typeof AR_COLLECTION_MODES)[number];
+
+export const orgPaymentsSchema = z.object({
+  arMode: arCollectionMode,
+  treasuryAccountId: nearAccountId.optional(),
+  /** 1Click asset id delivered to the treasury in TREASURY mode. */
+  arAssetId: z.string().min(1).max(200).optional(),
+});
+
+export type OrgPaymentsInput = z.infer<typeof orgPaymentsSchema>;
+
+/**
+ * One-click deployment of a workspace `keiz-collect` contract. The asset must
+ * come from the 1Click token list; the server derives the NEP-141 contract.
+ */
+export const collectionDeploySchema = z.object({
+  assetId: z.string().min(3).max(200),
+  treasury: nearAccountId.optional(),
+  prefix: z
+    .string()
+    .trim()
+    .min(2)
+    .max(32)
+    .regex(
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+      'Use lowercase letters, numbers and hyphens',
+    )
+    .optional(),
+});
+
+export type CollectionDeployInput = z.infer<typeof collectionDeploySchema>;
+
 export const orgSlugSchema = z
   .string()
   .trim()

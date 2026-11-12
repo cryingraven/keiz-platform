@@ -1,20 +1,24 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import {
   OrgCollectionInput,
+  OrgPaymentsInput,
   UpdateOrganizationProfileInput,
   orgCollectionSchema,
+  orgPaymentsSchema,
   updateOrganizationProfileSchema,
 } from '@keiz/shared';
 import { AuthUser, CurrentUser } from '../common/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { ZodBody } from '../common/zod-body';
 import { OrgCollectionService } from './org-collection.service';
+import { OrgPaymentsService } from './org-payments.service';
 import { UsersService } from './users.service';
 
 @Controller('orgs')
 export class OrganizationsController {
   constructor(
     private readonly collection: OrgCollectionService,
+    private readonly paymentSettings: OrgPaymentsService,
     private readonly users: UsersService,
   ) {}
 
@@ -45,5 +49,19 @@ export class OrganizationsController {
     @Body(new ZodBody(orgCollectionSchema)) body: OrgCollectionInput,
   ) {
     return this.collection.update(user.orgId, body);
+  }
+
+  @Get('current/payments')
+  payments(@CurrentUser() user: AuthUser) {
+    return this.paymentSettings.resolve(user.orgId);
+  }
+
+  @Roles('ADMIN', 'OWNER')
+  @Patch('current/payments')
+  updatePayments(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodBody(orgPaymentsSchema)) body: OrgPaymentsInput,
+  ) {
+    return this.paymentSettings.update(user.orgId, body);
   }
 }

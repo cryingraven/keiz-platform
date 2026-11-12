@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MembersController } from './members.controller';
 import { OrganizationsController } from './organizations.controller';
 import { OrgCollectionService } from './org-collection.service';
+import { OrgPaymentsService } from './org-payments.service';
 import { Organization, OrganizationSchema } from './organization.schema';
 import { Membership, MembershipSchema } from './membership.schema';
 import { User, UserSchema } from './user.schema';
@@ -17,7 +18,7 @@ import { UsersService } from './users.service';
     ]),
   ],
   controllers: [MembersController, OrganizationsController],
-  providers: [UsersService, OrgCollectionService],
-  exports: [UsersService, OrgCollectionService],
+  providers: [UsersService, OrgCollectionService, OrgPaymentsService],
+  exports: [UsersService, OrgCollectionService, OrgPaymentsService],
 })
 export class UsersModule {}

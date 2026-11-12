@@ -8,6 +8,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
+import { CollectionsModule } from './collections/collections.module';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { RolesGuard } from './common/roles.guard';
 import { DemoModule } from './demo/demo.module';
@@ -48,6 +49,7 @@ import { VendorsModule } from './vendors/vendors.module';
     AgentModule,
     ChatModule,
     IndexerModule,
+    CollectionsModule,
     DemoModule,
   ],
   controllers: [HealthController],

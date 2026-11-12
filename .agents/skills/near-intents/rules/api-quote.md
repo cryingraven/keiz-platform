@@ -8,6 +8,11 @@ tags: api, quote, swap
 
 Generates swap quote. Use `dry: true` for preview, `dry: false` to get deposit address.
 
+> **Live API requirement (Nov 2026):** send `depositType`, `refundType`, `recipientType`
+> and an ISO-8601 `deadline` on every quote. The service rejects the request with
+> `should not be empty` otherwise, even though the fields are documented as optional.
+> `customRecipientMsg` is only valid when the destination is on NEAR.
+
 **Authentication on quotes:** without an API key, an extra **0.25% (25 bps)** fee applies to every non-`ANY_INPUT` quote. With a JWT: **0.20%** (20 bps), or **0.01% (1 bp)** for stablecoin pairs and same-asset multichain routes; with `appFees`, revenue is split 50/50 with 1Click keeping its minimum. Not applicable to `ANY_INPUT` quotes (1Click fees skip them entirely). Source: [Fees](https://docs.near-intents.org/resources/fees.md).
 
 ## Request Fields

@@ -38,8 +38,11 @@ NEAR is part of the product, not a badge:
 - **OutLayer / Intel TDX** for optional policy-bound agent custody.
 - **Agent jobs** for hiring specialist sub-agents from the assistant, with a policy-checked
   budget and a structured result (mock settlement in this build).
-- **`keiz-collect`** for on-chain receivables and **`keiz-vault`** for a policy-bound
+- **`keiz-collect`** for on-chain receivables (optional — Settings also offers a plain
+  treasury mode and one-click deployment) and **`keiz-vault`** for a policy-bound
   treasury contract.
+- **Shared invoice payments** — token-scoped public links with USDC/USDT quotes, refund
+  addresses and live paid status.
 
 Be precise in the README and demo: the vault contract exists but invoice approval is not
 yet wired to on-chain proposals. Do not describe the vault as the live AP rail.
@@ -109,7 +112,7 @@ Work through this list with the human.
   and one **Continue with a NEAR wallet** selector; the recovery-key UI is hidden.
 - [x] `README.md` → “API surface”: add `/accounting/reports`,
   `/accounting/reports/export`, and the AP/AR/payments date-filter query params.
-- [x] `README.md` → “Verification”: refresh test and smoke counts (88 unit tests, 58 smoke checks).
+- [x] `README.md` → “Verification”: refresh test and smoke counts (99 unit tests, 59 smoke checks).
 - [x] `docs/README.md`: remove the recovery-key wording from the login link.
 - [x] `docs/integrations.md`: server-side PDF/XLSX report exports now exist; CSV export
   remains client-side.

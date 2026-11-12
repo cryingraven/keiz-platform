@@ -38,12 +38,15 @@ export class OrgCollectionService {
     return org.collection ?? collection;
   }
 
+  /** RPC endpoint for a workspace contract, shared with the deploy service. */
+  rpcFor(network: 'mainnet' | 'testnet'): string {
+    return network === 'testnet'
+      ? this.config.get<string>('NEAR_TESTNET_RPC_URL') || 'https://rpc.testnet.near.org'
+      : this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
+  }
+
   async validate(orgId: string, network: 'mainnet' | 'testnet', input: OrgCollectionInput) {
-    const rpcUrl =
-      network === 'testnet'
-        ? this.config.get<string>('NEAR_TESTNET_RPC_URL') ||
-          'https://rpc.testnet.near.org'
-        : this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
+    const rpcUrl = this.rpcFor(network);
 
     const contractOrg = await this.view<string>(rpcUrl, input.contractId, 'get_org_id', {});
     if (String(contractOrg) !== orgId) {
@@ -77,7 +80,7 @@ export class OrgCollectionService {
     }
   }
 
-  private async view<T>(
+  async view<T>(
     rpcUrl: string,
     contractId: string,
     method: string,
@@ -115,7 +118,7 @@ export class OrgCollectionService {
     return JSON.parse(Buffer.from(json.result.result, 'base64').toString('utf8')) as T;
   }
 
-  private async viewCode(rpcUrl: string, contractId: string): Promise<string> {
+  async viewCode(rpcUrl: string, contractId: string): Promise<string> {
     const response = await fetchRpcWithRetry(
       rpcUrl,
       {
@@ -140,5 +143,35 @@ export class OrgCollectionService {
       );
     }
     return json.result.code_base64;
+  }
+
+  /** Null when the account does not exist; throws on other RPC failures. */
+  async viewAccount(
+    rpcUrl: string,
+    accountId: string,
+  ): Promise<{ balance: string } | null> {
+    const response = await fetchRpcWithRetry(
+      rpcUrl,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'keiz-org-collection-account',
+          method: 'query',
+          params: { request_type: 'view_account', finality: 'final', account_id: accountId },
+        }),
+      },
+      { timeoutMs: 15_000 },
+    );
+    const json = (await response.json()) as {
+      result?: { amount?: string };
+      error?: { message?: string; cause?: { name?: string } };
+    };
+    if (json.result?.amount) return { balance: json.result.amount };
+    if (json.error?.cause?.name === 'UNKNOWN_ACCOUNT') return null;
+    throw new BadRequestException(
+      `Could not read account ${accountId}: ${json.error?.message ?? 'no result'}`,
+    );
   }
 }

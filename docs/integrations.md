@@ -17,17 +17,28 @@ today, what exists in the contracts but is not wired, and what is still missing.
 | Cross-chain payout | 1Click REST (`/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`) | `payments/providers/intents.provider.ts` |
 | Agent custody | OutLayer REST (`register`, `getAddress`, `getBalance`, `policy.get`, `withdraw`, `withdrawDryRun`, `getRequest`) | `outlayer/outlayer.service.ts` |
 | Chain audit | NEAR RPC `tx`, `query`, `send_tx` | `payments/near-tx-verifier.ts`, `indexer/indexer.service.ts` |
-| On-chain AR | `keiz-collect` NEP-141 receiver + indexer cursor | `contracts/keiz-collect`, `indexer/indexer.service.ts`, `receivables/ar-collection.service.ts` |
+| On-chain AR | `keiz-collect` receiver or plain treasury; persisted 1Click quotes; public share pay | `contracts/keiz-collect`, `receivables/ar-collection.service.ts`, `documents/public-payments.service.ts`, `indexer/indexer.service.ts` |
+| One-click collect deploy | Dedicated deployer creates `<prefix>.<account>`, deploys pinned wasm, allowlists token, hands ownership to the user | `collections/*`, `queues/processors/collection-deploy.processor.ts` |
 | On-chain AP treasury | `keiz-vault` policy-bound M-of-N treasury | `contracts/keiz-vault`, `contracts/deploy` |
 | Workspace operations | Members, org switching, vendor/customer edit, draft-bill edit | `users/*`, `vendors/*`, `receivables/*`, `invoices/*` |
 
-**Contract boundary:** the API never constructs an asset id, never signs a
-transfer itself, and never accepts a client-supplied transaction hash without
-verifying it (1Click mode). Keep those invariants.
+**Contract boundary:** the API never constructs an asset id, never signs a payment transfer
+itself, and never accepts a client-supplied transaction hash without verifying it (1Click
+mode). The collection-deployer key is a separate, allowlisted signer used only to create and
+initialize a pinned `keiz-collect` contract; it cannot move customer funds. Keep those
+invariants.
 
 ---
 
-## 2. Implemented: on-chain AR collection (`keiz-collect`)
+## 2. Implemented: on-chain AR collection (contract or treasury)
+
+AR collection has two modes, selected per workspace in Settings → AR collection mode:
+
+| Mode | Receiver | Receipt source |
+|---|---|---|
+| `CONTRACT` | workspace `keiz-collect` | `ft_on_transfer` receipt, indexed by `syncCollectReceipts` |
+| `TREASURY` | plain NEAR treasury account | open `ar_collection_quotes` polled by the indexer |
+| `OFF` | none | collection-quote endpoint rejects |
 
 `contracts/keiz-collect` is a NEP-141 receiver that attributes incoming
 transfers to a receivable reference. The full entry-point list and event schema live in
@@ -80,34 +91,49 @@ non-allowlisted token, or a paused contract returns the full amount to the token
 
 `ArCollectionService.quote` creates the committed quote for a receivable:
 
-- `recipient` = the workspace `keiz-collect` contract;
-- `customRecipientMsg` = `{"orgId":"<workspace-id>","receivableRef":"AR-2001"}`, which makes
-  the provider send `recipientType: "DESTINATION_CHAIN"`;
+- `CONTRACT` mode: `recipient` = the workspace `keiz-collect` contract;
+  `customRecipientMsg` = `{"orgId":"<workspace-id>","receivableRef":"AR-2001"}`, which makes
+  the provider send `recipientType: "DESTINATION_CHAIN"`.
+- `TREASURY` mode: `recipient` = the workspace treasury account and no
+  `customRecipientMsg`; the quote itself is the attribution key.
 - `refundTo` = the customer's origin-chain address;
-- `swapType` = `EXACT_OUTPUT`.
+- `swapType` = `EXACT_OUTPUT`; origin assets are limited to USDC/USDT.
 
-1Click calls `ft_transfer_call` on the destination token, which invokes `ft_on_transfer`.
-The destination token must be allowlisted in the contract and registered for storage
-(`storage_deposit`), and 1Click is mainnet-only.
+Every quote is persisted in `ar_collection_quotes` with `source = DASHBOARD | SHARE`, its
+deposit address and the origin/destination chain. Public share payments use the same
+service with `source: SHARE`; the share token resolves the receivable.
+
+1Click calls `ft_transfer_call` on the destination token for contract mode, which invokes
+`ft_on_transfer`. The destination token must be allowlisted in the contract and registered
+for storage (`storage_deposit`), and 1Click is mainnet-only. Treasury mode receives a plain
+NEP-141 transfer; the indexer records it from the delivery transaction.
 
 ### Client flow
 
 1. The browser requests `POST /api/receivables/:id/collection-quote` with `originAsset` and
-   `refundTo`; the API rejects receivables that are not `ISSUED`/`PARTIALLY_PAID` and
-   workspaces without an `ACTIVE` collection config.
-2. The customer sends `ft_transfer_call({ receiver_id: "<collect contract>", amount, msg })`
-   from any NEP-141 token.
-3. `ft_on_transfer` validates the token allowlist, pause state and reference, stores a receipt,
-   and returns `"0"` (accept).
-4. `IndexerService.syncCollectReceipts` iterates every organization with
-   `collection.status = ACTIVE`, reads `get_receipt_count` / `get_receipts`, keeps a
-   high-water cursor at `collect:<orgId>:<contractId>`, and calls
-   `ReceivablesService.recordReceipt` with `method: ONCHAIN`, the stable
-   `chainEventId = collect:<orgId>:<contractId>:<receiptId>`, and the on-chain sender/token.
+   `refundTo`; the API rejects receivables that are not `ISSUED`/`PARTIALLY_PAID`, disabled
+   workspaces (`OFF`), and `CONTRACT` workspaces without an `ACTIVE` collection.
+2. The quote is stored in `ar_collection_quotes` with a unique deposit address. Contract mode
+   delivers to the collect contract; treasury mode delivers to the workspace treasury.
+3. Contract mode: the customer sends `ft_transfer_call({ receiver_id: "<collect contract>",
+   amount, msg })`; `ft_on_transfer` validates the token allowlist, pause state and reference,
+   stores a receipt, and returns `"0"` (accept).
+4. `IndexerService` runs both paths:
+   - `syncCollectReceipts` iterates organizations with `collection.status = ACTIVE`, reads
+     `get_receipt_count` / `get_receipts`, and records receipts keyed by
+     `collect:<orgId>:<contractId>:<receiptId>`.
+   - `syncOpenQuotes` polls open treasury/share quotes and, on `SUCCESS` with a destination
+     hash, records an `ONCHAIN` receipt keyed by `arquote:<quoteId>`, capped at the
+     outstanding amount. Without a destination hash it sets `NEEDS_REVIEW`.
 5. Overpayments, unknown references, wrong statuses and wrong tokens are recorded as
-   `IGNORED` in `chain_events`; the cursor still advances.
+   `IGNORED` in `chain_events` for the collect path; the cursor still advances.
 
 ### Workspace configuration
+
+Settings → AR collection mode writes `Organization.paymentSettings` through
+`PATCH /api/orgs/current/payments` (`arMode` = `CONTRACT` | `TREASURY` | `OFF`, plus
+`treasuryAccountId` and `arAssetId`). The effective mode falls back to an active contract,
+then a configured treasury, then `OFF`.
 
 Settings → AR collection writes `Organization.collection` through
 `PATCH /api/orgs/current/collection`. `OrgCollectionService.validate` checks, against the
@@ -119,17 +145,29 @@ organization's network RPC:
 - when `KEIZ_COLLECT_CODE_HASH` is set, the deployed wasm hash matches it. In production the
   variable is mandatory before a contract can be activated.
 
+`COLLECT_DEPLOY_ENABLED=true` also exposes one-click deployment from Settings. The API
+creates `<prefix>.<COLLECT_DEPLOYER_ACCOUNT>`, deploys the pinned wasm, registers the token,
+allowlists it and calls `set_owner` for the signed-in user. No key is added to the contract
+account; the deployer is not a generic relayer.
+
 `(collection.contractId)` has a unique partial index, so one contract cannot serve two
 workspaces. Only the indexer writes `ONCHAIN` receipts; the browser cannot.
 
 ### Why a contract
 
-`ft_transfer` has no memo field. Without a receiver contract there is no
-reliable way to attribute an incoming transfer to a receivable. Alternatives:
+`ft_transfer` has no memo field. Contract mode gives every incoming transfer an on-chain
+receivable reference. Treasury mode is contract-free but depends on the quote record:
+the indexer watches `ar_collection_quotes.depositAddress` and records the delivery from
+1Click's destination transaction. That handles payments started from KEIZ (dashboard or
+share link), but an arbitrary transfer sent directly to the treasury has no reference and
+must be matched manually.
+
+Alternatives considered:
 
 - a unique implicit account per receivable (works, but creates one account and
   storage deposit per invoice);
-- a single treasury account plus manual matching (the previous behaviour).
+- a single treasury account plus manual matching (implemented as `TREASURY` for app-created
+  quotes).
 
 ---
 
@@ -253,7 +291,8 @@ Redis is required (`REDIS_URL`). `QUEUES_ENABLED=false` makes producers no-ops f
 |---|---|---|
 | `payments` | per-payment poll + repeatable sweep | `PAYMENT_SWEEP_INTERVAL_MS` (default 30s) |
 | `outlayer` | per-payment poll + repeatable sweep | 2s first poll, 5s/30s/5m backoff, 5m sweep |
-| `indexer` | repeatable sync | `INDEXER_INTERVAL_MS` (default 30s) |
+| `indexer` | repeatable sync: payments, collect receipts, AR quotes | `INDEXER_INTERVAL_MS` (default 30s) |
+| `collections` | one-click `keiz-collect` deploy job | one job per deployment request |
 
 `POST /api/indexer/collect` is an ADMIN/OWNER maintenance trigger that indexes every active
 workspace collection immediately.
@@ -274,6 +313,9 @@ Implemented:
 | Customer edit/archive/restore | `PATCH /api/customers/:id`, `DELETE /api/customers/:id`, `POST /api/customers/:id/restore` |
 | Draft bill edit | `PATCH /api/invoices/:id` (DRAFT only, totals recomputed) |
 | AR collection config | `GET/PATCH /api/orgs/current/collection` |
+| AR rail mode | `GET/PATCH /api/orgs/current/payments` (`CONTRACT` / `TREASURY` / `OFF`) |
+| One-click contract deploy | `GET/POST /api/orgs/current/collection/deploy`, `POST /api/orgs/current/collection/deploy/:id/retry` |
+| Public invoice payment | `GET/POST /api/public/documents/:token/pay`, `GET /api/public/documents/:token/pay/:quoteId` |
 | CSV export | client-side download on bills, receivables and journal pages |
 | Report export | server-side PDF/XLSX from `/api/accounting/reports/export` |
 

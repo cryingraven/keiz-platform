@@ -48,3 +48,53 @@ export interface CreatedDocumentShare {
   path: string;
   expiresAt: string;
 }
+
+export interface PublicPayAsset {
+  assetId: string;
+  symbol: string;
+  blockchain: string;
+  decimals: number;
+}
+
+export interface PublicPayQuote {
+  quoteId: string;
+  mode: 'CONTRACT' | 'TREASURY';
+  depositAddress: string;
+  depositMemo?: string;
+  amountIn?: string;
+  amountInFormatted?: string;
+  amountOut?: string;
+  amountOutFormatted?: string;
+  originAsset: string;
+  originSymbol?: string;
+  destinationSymbol?: string;
+  originChain?: string;
+  destinationChain?: string;
+  destinationAddress: string;
+  deadline?: string;
+  reused?: boolean;
+}
+
+export interface PublicPayInfo {
+  enabled: boolean;
+  reason?: string;
+  mode: 'CONTRACT' | 'TREASURY' | 'OFF';
+  providerMode: 'mock' | 'intents';
+  amountDue?: string;
+  currency: string;
+  decimals: number;
+  assets: PublicPayAsset[];
+  quote: PublicPayQuote | null;
+}
+
+export interface PublicPayStatus {
+  status: string;
+  paid: boolean;
+  receivableStatus: string;
+  amountDue: string;
+  currency: string;
+  decimals: number;
+  destinationTxHashes: string[];
+  refundReason?: string;
+  error?: string;
+}

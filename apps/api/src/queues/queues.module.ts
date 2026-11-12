@@ -3,7 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { QueueBootstrapService } from './queue-bootstrap.service';
 import { QueueProducer } from './queue-producer.service';
-import { INDEXER_QUEUE, OUTLAYER_QUEUE, PAYMENTS_QUEUE } from './queue.constants';
+import { INDEXER_QUEUE, COLLECTIONS_QUEUE, OUTLAYER_QUEUE, PAYMENTS_QUEUE } from './queue.constants';
 
 if (!process.env.QUEUES_ENABLED) {
   try {
@@ -32,6 +32,7 @@ const bullImports = queuesEnabled
         { name: PAYMENTS_QUEUE },
         { name: OUTLAYER_QUEUE },
         { name: INDEXER_QUEUE },
+        { name: COLLECTIONS_QUEUE },
       ),
     ]
   : [];

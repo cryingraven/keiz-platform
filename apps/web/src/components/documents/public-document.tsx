@@ -1,4 +1,5 @@
 import { Download, ShieldCheck } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { formatDate, formatMoney } from '@/lib/format';
 import { Badge, Button } from '@/components/ui';
 import { Logo } from '@/components/logo';
@@ -26,10 +27,12 @@ export function PublicDocumentView({
   document,
   onDownload,
   downloading,
+  children,
 }: {
   document: PublicDocument;
   onDownload: () => void;
   downloading: boolean;
+  children?: ReactNode;
 }) {
   const money = (value: string) =>
     formatMoney(value, document.decimals, document.currency);
@@ -203,6 +206,8 @@ export function PublicDocumentView({
           </span>
           {document.expiresAt ? <span>Link expires {formatDate(document.expiresAt)}</span> : null}
         </div>
+
+        {children}
       </main>
     </div>
   );

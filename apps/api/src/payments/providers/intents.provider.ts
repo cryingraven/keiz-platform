@@ -3,6 +3,9 @@ import { PaymentProvider, QuoteParams, QuoteResult, StatusResult, TokenInfo } fr
 
 interface OneClickQuoteResponse {
   correlationId: string;
+  quoteRequest?: {
+    deadline?: string;
+  };
   quote: {
     depositAddress?: string;
     depositMemo?: string | null;
@@ -13,7 +16,7 @@ interface OneClickQuoteResponse {
     minAmountIn?: string;
     maxAmountIn?: string;
     minAmountOut?: string;
-    deadline: string;
+    deadline?: string;
     timeEstimate?: number;
   };
 }
@@ -81,6 +84,11 @@ export class IntentsPaymentProvider implements PaymentProvider {
   }
 
   async quote(params: QuoteParams): Promise<QuoteResult> {
+    // 1Click now requires the routing types and a deadline on every quote.
+    // ORIGIN_CHAIN/DESTINATION_CHAIN cover wallet and contract deposits; the
+    // intents-balance rails can override them through QuoteParams.
+    const deadline =
+      params.deadline ?? new Date(Date.now() + 10 * 60_000).toISOString();
     const body = {
       dry: params.dry,
       swapType: params.swapType,
@@ -89,11 +97,13 @@ export class IntentsPaymentProvider implements PaymentProvider {
       amount: params.amount,
       recipient: params.recipient,
       refundTo: params.refundTo,
+      depositType: params.depositType ?? 'ORIGIN_CHAIN',
+      refundType: params.refundType ?? 'ORIGIN_CHAIN',
+      recipientType: params.recipientType ?? 'DESTINATION_CHAIN',
+      deadline,
       slippageTolerance: params.slippageBps ?? 100,
       referral: this.config.referral,
-      ...(params.customRecipientMsg
-        ? { customRecipientMsg: params.customRecipientMsg, recipientType: 'DESTINATION_CHAIN' }
-        : {}),
+      ...(params.customRecipientMsg ? { customRecipientMsg: params.customRecipientMsg } : {}),
     };
     const data = await this.request<OneClickQuoteResponse>('/v0/quote', {
       method: 'POST',
@@ -110,7 +120,8 @@ export class IntentsPaymentProvider implements PaymentProvider {
       minAmountIn: data.quote.minAmountIn,
       maxAmountIn: data.quote.maxAmountIn,
       minAmountOut: data.quote.minAmountOut,
-      deadline: data.quote.deadline,
+      // Newer responses omit quote.deadline and echo the request instead.
+      deadline: data.quote.deadline ?? data.quoteRequest?.deadline ?? deadline,
       timeEstimate: data.quote.timeEstimate,
       raw: data,
     };

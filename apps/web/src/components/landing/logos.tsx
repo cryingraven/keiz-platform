@@ -32,7 +32,7 @@ export function NearProtocolLogo({ className }: { className?: string }) {
       src="/logos/near-protocol-wordmark.svg"
       alt="NEAR Protocol"
       className={cn('h-4 w-auto sm:h-5', className)}
-      loading="lazy"
+      loading="eager"
       decoding="async"
     />
   );
@@ -50,7 +50,7 @@ export function NearIntentsLogo({
       src={`/logos/near-intents-${variant}.svg`}
       alt="NEAR Intents"
       className={cn('h-5 w-auto', className)}
-      loading="lazy"
+      loading="eager"
       decoding="async"
     />
   );
@@ -68,7 +68,7 @@ export function NearAiLogo({
       src={variant === 'white' ? '/logos/near-ai-white-color.svg' : '/logos/near-ai-color.svg'}
       alt="NEAR AI"
       className={cn('h-6 w-auto', className)}
-      loading="lazy"
+      loading="eager"
       decoding="async"
     />
   );
@@ -86,7 +86,7 @@ export function OutLayerLogo({ dark = false }: { dark?: boolean }) {
           src="/logos/outlayer-mark.png"
           alt=""
           className="h-5 w-5"
-          loading="lazy"
+          loading="eager"
           decoding="async"
         />
       </span>
@@ -112,7 +112,7 @@ export function NearCredit({
     <span
       className={cn(
         'inline-flex items-center gap-1.5 text-meta',
-        dark ? 'text-white/40' : 'text-muted',
+        dark ? 'text-white/65' : 'text-muted',
         className,
       )}
     >
@@ -146,26 +146,22 @@ function LogoLink({
 
 export function LogoStrip() {
   return (
-    <section className="border-b border-line bg-surface">
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:justify-between">
-        <p className="text-center text-[11px] font-medium uppercase tracking-[0.18em] text-muted lg:text-left">
-          Built on infrastructure you can verify
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-4 sm:gap-x-9">
-          <LogoLink href="https://near.org" label="NEAR Protocol">
-            <NearProtocolLogo />
-          </LogoLink>
-          <LogoLink href="https://near-intents.org" label="NEAR Intents">
-            <NearIntentsLogo />
-          </LogoLink>
-          <LogoLink href="https://near.ai" label="NEAR AI">
-            <NearAiLogo />
-          </LogoLink>
-          <LogoLink href="https://app.outlayer.ai" label="OutLayer">
-            <OutLayerLogo />
-          </LogoLink>
-        </div>
+    <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+      <p className="text-[13px] text-muted">Runs on</p>
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        <LogoLink href="https://near.org" label="NEAR Protocol">
+          <NearProtocolLogo />
+        </LogoLink>
+        <LogoLink href="https://near-intents.org" label="NEAR Intents">
+          <NearIntentsLogo />
+        </LogoLink>
+        <LogoLink href="https://near.ai" label="NEAR AI">
+          <NearAiLogo />
+        </LogoLink>
+        <LogoLink href="https://app.outlayer.ai" label="OutLayer">
+          <OutLayerLogo />
+        </LogoLink>
       </div>
-    </section>
+    </div>
   );
 }

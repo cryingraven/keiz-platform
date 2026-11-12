@@ -11,8 +11,6 @@ export class IndexerSyncProcessor extends WorkerHost {
 
   async process(job: Job): Promise<unknown> {
     if (job.name !== INDEXER_SYNC_JOB) return { skipped: true };
-    const payments = await this.indexer.syncPending(25);
-    const collect = await this.indexer.syncCollectReceipts(100);
-    return { payments, collect };
+    return this.indexer.syncAll(25);
   }
 }

@@ -4,10 +4,14 @@ import { PaymentProvider, QuoteParams, QuoteResult, StatusResult, TokenInfo } fr
 
 const TOKENS: TokenInfo[] = [
   { assetId: 'nep141:usdc.near', symbol: 'USDC', blockchain: 'near', decimals: 6, price: '1.00' },
+  { assetId: 'nep141:usdt.near', symbol: 'USDT', blockchain: 'near', decimals: 6, price: '1.00' },
   { assetId: 'nep141:wrap.near', symbol: 'wNEAR', blockchain: 'near', decimals: 24, price: '3.20' },
   { assetId: 'nep141:usdc.eth', symbol: 'USDC', blockchain: 'eth', decimals: 6, price: '1.00' },
+  { assetId: 'nep141:usdt.eth', symbol: 'USDT', blockchain: 'eth', decimals: 6, price: '1.00' },
   { assetId: 'nep141:usdc.sol', symbol: 'USDC', blockchain: 'sol', decimals: 6, price: '1.00' },
+  { assetId: 'nep141:usdt.sol', symbol: 'USDT', blockchain: 'sol', decimals: 6, price: '1.00' },
   { assetId: 'nep141:usdc.base', symbol: 'USDC', blockchain: 'base', decimals: 6, price: '1.00' },
+  { assetId: 'nep141:usdt.base', symbol: 'USDT', blockchain: 'base', decimals: 6, price: '1.00' },
 ];
 
 /** Deterministic in-memory provider so dev, tests and CI never touch mainnet. */

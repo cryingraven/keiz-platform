@@ -286,6 +286,12 @@ Use the `collect` object in **Settings → AR collection**, and set
 `KEIZ_COLLECT_CODE_HASH` to `keizCollectCodeHash` so the API verifies the deployed code before
 activating a workspace contract.
 
+Alternatively, deploy the collect contract from **Settings → One-click deployment** when
+`COLLECT_DEPLOY_ENABLED=true`. That path deploys only `keiz-collect`, registers and allowlists
+one token, and transfers contract ownership to the signed-in user; it does not deploy the
+vault. The script above remains the manual/collect+vault path and still requires
+`VAULT_ACCOUNT`. In the app, `keiz-vault` is optional and not used by the current AP rail.
+
 Signer modes (`SIGN_WITH`): `legacy-keychain` (default), `access-key-file`
 (`SIGNER_KEY_FILE`), `ledger`, or `plaintext-key` (`SIGNER_PRIVATE_KEY`).
 Plaintext keys are for local operations only. The script also registers the collect account

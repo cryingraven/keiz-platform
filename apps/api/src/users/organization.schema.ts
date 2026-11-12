@@ -39,6 +39,24 @@ export class OrganizationCollection {
 }
 export const OrganizationCollectionSchema = SchemaFactory.createForClass(OrganizationCollection);
 
+@Schema({ _id: false })
+export class OrganizationPaymentSettings {
+  /** Optional: derived from the contract/treasury when omitted. */
+  @Prop({ enum: ['CONTRACT', 'TREASURY', 'OFF'] })
+  arMode?: 'CONTRACT' | 'TREASURY' | 'OFF';
+
+  /** Plain NEAR account that receives AR in TREASURY mode. */
+  @Prop()
+  treasuryAccountId?: string;
+
+  /** 1Click asset id delivered to the treasury (defaults to NEAR USDC). */
+  @Prop()
+  arAssetId?: string;
+}
+export const OrganizationPaymentSettingsSchema = SchemaFactory.createForClass(
+  OrganizationPaymentSettings,
+);
+
 @Schema({ timestamps: true, collection: 'organizations' })
 export class Organization {
   @Prop({ required: true })
@@ -57,6 +75,10 @@ export class Organization {
   /** Per-workspace on-chain AR collection contract. */
   @Prop({ type: OrganizationCollectionSchema })
   collection?: OrganizationCollection;
+
+  /** Optional AR rail: contract, plain treasury, or off. */
+  @Prop({ type: OrganizationPaymentSettingsSchema })
+  paymentSettings?: OrganizationPaymentSettings;
 
   @Prop({ type: Date })
   createdAt?: Date;

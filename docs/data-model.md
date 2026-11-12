@@ -55,10 +55,14 @@ Unique index: `(orgId, userId)`. The last OWNER cannot be demoted or removed.
 | `baseCurrency` | string | Default `USD`; used as the default currency in Accounting and Reporting. |
 | `network` | `mainnet` \| `testnet` | Matches every member's network. Indexed. |
 | `collection` | embedded object? | Per-workspace AR collection config. |
+| `paymentSettings` | embedded object? | `arMode` (`CONTRACT` \| `TREASURY` \| `OFF`), `treasuryAccountId?`, `arAssetId?`. |
 
 `collection` fields: `contractId`, `network`, `treasury`, `assetId`, `tokenContract`,
 `decimals` (default 6), `status` (`PENDING` \| `ACTIVE` \| `PAUSED` \| `DISABLED`),
 `deployedAt?`, `validatedAt?`.
+
+`paymentSettings` is optional. When `arMode` is unset the effective mode is `CONTRACT` if
+the collection is `ACTIVE`, else `TREASURY` if a treasury exists, else `OFF`.
 
 Unique partial index: `collection.contractId` — one workspace per deployed collect contract.
 
@@ -238,6 +242,33 @@ Indexes: unique `(orgId, number)`; `(orgId, createdAt)`; `(orgId, status)`;
 
 Receipts use an optimistic lock on `paidAmount`: the update filter includes the previous
 value, so concurrent receipts cannot overpay.
+
+### `ar_collection_quotes`
+
+One 1Click quote per receivable collection attempt. Contract-mode receipts are still
+recorded by the collect indexer; treasury-mode quotes are reconciled from their deposit
+address.
+
+| Field | Type | Notes |
+|---|---|---|
+| `orgId`, `receivableId`, `receivableNumber` | string | Indexed. |
+| `mode` | `CONTRACT` \| `TREASURY` | Chosen when the quote was created. |
+| `source` | `DASHBOARD` \| `SHARE` | Public share quotes are `SHARE`; default `DASHBOARD`. |
+| `destinationAddress` | string | Collect contract or treasury account. |
+| `destinationAssetId`, `decimals` | | Destination NEP-141 asset and decimals. |
+| `originAsset`, `refundTo` | string | 1Click origin inputs. |
+| `depositAddress`, `depositMemo`, `correlationId` | string? | 1Click quote result. `depositAddress` is unique. |
+| `amount`, `amountFormatted` | string | Destination minor units. |
+| `amountIn`, `amountInFormatted`, `originSymbol`, `destinationSymbol` | string? | Origin deposit amount and display symbols. |
+| `originChain`, `destinationChain` | string? | Origin/destination blockchain ids from 1Click. |
+| `status` | enum | `AWAITING_DEPOSIT`, `PROCESSING`, `SUCCEEDED`, `FAILED`, `REFUNDED`, `UNDERPAID`, `NEEDS_REVIEW`, `OVERPAID`, `EXPIRED`. |
+| `originTxHashes[]`, `destinationTxHashes[]` | string[] | From the status poll. |
+| `appliedReceiptId`, `appliedAt` | | Set when a treasury delivery is posted to the receivable. |
+| `createdByUserId` | string | |
+
+Indexes: unique `depositAddress`; `(orgId, status, createdAt)`; `(receivableId, createdAt)`.
+Treasury receipts are idempotent via `receipts.chainEventId = arquote:<quoteId>` and are
+capped at the outstanding amount (overpayments set the quote to `OVERPAID`).
 
 ---
 
@@ -428,6 +459,26 @@ Indexes: unique `(txHash, eventIndex)`, `(orgId, observedAt)`.
 |---|---|---|
 | `key` | string | Unique, indexed. Example `collect:<orgId>:<contractId>`. |
 | `value` | number | Last processed receipt id; default `-1`. |
+
+### `collection_deployments`
+
+One-click deploy progress for a workspace `keiz-collect` contract. Contract calls
+are idempotent, so a failed deployment can be retried without creating a second
+account.
+
+| Field | Type | Notes |
+|---|---|---|
+| `orgId`, `requestedByUserId` | string | Org comes from the JWT. |
+| `status` | enum | `QUEUED`, `DEPLOYING`, `ALLOWLISTING`, `TRANSFERRING`, `VERIFYING`, `ACTIVE`, `FAILED`. |
+| `network` | `mainnet` only | Testnet keeps the manual form. |
+| `contractId`, `treasury`, `ownerAccountId` | string | `contractId` is `<prefix>.<deployer>`. |
+| `assetId`, `tokenContract`, `decimals` | | Resolved server-side from the 1Click token list. |
+| `steps` | object | Per-step `status`, `txHash`, `error`, `at`. |
+| `txHashes` | string[] | All submitted hashes, in order. |
+| `error`, `startedAt`, `finishedAt` | | Failure reason and timing. |
+
+Indexes: `(orgId, createdAt)`; unique partial `(orgId)` while a deployment is
+non-terminal, so two clicks cannot deploy two contracts.
 
 ### `auth_challenges`
 

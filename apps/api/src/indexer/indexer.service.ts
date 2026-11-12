@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { formatUnits, parseUnits } from '@keiz/shared';
 import { fetchRpcWithRetry } from '../common/rpc-client';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
+import { ArCollectionService } from '../receivables/ar-collection.service';
 import { ReceivablesService } from '../receivables/receivables.service';
 import { ChainEvent, ChainEventDocument } from './chain-event.schema';
 import { IndexerCursor, IndexerCursorDocument } from './indexer-cursor.schema';
@@ -31,6 +32,7 @@ export class IndexerService {
     @InjectModel(IndexerCursor.name) private readonly cursors: Model<IndexerCursorDocument>,
     @InjectModel(Organization.name) private readonly orgs: Model<OrganizationDocument>,
     private readonly receivables: ReceivablesService,
+    private readonly arCollection: ArCollectionService,
     private readonly config: ConfigService,
   ) {}
 
@@ -38,10 +40,11 @@ export class IndexerService {
     return this.config.get<string>('NEAR_RPC_URL') || 'https://free.rpc.fastnear.com';
   }
 
-  async syncAll(limit = 25): Promise<{ payments: number; collect: number }> {
+  async syncAll(limit = 25): Promise<{ payments: number; collect: number; arQuotes: number }> {
     const payments = await this.syncPending(limit);
     const collect = await this.syncCollectReceipts(100);
-    return { payments, collect };
+    const arQuotes = await this.arCollection.syncOpenQuotes(25);
+    return { payments, collect, arQuotes };
   }
 
   /** Indexes every payment that has an on-chain deposit hash but no chain event yet. */

@@ -115,6 +115,7 @@ flowchart TB
     AR["receivables (AR) · customers"]
     Books["accounting"]
     Payments["payments · intents"]
+    Collections["collections (one-click deploy)"]
     Agent["agent"]
     Outlayer["outlayer"]
     Chat["chat"]
@@ -125,7 +126,7 @@ flowchart TB
   end
 
   subgraph Worker["apps/api worker"]
-    Jobs["payments · outlayer<br/>indexer"]
+    Jobs["payments · outlayer<br/>indexer · collections"]
   end
 
   Web --> Shared
@@ -150,8 +151,9 @@ Web routes (App Router, client-rendered):
 | `/dashboard/reporting` | Cash flow, profit & loss, balance sheet, PDF/Excel export. |
 | `/dashboard/agent` | Agent wallet, policy, actions and custody handoff. |
 | `/dashboard/audit` | Append-only audit log (ADMIN/OWNER). |
-| `/dashboard/settings` | AR collection contract config and workspace settings. |
+| `/dashboard/settings` | Workspace profile, AR rail mode, contract config/deploy and passkeys. |
 | `/dashboard/chat` | Full-page assistant (also available as a drawer). |
+| `/share/[token]` | Public bill/invoice share; AR invoices can be paid. |
 | `/privacy`, `/terms` | Legal pages. |
 
 ---
@@ -249,6 +251,23 @@ NEP-413 payload: Borsh `tag(2^31+413) || message || nonce[32] || recipient || Op
 `contracts/keiz-collect` receives NEP-141 customer payments and records them by
 receivable reference. 1Click can deliver cross-chain AR by sending
 `ft_transfer_call` with `customRecipientMsg = {"receivableRef":"AR-2001"}`.
+
+A workspace can deploy its own collect contract from Settings. `CollectionsModule`
+uses a dedicated, funded server account (`COLLECT_DEPLOYER_ACCOUNT`) to create
+`<prefix>.<deployer>`, deploy the pinned `keiz_collect.wasm`, register and
+allowlist the token, then call `set_owner` for the signed-in user. No key is added
+to the contract account, so only the workspace owner can call owner methods
+afterwards. The deployer signs only CreateAccount/DeployContract/FunctionCall on
+the new contract and the token's `storage_deposit`; it is not a generic relayer.
+`COLLECT_DEPLOY_ENABLED=false` is the kill switch, and only the wasm whose sha256
+matches `KEIZ_COLLECT_CODE_HASH` can be deployed.
+
+Contracts are optional. Settings → AR collection mode also offers `TREASURY`, which
+quotes 1Click directly to a workspace NEAR account. Those quotes are stored in
+`ar_collection_quotes`; the indexer polls their deposit addresses and records an
+`ONCHAIN` receipt from the destination transaction, capped at the outstanding
+amount. `OFF` disables the collection-quote endpoint entirely. `keiz-vault` remains
+optional and unused by the current AP rail.
 
 `contracts/keiz-vault` is the AP treasury. It checks policy at proposal and again
 at execution, requires M-of-N approval, and can pay either a vendor directly or
@@ -446,6 +465,15 @@ sequenceDiagram
 Only the SHA-256 hash of the token is stored. Public routes are `@Public()`, rate limited, and
 stop working immediately when the share is revoked, expires, or the document becomes `VOID`.
 The authenticated PDF route is org-scoped like every other invoice/receivable read.
+
+AR invoice shares also expose a public Pay flow. The share token resolves the org and the
+receivable; the client never sends ids. `GET /public/documents/:token/pay` reports whether
+the workspace is on `CONTRACT`, `TREASURY` or `OFF` and why payment is unavailable, plus
+the USDC/USDT origin assets. `POST .../pay` reuses an unexpired open quote or creates one
+through `ArCollectionService` with `source: SHARE`; `GET .../pay/:quoteId` verifies the quote
+belongs to the shared receivable and returns the receivable's paid state. Bills are never
+payable from a public link. The page polls every 4s and reloads the document once
+`paidAmount` reaches `total`.
 
 ---
 
@@ -660,6 +688,9 @@ erDiagram
   AGENT_ACTION ||--o| PAYMENT : creates
   ORGANIZATION ||--o{ CHAIN_EVENT : indexes
   ORGANIZATION ||--o{ INDEXER_CURSOR : advances
+  ORGANIZATION ||--o{ AR_COLLECTION_QUOTE : quotes
+  RECEIVABLE ||--o{ AR_COLLECTION_QUOTE : collects
+  ORGANIZATION ||--o{ COLLECTION_DEPLOYMENT : deploys
   ORGANIZATION ||--o{ AUDIT_EVENT : records
   USER ||--o{ AUTH_CHALLENGE : requests
 
@@ -669,6 +700,7 @@ erDiagram
     string slug
     string network
     object collection
+    object paymentSettings
   }
   MEMBERSHIP {
     string orgId FK
@@ -740,6 +772,24 @@ erDiagram
     string method
     string chainEventId
     string receivedAt
+  }
+  AR_COLLECTION_QUOTE {
+    string id PK
+    string orgId FK
+    string receivableId FK
+    string mode
+    string source
+    string status
+    string depositAddress
+    string destinationAddress
+  }
+  COLLECTION_DEPLOYMENT {
+    string id PK
+    string orgId FK
+    string status
+    string contractId
+    string ownerAccountId
+    object steps
   }
   ACCOUNT {
     string orgId FK
@@ -900,8 +950,8 @@ flowchart LR
 
 | Suite | Covers |
 |---|---|
-| `pnpm test` | 88 unit tests (73 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, creation tools, OutLayer status map |
-| `pnpm --filter @keiz/api smoke` | 58 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, agent hire + policy spend, passkey endpoint fencing |
+| `pnpm test` | 99 unit tests (84 API + 15 shared): money math, invoice totals, ledger posting rules, NEP-413 vectors, network guards, agent policy, SSE mapping, chat card builders, plan gate, creation tools, OutLayer status map, 1Click quote fields, payment settings, collection deploy |
+| `pnpm --filter @keiz/api smoke` | 59 checks: auth scoping + refresh reuse, invoices, 1Click mock settlement, AP/AR postings, receipts, trial balance, aging, rebuild, RBAC, members + org switching, duplicate quotes, audit, local chat plan/approval/cards, agent hire + policy spend, passkey endpoint fencing, public share pay fencing |
 | `pnpm --filter @keiz/api smoke:outlayer` | custody register, describe, delegated policy, withdraw, polling, invoice settlement |
 | `pnpm --filter @keiz/api smoke:mastra` | Mastra plan suspension, approve/resume, typed cards, request-scoped tools, memory, thread isolation |
 | `pnpm contracts:test` | collect message parsing and vault policy validation |

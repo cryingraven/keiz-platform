@@ -26,6 +26,9 @@ async function main() {
   process.env.MONGODB_DB_NAME = 'keiz_outlayer_smoke';
   process.env.JWT_SECRET = 'outlayer-smoke-secret-0123456789abcdef';
   process.env.APP_DOMAIN = 'localhost';
+  process.env.CHAIN_NETWORK = 'testnet';
+  process.env.NEXT_PUBLIC_CHAIN_NETWORK = 'testnet';
+  process.env.NEAR_NETWORK = 'testnet';
   process.env.PAYMENTS_MODE = 'mock';
   process.env.AGENT_WALLET_MASTER_KEY = 'c'.repeat(64);
   process.env.OUTLAYER_ENABLED = 'true';

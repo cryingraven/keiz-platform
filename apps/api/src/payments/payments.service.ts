@@ -301,6 +301,11 @@ export class PaymentsService {
     const payment = await this.payments.findOne({ _id: id, orgId });
     if (!payment) throw new NotFoundException('Payment not found');
     if (TERMINAL_PAYMENT_STATUSES.includes(payment.status)) return payment.toObject();
+    if (payment.provider === 'outlayer') {
+      throw new BadRequestException(
+        'Custody payments settle through the OutLayer poller and cannot be refreshed manually.',
+      );
+    }
     await this.applyStatus(payment, await this.provider.getStatus(payment.depositAddress!, payment.depositMemo));
     return payment.toObject();
   }

@@ -7,6 +7,7 @@ import { downloadApiFile } from '@/lib/download';
 import { useApi } from '@/lib/hooks';
 import { Logo } from '@/components/logo';
 import { PublicDocumentView } from '@/components/documents/public-document';
+import { PublicPaymentPanel } from '@/components/documents/public-payment';
 import { Button, Card, Spinner } from '@/components/ui';
 import type { PublicDocument } from '@/components/documents/types';
 
@@ -70,7 +71,13 @@ export default function SharedDocumentPage() {
         document={document.data}
         onDownload={() => void download()}
         downloading={downloading}
-      />
+      >
+        <PublicPaymentPanel
+          token={token}
+          document={document.data}
+          onPaid={() => void document.reload()}
+        />
+      </PublicDocumentView>
       {downloadError ? (
         <p className="fixed inset-x-4 bottom-4 mx-auto max-w-md rounded-control border border-rose/20 bg-rose-soft px-4 py-3 text-center text-[12px] text-rose shadow-lg">
           {downloadError}

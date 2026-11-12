@@ -262,17 +262,34 @@ export class DocumentsService {
     return { revoked: true };
   }
 
-  private async findShare(token: string) {
+  async shareContext(
+    token: string,
+    options: { requireActive?: boolean; requireShareable?: boolean } = {},
+  ) {
+    const share = await this.findShare(token, options);
+    const document = await this.resolveDocument(
+      share.orgId,
+      share.documentType,
+      share.documentId,
+    );
+    if (options.requireShareable !== false && !this.isShareable(document)) {
+      throw new NotFoundException('This link is no longer available');
+    }
+    return { share, document };
+  }
+
+  private async findShare(token: string, options: { requireActive?: boolean } = {}) {
     if (!token || token.length < 20) {
       throw new NotFoundException('This link is no longer available');
     }
-    const share = await this.shares
-      .findOne({
-        tokenHash: hashToken(token),
-        revokedAt: null,
-        expiresAt: { $gt: new Date() },
-      })
-      .lean();
+    const filter: Record<string, unknown> = {
+      tokenHash: hashToken(token),
+      revokedAt: null,
+    };
+    if (options.requireActive !== false) {
+      filter.expiresAt = { $gt: new Date() };
+    }
+    const share = await this.shares.findOne(filter).lean();
     if (!share) throw new NotFoundException('This link is no longer available');
     return share;
   }

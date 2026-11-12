@@ -45,6 +45,9 @@ async function main() {
   process.env.MONGODB_DB_NAME = 'keiz_mastra_smoke';
   process.env.JWT_SECRET = 'mastra-smoke-secret-0123456789abcdef';
   process.env.APP_DOMAIN = 'localhost';
+  process.env.CHAIN_NETWORK = 'testnet';
+  process.env.NEXT_PUBLIC_CHAIN_NETWORK = 'testnet';
+  process.env.NEAR_NETWORK = 'testnet';
   process.env.PAYMENTS_MODE = 'mock';
   process.env.AGENT_WALLET_MASTER_KEY = 'b'.repeat(64);
   process.env.CHAT_PROVIDER = 'mastra';

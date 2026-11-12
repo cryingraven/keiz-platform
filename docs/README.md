@@ -8,7 +8,7 @@ Start here:
 | [API reference](./api.md) | Every route with its role, request schema, and key status/error behavior |
 | [Chat cards & approvals](./chat-cards.md) | Tool output cards, plan-first flow, confirmation gates and detail links |
 | [Data model](./data-model.md) | Collections, fields, indexes and invariants (including Mastra storage) |
-| [Integration & contracts](./integrations.md) | On-chain AR collection, vault/policy contract, OutLayer custody policy, payout verification, queues |
+| [Integration & contracts](./integrations.md) | On-chain AR collection (contract or treasury), 1Click quotes, share payments, vault/policy contract, OutLayer custody policy, payout verification, queues |
 | [Contract README](../contracts/README.md) | Contract ABIs, message formats, event schemas, deployment |
 | [Security model](../README.md#security-model) | RBAC, deposit verification, quote idempotency, agent controls, sessions, hardening |
 | [Agent custody](../README.md#agent-custody-outlayer) | OutLayer wallets, policy handoff, funding, testnet/mainnet limits |

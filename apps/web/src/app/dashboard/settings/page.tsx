@@ -17,6 +17,14 @@ import { api } from '@/lib/api';
 import { formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shell';
 import { useConfirm, useToast } from '@/components/feedback';
+import {
+  DeployCollectionCard,
+  type CollectionConfig,
+} from '@/components/collection-deploy';
+import {
+  PaymentSettingsCard,
+  type PaymentSettings,
+} from '@/components/payment-settings';
 import { Badge, Button, Card, Input, Label, Select, Spinner } from '@/components/ui';
 
 interface WorkspaceProfile {
@@ -29,19 +37,14 @@ interface WorkspaceProfile {
   updatedAt: string | null;
 }
 
-interface Collection {
-  contractId: string;
-  network: 'mainnet' | 'testnet';
-  treasury: string;
-  assetId: string;
-  tokenContract: string;
-  decimals: number;
-  status: 'PENDING' | 'ACTIVE' | 'PAUSED' | 'DISABLED';
-  validatedAt?: string;
-}
+type Collection = CollectionConfig;
 
 export default function SettingsPage() {
-  const collection = useApi<Collection | null>('/orgs/current/collection');
+  const payments = useApi<PaymentSettings>('/orgs/current/payments');
+  const showContractSettings = payments.data?.arMode === 'CONTRACT';
+  const collection = useApi<Collection | null>(
+    showContractSettings ? '/orgs/current/collection' : null,
+  );
   const profile = useApi<WorkspaceProfile>('/orgs/current');
   const {
     session,
@@ -232,7 +235,7 @@ export default function SettingsPage() {
     <div>
       <PageHeader
         title="Settings"
-        description="Your workspace profile, AR collection contract and security."
+        description="Your workspace profile, payment settings and security."
       />
 
       <Card className="max-w-2xl p-5">
@@ -375,124 +378,147 @@ export default function SettingsPage() {
         ) : null}
       </Card>
 
-      <Card className="mt-5 max-w-2xl p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="flex items-center gap-1.5 text-sm font-semibold">
-              <Cable className="h-4 w-4 text-brand" /> AR collection contract
-            </p>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">
-              Each workspace uses its own <span className="font-num">keiz-collect</span> contract.
-              The API validates the contract&apos;s org id, treasury, token allowlist and code hash
-              before saving it.
-            </p>
-            <p className="mt-1 font-num text-[11px] text-muted">
-              Workspace id: {session?.org?.id ?? '—'}
-            </p>
-          </div>
-          {collection.data ? <Badge>{collection.data.status}</Badge> : null}
-        </div>
+      <PaymentSettingsCard
+        settings={payments.data}
+        loading={payments.loading}
+        canEdit={canEdit}
+        accountId={session?.user?.accountId ?? ''}
+        onChanged={() => {
+          void payments.reload();
+          void collection.reload();
+        }}
+      />
 
-        {collection.loading ? (
-          <div className="mt-4 flex items-center gap-2 text-sm text-muted">
-            <Spinner /> Loading configuration
-          </div>
-        ) : (
-          <div className="mt-5 space-y-3">
-            <div>
-              <Label htmlFor="c-contract">Contract account</Label>
-              <Input
-                id="c-contract"
-                placeholder="keiz-collect.testnet"
-                value={value.contractId}
-                disabled={!canEdit}
-                onChange={(event) => update('contractId', event.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="c-treasury">Treasury account</Label>
-              <Input
-                id="c-treasury"
-                placeholder="treasury.testnet"
-                value={value.treasury}
-                disabled={!canEdit}
-                onChange={(event) => update('treasury', event.target.value)}
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+      {showContractSettings ? (
+        <>
+          <DeployCollectionCard
+            collection={collection.data}
+            slug={profile.data?.slug ?? 'workspace'}
+            accountId={session?.user?.accountId ?? ''}
+            canEdit={canEdit}
+            onChanged={() => void collection.reload()}
+          />
+
+          <Card className="mt-5 max-w-2xl p-5">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <Label htmlFor="c-token">NEP-141 token contract</Label>
-                <Input
-                  id="c-token"
-                  placeholder="usdc.testnet"
-                  value={value.tokenContract}
-                  disabled={!canEdit}
-                  onChange={(event) => update('tokenContract', event.target.value)}
-                />
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Cable className="h-4 w-4 text-brand" /> AR collection contract
+                </p>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted">
+                  Each workspace uses its own <span className="font-num">keiz-collect</span> contract.
+                  The API validates the contract&apos;s org id, treasury, token allowlist and code hash
+                  before saving it.
+                </p>
+                <p className="mt-1 font-num text-[11px] text-muted">
+                  Workspace id: {session?.org?.id ?? '—'}
+                </p>
               </div>
-              <div>
-                <Label htmlFor="c-decimals">Token decimals</Label>
-                <Input
-                  id="c-decimals"
-                  type="number"
-                  min={0}
-                  max={18}
-                  value={value.decimals}
-                  disabled={!canEdit}
-                  onChange={(event) => update('decimals', Number(event.target.value))}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="c-asset">1Click asset id</Label>
-              <Input
-                id="c-asset"
-                placeholder="nep141:usdc.testnet"
-                value={value.assetId}
-                disabled={!canEdit}
-                onChange={(event) => update('assetId', event.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="c-status">Status</Label>
-              <Select
-                id="c-status"
-                value={value.status}
-                disabled={!canEdit}
-                onChange={(event) => update('status', event.target.value as Collection['status'])}
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="PAUSED">Paused</option>
-                <option value="PENDING">Pending</option>
-                <option value="DISABLED">Disabled</option>
-              </Select>
+              {collection.data ? <Badge>{collection.data.status}</Badge> : null}
             </div>
 
-            {error ? (
-              <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
-                {error}
-              </p>
-            ) : null}
-            {saved ? (
-              <p className="rounded-xl border border-mint/20 bg-mint-soft px-3 py-2 text-xs text-mint">
-                Collection contract validated and saved.
-              </p>
-            ) : null}
-
-            {canEdit ? (
-              <div className="flex justify-end">
-                <Button loading={busy} onClick={() => void save()}>
-                  <Settings className="h-3.5 w-3.5" /> Validate &amp; save
-                </Button>
+            {collection.loading ? (
+              <div className="mt-4 flex items-center gap-2 text-sm text-muted">
+                <Spinner /> Loading configuration
               </div>
             ) : (
-              <p className="text-[12px] text-muted">
-                Only an ADMIN or OWNER can change the collection contract.
-              </p>
+              <div className="mt-5 space-y-3">
+                <div>
+                  <Label htmlFor="c-contract">Contract account</Label>
+                  <Input
+                    id="c-contract"
+                    placeholder="keiz-collect.testnet"
+                    value={value.contractId}
+                    disabled={!canEdit}
+                    onChange={(event) => update('contractId', event.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="c-treasury">Treasury account</Label>
+                  <Input
+                    id="c-treasury"
+                    placeholder="treasury.testnet"
+                    value={value.treasury}
+                    disabled={!canEdit}
+                    onChange={(event) => update('treasury', event.target.value)}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="c-token">NEP-141 token contract</Label>
+                    <Input
+                      id="c-token"
+                      placeholder="usdc.testnet"
+                      value={value.tokenContract}
+                      disabled={!canEdit}
+                      onChange={(event) => update('tokenContract', event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="c-decimals">Token decimals</Label>
+                    <Input
+                      id="c-decimals"
+                      type="number"
+                      min={0}
+                      max={18}
+                      value={value.decimals}
+                      disabled={!canEdit}
+                      onChange={(event) => update('decimals', Number(event.target.value))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="c-asset">1Click asset id</Label>
+                  <Input
+                    id="c-asset"
+                    placeholder="nep141:usdc.testnet"
+                    value={value.assetId}
+                    disabled={!canEdit}
+                    onChange={(event) => update('assetId', event.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="c-status">Status</Label>
+                  <Select
+                    id="c-status"
+                    value={value.status}
+                    disabled={!canEdit}
+                    onChange={(event) => update('status', event.target.value as Collection['status'])}
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="PAUSED">Paused</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="DISABLED">Disabled</option>
+                  </Select>
+                </div>
+
+                {error ? (
+                  <p className="rounded-xl border border-rose/20 bg-rose-soft px-3 py-2 text-xs text-rose">
+                    {error}
+                  </p>
+                ) : null}
+                {saved ? (
+                  <p className="rounded-xl border border-mint/20 bg-mint-soft px-3 py-2 text-xs text-mint">
+                    Collection contract validated and saved.
+                  </p>
+                ) : null}
+
+                {canEdit ? (
+                  <div className="flex justify-end">
+                    <Button loading={busy} onClick={() => void save()}>
+                      <Settings className="h-3.5 w-3.5" /> Validate &amp; save
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-muted">
+                    Only an ADMIN or OWNER can change the collection contract.
+                  </p>
+                )}
+              </div>
             )}
-          </div>
-        )}
-      </Card>
+          </Card>
+        </>
+      ) : null}
 
       <Card className="mt-5 max-w-2xl p-5">
         <div className="flex items-start justify-between gap-3">

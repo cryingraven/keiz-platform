@@ -21,6 +21,14 @@ export interface QuoteParams {
   slippageBps?: number;
   /** 1Click passes this to ft_transfer_call on a NEAR destination. */
   customRecipientMsg?: string;
+  /** Where the deposit comes from. Defaults to ORIGIN_CHAIN. */
+  depositType?: 'ORIGIN_CHAIN' | 'INTENTS' | 'CONFIDENTIAL_INTENTS';
+  /** Where refunds go. Defaults to ORIGIN_CHAIN. */
+  refundType?: 'ORIGIN_CHAIN' | 'INTENTS' | 'CONFIDENTIAL_INTENTS';
+  /** Where the output goes. Defaults to DESTINATION_CHAIN. */
+  recipientType?: 'DESTINATION_CHAIN' | 'INTENTS' | 'CONFIDENTIAL_INTENTS';
+  /** Quote expiry. Defaults to 10 minutes from now. */
+  deadline?: string;
 }
 
 export interface QuoteResult {

@@ -74,6 +74,7 @@ Open <http://localhost:3000>, sign in, and press **Load demo data** if needed. T
 2. **Receivables (AR):** open `AR-2001`, record a partial receipt, and check the outstanding balance and cash posting.
 3. **Reporting:** choose monthly, quarterly or annual. Review inflow/outflow, profit & loss and the balance sheet, then export the report as PDF and Excel.
 4. **Assistant:** ask “What do we owe this week?” and approve the plan. Read-only tools run; a payment proposal needs a separate confirmation and still cannot move funds.
+5. **Share & pay (AR):** open a customer invoice, create a share link, then open it in an incognito window. The Pay panel follows the workspace AR mode: contract, treasury, or disabled.
 
 Mock payments are the default (`PAYMENTS_MODE=mock`), so this path needs no mainnet funds.
 
@@ -91,7 +92,9 @@ Mock payments are the default (`PAYMENTS_MODE=mock`), so this path needs no main
   - **Local** (fallback): generated ed25519 keypair, AES-256-GCM at rest, local USD caps. Useful for the offline/mock demo.
 - **Agent economy** — a small sub-agent job board. The assistant can list specialist providers (Tax Reviewer, Collections Writer, Reconciliation Agent), hire one for a bounded task, and return a structured result. Hires use the same per-transaction, daily-cap and approval-threshold policy as agent payments, are claimed atomically, and are visible in `/dashboard/agent`. Settlement is currently **mock**; no on-chain agent-to-agent transfer is claimed.
 - **AI assistant** — a Mastra agent over bills, receivables, customers, vendors, payments, agent actions, the journal, spend and the books. It must first emit an **action plan**; read-only tools then run automatically, while write/drafting tools request a **confirmation** in the UI. It can create vendors, customers, AP bills and AR customer invoices; creation previews use entity-specific cards (line items, computed totals, payout details) instead of raw JSON. Bills start DRAFT and can be submitted; customer invoices start DRAFT and can be issued (which posts AR). It can list and hire specialist sub-agents for bounded jobs, and create payment *proposals*, but it has no path to approve bills or execute payments. Streams tokens, plans, cards and tool calls over SSE; memory is stored by Mastra in Mongo. Uses NEAR AI Cloud when `NEARAI_API_KEY` is set, otherwise a deterministic local fallback with the same plan/approval protocol (creation requires the NEAR AI agent).
-- **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. The vault is operated separately from the app today. See `contracts/README.md`.
+- **On-chain AR/AP contracts** — `contracts/keiz-collect` records NEP-141 customer payments by receivable reference, and `contracts/keiz-vault` executes vendor payouts after M-of-N approval and on-chain policy checks. 1Click can deliver cross-chain AR with `customRecipientMsg`, and the vault can fund a committed 1Click deposit address for cross-chain AP. The vault is optional and operated separately from the app today. See `contracts/README.md`.
+- **Contract-optional AR** — Settings → AR collection mode selects a workspace `keiz-collect` contract, a plain NEAR treasury account, or off. Treasury mode quotes 1Click directly to the treasury and the indexer records the receipt from the delivery transaction. `keiz-collect` can be deployed and initialized from Settings with a dedicated deployer account.
+- **Public share payments** — shared AR invoices expose a token-scoped Pay flow: USDC/USDT from any supported chain, a refund address, status polling and an automatic Paid state. Bills are never payable from a share link.
 - **Workspace operations** — team members and roles, org switching, vendor/customer edit + archive, draft-bill edit, and per-workspace AR collection settings that are validated against the deployed contract before activation.
 - **History indexing** — every payment transition is appended to `payment_events`; on-chain deposits are normalised into `chain_events` with a unique `(txHash, eventIndex)` index so re-polling cannot duplicate rows.
 - **PaymentIntent + PaymentAttempt** — one live payment obligation per invoice, reserved before execution to prevent cross-rail double payment. `oneclick` and `outlayer` execute today; `vault` is a reserved rail until the AP vault is wired to invoice approval.
@@ -277,7 +280,7 @@ See `.env.example`. The important ones:
 | `MONGODB_URI` | Mongo connection |
 | `JWT_SECRET` | Access + refresh token signing |
 | `APP_DOMAIN` | NEP-413 `recipient`; must match between sign and verify |
-| `PAYMENTS_MODE` | `mock` (default) or `intents` (mainnet) |
+| `PAYMENTS_MODE` | `mock` (default) or `intents` (mainnet). OutLayer custody is separate (`OUTLAYER_*`), not a payments mode. |
 | `NEAR_INTENTS_JWT` | Partner key; without it 1Click charges 25 bps instead of 20 bps |
 | `NEARAI_API_KEY` | Enables the Mastra + NEAR AI path; unset = local fallback |
 | `CHAT_PROVIDER` | `mastra` or `local`; `mastra` without a key still falls back |
@@ -290,6 +293,10 @@ See `.env.example`. The important ones:
 | `WEBAUTHN_RP_NAME` | Name shown in the passkey picker |
 | `NEAR_TESTNET_RPC_URL` | Testnet RPC used by NEP-413 verification and recovery |
 | `KEIZ_COLLECT_CODE_HASH` | Canonical `keiz-collect` wasm hash; required in production to activate a workspace contract |
+| `COLLECT_DEPLOY_ENABLED` | Enables one-click `keiz-collect` deployment from Settings |
+| `COLLECT_DEPLOYER_ACCOUNT` / `COLLECT_DEPLOYER_PRIVATE_KEY` | Funded mainnet account and full-access key that creates `<prefix>.<deployer>`; the key never leaves the API |
+| `COLLECT_WASM_PATH` | Path to `keiz_collect.wasm` (defaults to `contracts/target/...`) |
+| `COLLECT_DEPLOY_FUNDING_NEAR` | NEAR transferred into each new contract account (default `4`) |
 | `REDIS_URL` / `QUEUES_ENABLED` | BullMQ connection and whether the API produces background jobs |
 | `QUEUE_PREFIX` | Redis key prefix shared by API and worker |
 | `AGENT_WALLET_MASTER_KEY` | 32-byte hex/base64 key for AES-256-GCM |
@@ -303,8 +310,8 @@ Generate a master key with `openssl rand -hex 32`.
 
 ```bash
 pnpm typecheck
-pnpm test                              # unit tests across API and shared
-pnpm --filter @keiz/api smoke          # end-to-end checks, in-memory Mongo
+pnpm test                              # 99 unit tests (84 API + 15 shared)
+pnpm --filter @keiz/api smoke          # 59 end-to-end checks, in-memory Mongo
 pnpm --filter @keiz/api smoke:outlayer # custody flow against a mock OutLayer API
 pnpm --filter @keiz/api smoke:mastra   # Mastra stream/tools/memory against a mock model
 pnpm contracts:test                    # Rust contract unit tests
@@ -345,6 +352,6 @@ npx skills add near/agent-skills --skill near-intents --skill near-ai-cloud --sk
 - Cross-chain AP payouts are marked `NEEDS_REVIEW` when 1Click reports success without a destination transaction hash. Full destination amount/token/recipient verification is still missing.
 - Mongo is a single node, so a state change and its journal posting are not atomic. Posting is idempotent and best-effort; `POST /api/accounting/rebuild` repairs gaps.
 - Native NEAR payments require wrapping to wNEAR in the same transaction. The UI builds `near_deposit` + `ft_transfer` for wNEAR origin quotes; other origins must already be NEP-141 tokens.
-- On-chain AR collection is implemented in `contracts/keiz-collect` and indexed into receivables. It still needs a per-workspace deployment and token registration before production.
+- On-chain AR has two modes: `CONTRACT` needs a per-workspace `keiz-collect` deployment (one-click from Settings when `COLLECT_DEPLOY_ENABLED=true`); `TREASURY` needs only a NEAR account. Treasury receipts and public share payments are recorded by the indexer worker polling their 1Click deposit addresses, so `pnpm worker` must be running.
 - The AP vault is implemented in `contracts/keiz-vault`; invoice approval is not yet wired to on-chain proposals, so it is currently deployed and operated separately.
 - 1Click is mainnet-only, so cross-chain AR/AP cannot be end-to-end tested on testnet.

@@ -2,6 +2,8 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
+  COLLECTIONS_QUEUE,
+  COLLECT_DEPLOY_JOB,
   INDEXER_QUEUE,
   INDEXER_SYNC_JOB,
   OUTLAYER_POLL_JOB,
@@ -24,10 +26,25 @@ export class QueueProducer {
     @Optional() @InjectQueue(PAYMENTS_QUEUE) private readonly payments?: Queue,
     @Optional() @InjectQueue(OUTLAYER_QUEUE) private readonly outlayer?: Queue,
     @Optional() @InjectQueue(INDEXER_QUEUE) private readonly indexer?: Queue,
+    @Optional() @InjectQueue(COLLECTIONS_QUEUE) private readonly collections?: Queue,
   ) {}
 
   get enabled(): boolean {
-    return Boolean(this.payments && this.outlayer && this.indexer);
+    return Boolean(this.payments && this.outlayer && this.indexer && this.collections);
+  }
+
+  async enqueueCollectionDeploy(deploymentId: string): Promise<void> {
+    if (!this.collections) return;
+    await this.collections.add(
+      COLLECT_DEPLOY_JOB,
+      { deploymentId },
+      {
+        jobId: `collect-deploy-${deploymentId}-${Date.now()}`,
+        attempts: 1,
+        removeOnComplete: 1_000,
+        removeOnFail: 1_000,
+      },
+    );
   }
 
   async enqueuePaymentPoll(paymentId: string, delayMs = 4_000): Promise<void> {

@@ -65,6 +65,12 @@ with reuse detection).
 | PATCH | `/current` | Admin | `{ name?, slug?, baseCurrency? }` | Slug is unique and lowercase-kebab. Base currency is the default for Accounting/Reporting. |
 | GET | `/current/collection` | Member | — | Per-workspace `keiz-collect` config or `null`. |
 | PATCH | `/current/collection` | Admin | `{ contractId, treasury, assetId, tokenContract, decimals, status }` | Validates org id, treasury, token allowlist and code hash against RPC before saving. |
+| GET | `/current/payments` | Member | — | Effective AR mode (`CONTRACT` / `TREASURY` / `OFF`), treasury, asset and collection status. |
+| PATCH | `/current/payments` | Admin | `{ arMode, treasuryAccountId?, arAssetId? }` | Treasury mode requires a treasury account; `arAssetId` must be a `nep141:` asset. |
+| GET | `/current/collection/deploy` | Member | — | One-click deploy capabilities: enabled/reason, deployer, supported assets, latest deployment. |
+| POST | `/current/collection/deploy` | Admin | `{ assetId, treasury?, prefix? }` | Mainnet only. Queues a `keiz-collect` deploy; one live deployment per workspace. |
+| GET | `/current/collection/deploy/:id` | Member | — | Deployment status, steps and transaction hashes. |
+| POST | `/current/collection/deploy/:id/retry` | Admin | — | Re-queues a `FAILED` deployment; on-chain steps are idempotent. |
 
 ## Vendors — `/api/vendors`
 
@@ -100,7 +106,7 @@ with reuse detection).
 | GET | `/:id/events` | Member | — | Append-only `payment_events`. |
 | POST | `/` | Member | `{ invoiceId, originAsset?, destinationAsset?, slippageBps?, payer?, idempotencyKey? }` | Dry quote then committed `EXACT_OUTPUT` quote; reserves a PaymentIntent. |
 | POST | `/:id/deposit` | Member | `{ txHash }` | Verifies the deposit on NEAR RPC in `intents` mode, then submits to 1Click. |
-| POST | `/:id/refresh` | Member | — | Polls the provider once. |
+| POST | `/:id/refresh` | Member | — | Polls the provider once. OutLayer custody payments return 400; their poller refreshes them automatically. |
 | POST | `/:id/cancel` | Admin | — | `AWAITING_DEPOSIT` only; marks `EXPIRED`. |
 | POST | `/:id/simulate` | Admin | `?status=SUCCEEDED\|FAILED\|REFUNDED` | Mock + non-production only. |
 
@@ -123,7 +129,7 @@ with reuse detection).
 | GET | `/summary` | Member | `?currency=&from=&to=&dateField=` | Outstanding/overdue totals; honors the same date filter. |
 | GET | `/:id` | Member | — | One receivable with receipts. |
 | POST | `/` | Member | `{ customerId, number, issueDate?, dueDate, currency?, taxBps?, notes?, lineItems[] }` | Creates a DRAFT. |
-| POST | `/:id/collection-quote` | Member | `{ originAsset, refundTo }` | 1Click quote to the workspace collect contract with `customRecipientMsg`. |
+| POST | `/:id/collection-quote` | Member | `{ originAsset, refundTo }` | 1Click quote. `CONTRACT` mode uses the collect contract + `customRecipientMsg`; `TREASURY` delivers to the workspace treasury. |
 | POST | `/:id/issue` | Member | — | DRAFT → ISSUED; posts AR/revenue/tax. |
 | POST | `/:id/receipts` | Approver | `{ amount, receivedAt?, method?, reference?, txHash?, chainEventId?, receivableRef?, tokenContract?, sender? }` | Optimistic lock on `paidAmount`; posts cash/AR. |
 | POST | `/:id/void` | Admin | — | Posts a reversal. |
@@ -138,10 +144,14 @@ with reuse detection).
 | DELETE | `/documents/:type/:id/share` | Approver | — | Revokes the link immediately. |
 | GET | `/public/documents/:token` | Public | — | Sanitized document JSON; rate limited. |
 | GET | `/public/documents/:token/pdf` | Public | — | Public PDF; rate limited. |
+| GET | `/public/documents/:token/pay` | Public | — | Payment options for an invoice share: mode, amount due, USDC/USDT assets, open quote. |
+| POST | `/public/documents/:token/pay` | Public | `{ originAsset, refundTo }` | Creates (or reuses) a 1Click quote scoped to the share token. Invoices only, 5/min. |
+| GET | `/public/documents/:token/pay/:quoteId` | Public | — | Quote status + receivable paid state; quote must belong to the share. |
 
 `bill` maps to the AP `invoices` collection, `invoice` to AR `receivables`. Public
 responses exclude approvals, ledger entries, payment details, payout/bank details and
-any internal ids.
+any internal ids. Public payment routes accept no org or receivable ids; the share token
+resolves both. Bills are not payable from a share link.
 
 ## Accounting — `/api/accounting`
 
@@ -213,6 +223,9 @@ execute payments or move funds.
 | GET | `/events` | Member | — | `chain_events` for the org. |
 | POST | `/backfill/:paymentId` | Admin | — | Re-read a payment's source transaction. |
 | POST | `/collect` | Admin | — | Immediate collect sync; iterates every org with an ACTIVE collection. |
+
+The worker's `syncAll` job also polls open `ar_collection_quotes` and records treasury
+deliveries as `ONCHAIN` receipts. Run `pnpm worker` for both.
 
 ## Audit and demo
 

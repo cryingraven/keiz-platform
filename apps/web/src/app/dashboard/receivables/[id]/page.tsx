@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Check,
   ChevronRight,
@@ -22,6 +22,7 @@ import { api } from '@/lib/api';
 import { downloadApiFile } from '@/lib/download';
 import { formatDate, formatMoney, humanize } from '@/lib/format';
 import { useConfirm, useToast } from '@/components/feedback';
+import type { PaymentSettings } from '@/components/payment-settings';
 import { ShareDocumentDialog } from '@/components/documents/share-dialog';
 import {
   Button,
@@ -102,12 +103,67 @@ interface TokenInfo {
   decimals: number;
 }
 
+const COLLECT_SYMBOLS = ['USDC', 'USDT'] as const;
+
+const CHAIN_LABELS: Record<string, string> = {
+  near: 'NEAR',
+  eth: 'Ethereum',
+  base: 'Base',
+  arb: 'Arbitrum',
+  sol: 'Solana',
+  pol: 'Polygon',
+  bsc: 'BNB Chain',
+  op: 'Optimism',
+  ton: 'TON',
+  tron: 'Tron',
+  btc: 'Bitcoin',
+  stellar: 'Stellar',
+  sui: 'Sui',
+  avax: 'Avalanche',
+  gnosis: 'Gnosis',
+  bera: 'Berachain',
+  scroll: 'Scroll',
+  xlayer: 'X Layer',
+  plasma: 'Plasma',
+  monad: 'Monad',
+};
+
+const EVM_CHAINS = new Set([
+  'eth',
+  'base',
+  'arb',
+  'pol',
+  'bsc',
+  'op',
+  'avax',
+  'gnosis',
+  'bera',
+  'scroll',
+  'xlayer',
+  'plasma',
+  'monad',
+]);
+
+function chainLabel(chain: string): string {
+  return CHAIN_LABELS[chain] ?? chain.toUpperCase();
+}
+
+function refundPlaceholder(chain: string): string {
+  if (!chain) return 'Select a blockchain first';
+  if (chain === 'near') return 'name.near';
+  if (chain === 'sol') return 'Solana address';
+  if (chain === 'btc') return 'bc1…';
+  if (EVM_CHAINS.has(chain)) return '0x…';
+  return `Address on ${chainLabel(chain)}`;
+}
+
 export default function ReceivableDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params.id;
   const receivable = useApi<Receivable>(id ? `/receivables/${id}` : null);
   const customers = useApi<Customer[]>('/customers');
+  const paymentSettings = useApi<PaymentSettings>('/orgs/current/payments');
   const ledger = useApi<{ items: JournalEntry[] }>(
     id ? `/accounting/journal-entries?sourceType=receivable&sourceId=${id}&pageSize=100` : null,
   );
@@ -123,6 +179,13 @@ export default function ReceivableDetailPage() {
   const role = session?.role ?? 'MEMBER';
   const canReceipt = ['APPROVER', 'ADMIN', 'OWNER'].includes(role);
   const canAdmin = ['ADMIN', 'OWNER'].includes(role);
+  const arMode = paymentSettings.data?.arMode ?? 'OFF';
+  const collectionActive =
+    arMode === 'CONTRACT' && paymentSettings.data?.collection?.status === 'ACTIVE';
+  const canCollect =
+    arMode === 'TREASURY'
+      ? Boolean(paymentSettings.data?.treasuryAccountId)
+      : collectionActive;
 
   const customer = customers.data?.find((item) => item._id === receivable.data?.customerId);
 
@@ -448,13 +511,44 @@ export default function ReceivableDetailPage() {
                   </Button>
                 ) : null}
                 {['ISSUED', 'PARTIALLY_PAID'].includes(data.status) ? (
-                  <Button
-                    className="w-full"
-                    variant="secondary"
-                    onClick={() => setCollectOpen(true)}
-                  >
-                    <HandCoins className="h-3.5 w-3.5" /> Collect on-chain
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full"
+                      variant="secondary"
+                      disabled={!canCollect}
+                      onClick={() => setCollectOpen(true)}
+                    >
+                      <HandCoins className="h-3.5 w-3.5" /> Collect on-chain
+                    </Button>
+                    {!canCollect && !paymentSettings.loading ? (
+                      <p className="text-[12px] text-muted">
+                        {arMode === 'OFF'
+                          ? 'On-chain collection is turned off for this workspace.'
+                          : arMode === 'TREASURY'
+                            ? 'No AR treasury account is set.'
+                            : paymentSettings.data?.collection
+                              ? `The collection contract is ${paymentSettings.data.collection.status.toLowerCase()}.`
+                              : 'On-chain collection via contract is not configured.'}{' '}
+                        {canAdmin ? (
+                          <Link
+                            href="/dashboard/settings"
+                            className="font-medium text-brand hover:underline"
+                          >
+                            {arMode === 'TREASURY'
+                              ? 'Set a treasury account in Settings → Payments'
+                              : arMode === 'OFF'
+                                ? 'Choose a mode in Settings → Payments'
+                                : 'Manage the collection contract in Settings'}
+                          </Link>
+                        ) : (
+                          'Ask an ADMIN or OWNER to configure it in Settings.'
+                        )}
+                      </p>
+                    ) : null}
+                    {paymentSettings.loading ? (
+                      <p className="text-[12px] text-muted">Checking payment settings…</p>
+                    ) : null}
+                  </>
                 ) : null}
                 {canVoid ? (
                   <Button
@@ -531,6 +625,8 @@ export default function ReceivableDetailPage() {
           open
           receivableId={data._id}
           number={data.number}
+          mode={arMode === 'TREASURY' ? 'TREASURY' : 'CONTRACT'}
+          treasury={paymentSettings.data?.treasuryAccountId}
           onClose={() => setCollectOpen(false)}
           onQuote={() => {
             void receivable.reload();
@@ -685,23 +781,73 @@ function CollectionModal({
   open,
   receivableId,
   number,
+  mode,
+  treasury,
   onClose,
 }: {
   open: boolean;
   receivableId: string;
   number: string;
+  mode: 'CONTRACT' | 'TREASURY';
+  treasury?: string;
   onClose: () => void;
   onQuote?: () => void;
 }) {
   const tokens = useApi<TokenInfo[]>(open ? '/payments/tokens' : null);
-  const [originAsset, setOriginAsset] = useState('');
+  const [currency, setCurrency] = useState('');
+  const [chain, setChain] = useState('');
   const [refundTo, setRefundTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<CollectionQuote | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const stableTokens = useMemo(
+    () =>
+      (tokens.data ?? []).filter((token) =>
+        (COLLECT_SYMBOLS as readonly string[]).includes(token.symbol.toUpperCase()),
+      ),
+    [tokens.data],
+  );
+
+  const currencies = useMemo(() => {
+    const present = new Set(stableTokens.map((token) => token.symbol.toUpperCase()));
+    return COLLECT_SYMBOLS.filter((symbol) => present.has(symbol));
+  }, [stableTokens]);
+
+  const chains = useMemo(() => {
+    const seen = new Set<string>();
+    return stableTokens
+      .filter((token) => token.symbol.toUpperCase() === currency)
+      .filter((token) => {
+        if (seen.has(token.blockchain)) return false;
+        seen.add(token.blockchain);
+        return true;
+      })
+      .map((token) => token.blockchain)
+      .sort((a, b) => chainLabel(a).localeCompare(chainLabel(b)));
+  }, [stableTokens, currency]);
+
+  const originToken = stableTokens.find(
+    (token) => token.symbol.toUpperCase() === currency && token.blockchain === chain,
+  );
+
+  function changeCurrency(next: string) {
+    setCurrency(next);
+    setChain('');
+    setRefundTo('');
+  }
+
+  function changeChain(next: string) {
+    setChain(next);
+    setRefundTo('');
+  }
+
   async function createQuote() {
+    if (!originToken) {
+      setError('Select a currency and blockchain first');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -709,7 +855,7 @@ function CollectionModal({
         `/receivables/${receivableId}/collection-quote`,
         {
           method: 'POST',
-          body: JSON.stringify({ originAsset, refundTo }),
+          body: JSON.stringify({ originAsset: originToken.assetId, refundTo }),
         },
       );
       if (!result.depositAddress) {
@@ -738,31 +884,58 @@ function CollectionModal({
       description="A customer pays from another chain; 1Click delivers the allowlisted token to the workspace collect contract."
     >
       <div className="space-y-3">
-        <div>
-          <Label htmlFor="c-origin">Customer pays with</Label>
-          <Select
-            id="c-origin"
-            value={originAsset}
-            onChange={(event) => setOriginAsset(event.target.value)}
-          >
-            <option value="">Select an origin token…</option>
-            {(tokens.data ?? []).map((token) => (
-              <option key={token.assetId} value={token.assetId}>
-                {token.symbol} · {token.blockchain}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="c-currency">Customer pays with</Label>
+            <Select
+              id="c-currency"
+              value={currency}
+              onChange={(event) => changeCurrency(event.target.value)}
+            >
+              <option value="">Select currency…</option>
+              {currencies.map((symbol) => (
+                <option key={symbol} value={symbol}>
+                  {symbol}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="c-chain">Blockchain</Label>
+            <Select
+              id="c-chain"
+              value={chain}
+              onChange={(event) => changeChain(event.target.value)}
+              disabled={!currency || chains.length === 0}
+            >
+              <option value="">
+                {currency ? 'Select a blockchain…' : 'Select a currency first'}
               </option>
-            ))}
-          </Select>
-          {tokens.loading ? (
-            <p className="mt-1 text-[11px] text-muted">Loading 1Click tokens…</p>
-          ) : null}
+              {chains.map((value) => (
+                <option key={value} value={value}>
+                  {chainLabel(value)}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
+        <p className="text-[11px] text-muted">
+          On-chain collection supports USDC and USDT only.
+          {tokens.loading ? ' Loading 1Click tokens…' : ''}
+        </p>
+        <p className="text-[11px] text-muted">
+          {mode === 'TREASURY'
+            ? `Funds are delivered to ${treasury ?? 'the workspace treasury'}. The receipt is recorded automatically when 1Click reports delivery.`
+            : 'The keiz-collect contract records the receivable reference on-chain.'}
+        </p>
         <div>
           <Label htmlFor="c-refund">Refund address on the origin chain</Label>
           <Input
             id="c-refund"
-            placeholder="0x… or Solana address"
+            placeholder={refundPlaceholder(chain)}
             value={refundTo}
             onChange={(event) => setRefundTo(event.target.value)}
+            disabled={!chain}
           />
         </div>
         {quote ? (
@@ -801,7 +974,7 @@ function CollectionModal({
           </Button>
           <Button
             loading={busy}
-            disabled={!originAsset || !refundTo}
+            disabled={!originToken || !refundTo}
             onClick={() => void createQuote()}
           >
             {quote ? 'Create another quote' : 'Create collection quote'}
