@@ -56,7 +56,7 @@ pull the images.
 5. Assign the public domain to the `web` service on container port `3000`.
    Do not publish `api:3001`; the Next rewrite keeps `/api/*` on the compose
    network.
-6. Deploy. The API healthcheck is `GET /api/health`; the web healthcheck is `GET /`.
+6. Deploy. The API healthcheck is `GET /api/health`; the web healthcheck is `GET /health`.
 
 ### Required production values
 
