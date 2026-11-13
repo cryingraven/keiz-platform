@@ -147,9 +147,14 @@ async function main() {
   try {
     console.log('\nKEIZ smoke test\n');
 
-    const health = await req<{ ok: boolean; paymentsMode: string }>('/health');
+    const health = await req<{
+      ok: boolean;
+      paymentsMode: string;
+      demoSeedEnabled: boolean;
+    }>('/health');
     assert(health.ok && health.paymentsMode === 'mock', 'health reports mock mode');
-    pass('health endpoint is public');
+    assert(health.demoSeedEnabled, 'health reports demo seed capability outside production');
+    pass('health endpoint is public and reports demo seeding');
 
     await req('/invoices', { expect: 401 });
     pass('unauthenticated invoice access is rejected');
@@ -676,16 +681,34 @@ async function main() {
     const seededInvoices = await req<Array<{ number: string }>>('/invoices', {
       cookie: carolCookie,
     });
+    assert(seededInvoices.length > 0, 'demo data seeded');
     assert(
-      seededInvoices.some((row) => /^BIL-\d{2}\/\d{2}\/\d{5}$/.test(row.number)),
-      'demo data seeded',
+      seededInvoices.every((row) => /^BIL-\d{2}\/\d{2}\/\d{5}$/.test(row.number)),
+      'all demo bills use BIL-YY/MM/XXXXX',
     );
     const carolReceivables = await req<Array<{ number: string }>>('/receivables', {
       cookie: carolCookie,
     });
     assert(
-      carolReceivables.some((row) => /^INV-\d{2}\/\d{2}\/\d{4}$/.test(row.number)),
-      'demo seed creates customer invoices',
+      carolReceivables.length > 0 &&
+        carolReceivables.every((row) => /^INV-\d{2}\/\d{2}\/\d{4}$/.test(row.number)),
+      'all demo customer invoices use INV-YY/MM/XXXX',
+    );
+    const demoExpenses = await req<Array<{ number?: string }>>('/accounting/expenses', {
+      cookie: carolCookie,
+    });
+    assert(
+      demoExpenses.length > 0 &&
+        demoExpenses.every((row) => /^EXP-\d{2}\/\d{2}\/\d{5}$/.test(row.number ?? '')),
+      'demo seed creates numbered direct expenses',
+    );
+    const demoRevenues = await req<Array<{ number?: string }>>('/accounting/revenues', {
+      cookie: carolCookie,
+    });
+    assert(
+      demoRevenues.length > 0 &&
+        demoRevenues.every((row) => /^REV-\d{2}\/\d{2}\/\d{4}$/.test(row.number ?? '')),
+      'demo seed creates numbered direct revenue',
     );
     const carolBooks = await req<{
       trialBalance: { totals: { balanced: boolean; debit: string; credit: string } };
@@ -695,7 +718,7 @@ async function main() {
     });
     assert(carolBooks.trialBalance.totals.balanced, 'demo ledger is balanced');
     assert(carolBooks.cash.startsWith('2'), 'demo ledger has opening cash');
-    pass('demo seed is idempotent and populates AP, AR and a balanced ledger');
+    pass('demo seed is idempotent and populates AP, AR, direct entries and a balanced ledger');
 
     // --- double-entry ledger against a clean workspace ---
     const bobVendor = await req<{ _id: string }>('/vendors', {

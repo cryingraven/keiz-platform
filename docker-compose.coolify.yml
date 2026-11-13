@@ -70,6 +70,11 @@ x-keiz-env: &keiz-env
   PAYMENT_SWEEP_INTERVAL_MS: ${PAYMENT_SWEEP_INTERVAL_MS:-30000}
   INDEXER_INTERVAL_MS: ${INDEXER_INTERVAL_MS:-30000}
 
+  # Enables POST /api/demo/seed in production for an OWNER. Keep false outside
+  # a demo deployment. The dashboard reads this capability from /api/health,
+  # so no web rebuild is needed when toggling it.
+  DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-false}
+
 services:
   web:
     image: ghcr.io/keizio/keiz-web:${KEIZ_IMAGE_TAG:-latest}

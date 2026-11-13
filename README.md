@@ -223,7 +223,7 @@ GET  /api/members                  workspace team
 POST /api/members                  ADMIN/OWNER
 PATCH/DELETE /api/members/:userId  ADMIN/OWNER (last owner protected)
 GET  /api/audit                   ADMIN/OWNER
-POST /api/demo/seed               OWNER, non-production only
+POST /api/demo/seed               OWNER, production opt-in via DEMO_SEED_ENABLED
 GET  /api/health                  public
 ```
 
@@ -285,6 +285,7 @@ See `.env.example`. The important ones:
 | `NEAR_INTENTS_JWT` | Partner key; without it 1Click charges 25 bps instead of 20 bps |
 | `NEARAI_API_KEY` | Enables the Mastra + NEAR AI path; unset = local fallback |
 | `CHAT_PROVIDER` | `mastra` or `local`; `mastra` without a key still falls back |
+| `DEMO_SEED_ENABLED` | Allows `POST /api/demo/seed` in production; keep `false` outside demo deployments |
 | `MONGODB_DB_NAME` | Database for both Mongoose and Mastra storage |
 | `NEXT_PUBLIC_CHAIN_NETWORK` | Frontend switch: `mainnet` or `testnet`; drives wallet login and the dashboard badge |
 | `CHAIN_NETWORK` | Server source of truth; must match `NEXT_PUBLIC_CHAIN_NETWORK`. The API rejects challenges for a different network |

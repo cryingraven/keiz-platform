@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { auditNetworkConfig } from '../common/network';
 import { Public } from '../common/public.decorator';
+import { isDemoSeedAllowed } from '../demo/demo-seed-policy';
 import { QueueProducer } from '../queues/queue-producer.service';
 
 @Controller('health')
@@ -23,6 +24,7 @@ export class HealthController {
         outlayerNetwork: network.outlayerNetwork,
         paymentsMode: network.paymentsMode,
         queues: { enabled: this.queue.enabled },
+        demoSeedEnabled: isDemoSeedAllowed(),
         warnings: network.warnings,
         time: new Date().toISOString(),
       };

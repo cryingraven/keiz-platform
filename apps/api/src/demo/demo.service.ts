@@ -8,6 +8,7 @@ import { Invoice, InvoiceDocument } from '../invoices/invoice.schema';
 import { Payment, PaymentDocument } from '../payments/payment.schema';
 import { ReceivablesService } from '../receivables/receivables.service';
 import { Vendor, VendorDocument } from '../vendors/vendor.schema';
+import { isDemoSeedAllowed } from './demo-seed-policy';
 
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString();
@@ -26,7 +27,7 @@ export class DemoService {
   ) {}
 
   async seed(orgId: string, userId: string, accountId: string) {
-    if (process.env.NODE_ENV === 'production') {
+    if (!isDemoSeedAllowed()) {
       throw new NotFoundException('Not available');
     }
     const invoiceCount = await this.invoices.countDocuments({ orgId });
@@ -241,6 +242,47 @@ export class DemoService {
 
     // Opening cash so the demo does not start with a negative cash balance.
     await this.accounting.postOpeningBalance(orgId, 'USD', 25_000_000n);
+
+    // Direct cash entries outside the AP/AR subledgers. They exercise the
+    // EXP-YY/MM/XXXXX and REV-YY/MM/XXXX numbering and the Expenses/Revenue pages.
+    const directExpenses = [
+      {
+        amount: '185.00',
+        accountCode: '5200',
+        memo: 'Demo direct expense: Payment rails fee',
+      },
+      {
+        amount: '1250.00',
+        accountCode: '5100',
+        memo: 'Demo direct expense: Team offsite',
+      },
+    ];
+    for (const entry of directExpenses) {
+      await this.accounting.postDirectEntry(orgId, userId, 'EXPENSE', {
+        date: daysFromNow(-3),
+        amount: entry.amount,
+        currency: 'USD',
+        accountCode: entry.accountCode,
+        cashAccountCode: '1010',
+        memo: entry.memo,
+      });
+    }
+
+    const directRevenues = [
+      { amount: '3200.00', memo: 'Demo direct revenue: Advisory retainer' },
+      { amount: '450.00', memo: 'Demo direct revenue: Template sales' },
+    ];
+    for (const entry of directRevenues) {
+      await this.accounting.postDirectEntry(orgId, userId, 'REVENUE', {
+        date: daysFromNow(-2),
+        amount: entry.amount,
+        currency: 'USD',
+        accountCode: '4000',
+        cashAccountCode: '1010',
+        memo: entry.memo,
+      });
+    }
+
     await this.accounting.rebuild(orgId);
 
     await this.agent.getOrCreateWallet(orgId);
@@ -249,6 +291,8 @@ export class DemoService {
       seeded: true,
       vendors: vendors.length,
       invoices: specs.length,
+      directExpenses: directExpenses.length,
+      directRevenues: directRevenues.length,
       customers: customers.length,
       receivables: arSpecs.length,
     };

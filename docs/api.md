@@ -236,13 +236,13 @@ deliveries as `ONCHAIN` receipts. Run `pnpm worker` for both.
 | Method | Path | Role | Notes |
 |---|---|---|---|
 | GET | `/api/audit` | Admin | Append-only mutating-request log (no bodies). |
-| POST | `/api/demo/seed` | Owner | Non-production only; writes demo data and calls ledger rebuild. |
+| POST | `/api/demo/seed` | Owner | Hidden in production unless `DEMO_SEED_ENABLED=true`. Seeds vendors, bills, receivables, direct expenses/revenue and calls ledger rebuild. |
 
 ## Health
 
 | Method | Path | Role | Notes |
 |---|---|---|---|
-| GET | `/api/health` | Public | `{ ok, paymentsMode, ... }`; used by the smoke test and probes. |
+| GET | `/api/health` | Public | `{ ok, paymentsMode, demoSeedEnabled, ... }`; used by probes and the dashboard’s demo-seed button. |
 
 ---
 

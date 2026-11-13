@@ -115,12 +115,16 @@ export default function TodayPage() {
   const customers = useApi<Customer[]>('/customers');
   const books = useApi<Books>('/accounting/summary?currency=USD');
   const accounts = useApi<AccountOption[]>('/accounting/accounts');
+  // Runtime capability, so toggling DEMO_SEED_ENABLED does not require a web rebuild.
+  const health = useApi<{ demoSeedEnabled?: boolean }>('/health');
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [directKind, setDirectKind] = useState<DirectEntryKind | null>(null);
 
   const canApprove = ['APPROVER', 'ADMIN', 'OWNER'].includes(session?.role ?? '');
   const canWriteBooks = session?.role === 'ADMIN' || session?.role === 'OWNER';
+  const demoSeedEnabled =
+    session?.role === 'OWNER' && health.data?.demoSeedEnabled === true;
 
   const names = useMemo(() => {
     const vendorNames = new Map<string, string>();
@@ -266,7 +270,7 @@ export default function TodayPage() {
         description={today}
         actions={
           <>
-            {demoEmpty ? (
+            {demoEmpty && demoSeedEnabled ? (
               <Button variant="secondary" loading={seeding} onClick={() => void seed()}>
                 Load demo data
               </Button>
@@ -440,9 +444,11 @@ export default function TodayPage() {
                   <ButtonLink href="/dashboard/invoices" size="sm">
                     <Plus className="h-3.5 w-3.5" /> New bill
                   </ButtonLink>
-                  <Button size="sm" variant="secondary" loading={seeding} onClick={() => void seed()}>
-                    Load demo data
-                  </Button>
+                  {demoSeedEnabled ? (
+                    <Button size="sm" variant="secondary" loading={seeding} onClick={() => void seed()}>
+                      Load demo data
+                    </Button>
+                  ) : null}
                 </div>
               }
             />

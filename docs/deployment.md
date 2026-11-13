@@ -87,6 +87,21 @@ by default; BullMQ supports scaling later.
 If you use managed Redis, remove the `redis` service and both `depends_on`
 blocks, then set `REDIS_URL` to the managed URL.
 
+## Demo data
+
+`POST /api/demo/seed` is OWNER-only and hidden in production by default. To
+enable it for a demo deployment:
+
+- Set `DEMO_SEED_ENABLED=true` for the API/worker services.
+- The dashboard reads the capability from `GET /api/health`, so the “Load demo
+  data” button appears immediately after the API restarts. No web rebuild is
+  required.
+
+The seed is idempotent only for an empty workspace: it returns
+`{ seeded: false }` when the workspace already has bills. A fresh workspace
+receives demo bills (`BIL-…`), customer invoices (`INV-…`), direct expenses
+(`EXP-…`) and direct revenue (`REV-…`).
+
 ## Database indexes
 
 Mongoose `autoIndex` is disabled when `NODE_ENV=production`. Reusing the current
