@@ -246,6 +246,16 @@ sequenceDiagram
 NEP-413 payload: Borsh `tag(2^31+413) || message || nonce[32] || recipient || Option<callback>`
 → SHA-256 → Ed25519. Nonces are single-use and TTL-indexed.
 
+#### Personal wallet panel
+
+Clicking the address in the topbar opens a read-only balance panel backed by
+`GET /api/wallet` (native NEAR + curated NEP-141 tokens, plus FastNear discovery on
+mainnet). Simple transfers are built in the browser by `apps/web/src/lib/wallet.ts`
+and signed by the same active signer used elsewhere: the connected wallet or the
+passkey-derived key. The API never signs and no key is stored for this flow. These
+are personal wallet movements, not business payments: they create no `PaymentIntent`,
+post no journal entry and are outside the AR/AP trust boundary.
+
 ---
 
 ### 4.3 On-chain AR/AP contracts

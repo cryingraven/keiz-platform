@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, CircleAlert, Info, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { humanize, toneFor } from '@/lib/format';
@@ -306,9 +307,12 @@ export function Modal({
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  // Portal out of the current tree. A fixed overlay inside an ancestor with
+  // `backdrop-filter`, `transform` or `filter` (the sticky topbar is blurred)
+  // is confined to that ancestor instead of covering the viewport.
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto bg-ink/35">
       <div className="flex min-h-full items-center justify-center p-4 sm:p-8">
         <div
@@ -351,7 +355,8 @@ export function Modal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

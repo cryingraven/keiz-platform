@@ -8,3 +8,4 @@ export * from './sse';
 export * from './chat';
 export * from './chat-cards';
 export * from './validation';
+export * from './wallet';

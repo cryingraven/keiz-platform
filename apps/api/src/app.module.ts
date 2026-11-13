@@ -21,6 +21,7 @@ import { QueuesModule } from './queues/queues.module';
 import { ReceivablesModule } from './receivables/receivables.module';
 import { UsersModule } from './users/users.module';
 import { VendorsModule } from './vendors/vendors.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { VendorsModule } from './vendors/vendors.module';
     IndexerModule,
     CollectionsModule,
     DemoModule,
+    WalletModule,
   ],
   controllers: [HealthController],
   providers: [

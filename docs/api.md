@@ -48,6 +48,19 @@ with reuse detection).
 | GET | `/orgs` | Member | — | Workspaces this user belongs to. |
 | POST | `/switch-org` | Member | `{ orgId }` | Verifies membership and reissues cookies. |
 
+## Wallet — `/api/wallet`
+
+Read-only chain data for the signed-in user's personal NEAR account. The account id always
+comes from the JWT; transfers are built and signed in the browser and never touch the ledger.
+
+| Method | Path | Role | Query | Notes |
+|---|---|---|---|---|
+| GET | `/` | Member | `?refresh=1` | Native NEAR (available/staked/total, yocto strings) plus NEP-141 balances. Curated contracts (wNEAR, USDC, USDT; `wrap.testnet` on testnet) are always listed; mainnet additionally discovers tokens through the FastNear account index. `partial: true` means discovery or metadata was incomplete. |
+| GET | `/recipient/:accountId` | Member | `?contractId=` | Public chain check before signing: whether the account exists and, for a token, whether it is registered for storage. Returns the minimum storage deposit in yoctoNEAR when it is not. |
+
+There is deliberately no transfer endpoint: `ft_transfer` / native `Transfer` actions are
+constructed client-side and sent through the active signer (wallet or passkey).
+
 ## Members — `/api/members`
 
 | Method | Path | Role | Body | Notes |
