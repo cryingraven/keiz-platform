@@ -61,8 +61,9 @@ Unique index: `(orgId, userId)`. The last OWNER cannot be demoted or removed.
 `decimals` (default 6), `status` (`PENDING` \| `ACTIVE` \| `PAUSED` \| `DISABLED`),
 `deployedAt?`, `validatedAt?`.
 
-`paymentSettings` is optional. When `arMode` is unset the effective mode is `CONTRACT` if
-the collection is `ACTIVE`, else `TREASURY` if a treasury exists, else `OFF`.
+`paymentSettings` is optional. When `arMode` is unset the effective mode is `TREASURY`.
+A stored `CONTRACT` or `OFF` always wins; an active collection contract does not override an
+unconfigured workspace.
 
 Unique partial index: `collection.contractId` — one workspace per deployed collect contract.
 

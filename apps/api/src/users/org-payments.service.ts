@@ -69,13 +69,9 @@ export class OrgPaymentsService {
   }): ResolvedArSettings {
     const settings = org.paymentSettings;
     const collection = org.collection ?? null;
-    const arMode: EffectiveArMode =
-      settings?.arMode ??
-      (collection?.status === 'ACTIVE'
-        ? 'CONTRACT'
-        : settings?.treasuryAccountId
-          ? 'TREASURY'
-          : 'OFF');
+    // TREASURY is the workspace default. A stored mode always wins; an ACTIVE
+    // collect contract no longer overrides an unconfigured workspace.
+    const arMode: EffectiveArMode = settings?.arMode ?? 'TREASURY';
     return {
       arMode,
       configured: Boolean(settings?.arMode),

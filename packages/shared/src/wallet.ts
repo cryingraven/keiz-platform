@@ -29,6 +29,18 @@ export interface WalletTokenBalance {
   balance: string;
 }
 
+/** USDC held in the user's NEAR Intents (intents.near) balance. */
+export interface WalletIntentsBalance {
+  /** 1Click / Intents token id, e.g. `nep141:1720…`. */
+  tokenId: string;
+  /** Unprefixed NEP-141 contract, used by `intents.near.ft_withdraw`. */
+  tokenContract: string;
+  symbol: string;
+  decimals: number;
+  /** Integer string in the token's smallest unit. */
+  balance: string;
+}
+
 export interface WalletOverview {
   accountId: string;
   network: 'mainnet' | 'testnet';
@@ -36,6 +48,8 @@ export interface WalletOverview {
   exists: boolean;
   near: WalletNearBalance;
   tokens: WalletTokenBalance[];
+  /** Null on testnet, for unfunded accounts, or when intents.near cannot be read. */
+  intents: WalletIntentsBalance | null;
   /**
    * True when only the curated token list could be read (the index was down or
    * the network has no index). Balances are still correct for listed tokens.

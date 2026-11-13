@@ -50,7 +50,7 @@ export function PaymentSettingsCard({
 }) {
   const toast = useToast();
   const tokens = useApi<TokenInfo[]>('/payments/tokens');
-  const [mode, setMode] = useState<ArCollectionMode>('OFF');
+  const [mode, setMode] = useState<ArCollectionMode>('TREASURY');
   const [treasury, setTreasury] = useState('');
   const [assetId, setAssetId] = useState('');
   const [busy, setBusy] = useState(false);

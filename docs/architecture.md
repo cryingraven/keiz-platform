@@ -256,6 +256,11 @@ passkey-derived key. The API never signs and no key is stored for this flow. The
 are personal wallet movements, not business payments: they create no `PaymentIntent`,
 post no journal entry and are outside the AR/AP trust boundary.
 
+The panel also shows the user's USDC balance inside the Intents Verifier
+(`intents.near.mt_balance_of`). Withdrawing that balance is a direct
+`intents.near.ft_withdraw` call (100 TGas, 1 yoctoNEAR) signed by the same signer;
+no signed-intent or 1Click quote is involved. On testnet the row is hidden.
+
 ---
 
 ### 4.3 On-chain AR/AP contracts

@@ -113,8 +113,13 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(true);
     setError(null);
     try {
-      const query =
-        asset.kind === 'token' ? `?contractId=${encodeURIComponent(asset.contractId)}` : '';
+      const contractId =
+        asset.kind === 'token'
+          ? asset.contractId
+          : asset.kind === 'intents'
+            ? asset.tokenContract
+            : null;
+      const query = contractId ? `?contractId=${encodeURIComponent(contractId)}` : '';
       const info = await api<WalletRecipient>(
         `/wallet/recipient/${encodeURIComponent(recipient.trim())}${query}`,
       );
@@ -126,7 +131,9 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
         return;
       }
       setRecipientInfo(info);
-      setRegisterStorage(asset.kind === 'token' && info.registered === false);
+      setRegisterStorage(
+        (asset.kind === 'token' || asset.kind === 'intents') && info.registered === false,
+      );
       setStep('review');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check the recipient');
@@ -137,7 +144,8 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
 
   async function confirm() {
     if (!asset) return;
-    const message = validateTransfer({ asset, recipient, amount });
+    const nativeBalance = overview.data?.near.available;
+    const message = validateTransfer({ asset, recipient, amount, registerStorage, nativeBalance });
     if (message) {
       setError(message);
       setStep('send');
@@ -146,15 +154,18 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(true);
     setError(null);
     try {
-      const [result] = await sendTransactions(
+      const results = await sendTransactions(
         buildTransferTransactions({
           asset,
           recipient,
           amount,
           registerStorage,
+          nativeBalance,
           storageDeposit: recipientInfo?.requiredStorageDeposit ?? undefined,
         }),
       );
+      // Intents withdrawals can include a storage_deposit transaction first.
+      const result = results[results.length - 1];
       if (!result?.hash || result.hash.startsWith('tx-')) {
         throw new Error('The wallet did not return a transaction hash');
       }
@@ -268,6 +279,45 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
                   </dl>
                 </div>
 
+                {network === 'mainnet' ? (
+                  <div className="rounded-card border border-brand/20 bg-brand-soft p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-meta font-medium text-brand-deep">NEAR Intents</p>
+                        <p className="font-num mt-1 text-[20px] font-semibold tracking-tight">
+                          {overview.data.intents
+                            ? formatAssetAmount(
+                                overview.data.intents.balance,
+                                overview.data.intents.decimals,
+                              )
+                            : '—'}{' '}
+                          <span className="text-ui font-normal text-muted">USDC</span>
+                        </p>
+                        <p className="mt-0.5 text-meta text-muted">
+                          Held in intents.near · withdrawable to a NEAR account
+                        </p>
+                      </div>
+                      {overview.data.intents ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            const selected = assets.find((item) => item.kind === 'intents');
+                            if (selected) startSend(selected);
+                          }}
+                        >
+                          Send
+                        </Button>
+                      ) : null}
+                    </div>
+                    {!overview.data.intents ? (
+                      <p className="mt-2 text-meta text-muted">
+                        Balance unavailable right now. Refresh to try again.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-meta font-medium text-muted">NEP-141 tokens</p>
@@ -360,7 +410,9 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
               >
                 {assets.map((item) => (
                   <option key={item.key} value={item.key}>
-                    {item.symbol} · {formatAssetAmount(item.balance, item.decimals)} available
+                    {item.symbol}
+                    {item.kind === 'intents' ? ' · NEAR Intents' : ''} ·{' '}
+                    {formatAssetAmount(item.balance, item.decimals)} available
                   </option>
                 ))}
               </Select>
@@ -386,7 +438,9 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
               hint={
                 asset.kind === 'near'
                   ? `Available ${formatAssetAmount(asset.balance, asset.decimals)} NEAR · keep 0.05 NEAR for fees`
-                  : `Available ${formatAssetAmount(asset.balance, asset.decimals)} ${asset.symbol}`
+                  : asset.kind === 'intents'
+                    ? `Available ${formatAssetAmount(asset.balance, asset.decimals)} ${asset.symbol} in intents.near`
+                    : `Available ${formatAssetAmount(asset.balance, asset.decimals)} ${asset.symbol}`
               }
             >
               <div className="flex gap-2">
@@ -462,11 +516,15 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
               </Alert>
             ) : null}
 
-            {asset.kind === 'token' && recipientInfo?.registered === false ? (
+            {(asset.kind === 'token' || asset.kind === 'intents') &&
+            recipientInfo?.registered === false ? (
               <div className="rounded-control border border-amber/25 bg-amber-soft px-3 py-2.5 text-small">
                 <p>
                   The recipient is not registered for {asset.symbol}. A one-time storage deposit is
-                  needed before the token can arrive.
+                  needed before the {asset.kind === 'intents' ? 'withdrawal' : 'token'} can arrive.
+                  {asset.kind === 'intents'
+                    ? ' This deposit is paid from your on-chain NEAR wallet.'
+                    : ''}
                 </p>
                 <label className="mt-2 flex items-center gap-2">
                   <input
@@ -483,6 +541,12 @@ export function WalletPanel({ open, onClose }: { open: boolean; onClose: () => v
                   NEAR)
                 </label>
               </div>
+            ) : null}
+
+            {asset.kind === 'intents' ? (
+              <p className="rounded-control bg-surface-raised px-3 py-2 text-small text-muted">
+                This withdraws USDC from intents.near to the recipient&apos;s NEAR wallet.
+              </p>
             ) : null}
 
             <Button className="w-full" loading={busy} onClick={() => void confirm()}>

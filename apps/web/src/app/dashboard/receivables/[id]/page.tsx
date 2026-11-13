@@ -179,7 +179,7 @@ export default function ReceivableDetailPage() {
   const role = session?.role ?? 'MEMBER';
   const canReceipt = ['APPROVER', 'ADMIN', 'OWNER'].includes(role);
   const canAdmin = ['ADMIN', 'OWNER'].includes(role);
-  const arMode = paymentSettings.data?.arMode ?? 'OFF';
+  const arMode = paymentSettings.data?.arMode ?? 'TREASURY';
   const collectionActive =
     arMode === 'CONTRACT' && paymentSettings.data?.collection?.status === 'ACTIVE';
   const canCollect =

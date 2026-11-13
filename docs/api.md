@@ -55,7 +55,7 @@ comes from the JWT; transfers are built and signed in the browser and never touc
 
 | Method | Path | Role | Query | Notes |
 |---|---|---|---|---|
-| GET | `/` | Member | `?refresh=1` | Native NEAR (available/staked/total, yocto strings) plus NEP-141 balances. Curated contracts (wNEAR, USDC, USDT; `wrap.testnet` on testnet) are always listed; mainnet additionally discovers tokens through the FastNear account index. `partial: true` means discovery or metadata was incomplete. |
+| GET | `/` | Member | `?refresh=1` | Native NEAR (available/staked/total, yocto strings), NEP-141 balances and the user's USDC balance in `intents.near`. Curated contracts (wNEAR, USDC, USDT; `wrap.testnet` on testnet) are always listed; mainnet additionally discovers tokens through the FastNear account index. `intents` is `null` on testnet or when the Verifier balance cannot be read. `partial: true` means discovery or metadata was incomplete. |
 | GET | `/recipient/:accountId` | Member | `?contractId=` | Public chain check before signing: whether the account exists and, for a token, whether it is registered for storage. Returns the minimum storage deposit in yoctoNEAR when it is not. |
 
 There is deliberately no transfer endpoint: `ft_transfer` / native `Transfer` actions are

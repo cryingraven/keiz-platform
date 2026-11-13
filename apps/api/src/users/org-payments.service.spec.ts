@@ -33,12 +33,31 @@ function serviceFor(doc: Record<string, unknown>) {
 }
 
 describe('OrgPaymentsService', () => {
-  it('derives CONTRACT from an active collection', async () => {
-    const doc = orgDoc({ collection: { status: 'ACTIVE', contractId: 'c.near' } });
+  it('defaults to TREASURY even when an inactive collection survives', async () => {
+    const doc = orgDoc({ collection: { status: 'PAUSED', contractId: 'c.near' } });
+    const { service } = serviceFor(doc);
+    const settings = await service.resolve('org1');
+    expect(settings.arMode).toBe('TREASURY');
+    expect(settings.configured).toBe(false);
+  });
+
+  it('uses an explicit CONTRACT mode even with an active collection', async () => {
+    const doc = orgDoc({
+      collection: { status: 'ACTIVE', contractId: 'c.near' },
+      paymentSettings: { arMode: 'CONTRACT' },
+    });
     const { service } = serviceFor(doc);
     const settings = await service.resolve('org1');
     expect(settings.arMode).toBe('CONTRACT');
-    expect(settings.configured).toBe(false);
+    expect(settings.configured).toBe(true);
+  });
+
+  it('uses an explicit OFF mode', async () => {
+    const doc = orgDoc({ paymentSettings: { arMode: 'OFF' } });
+    const { service } = serviceFor(doc);
+    const settings = await service.resolve('org1');
+    expect(settings.arMode).toBe('OFF');
+    expect(settings.configured).toBe(true);
   });
 
   it('derives TREASURY from a treasury account', async () => {
@@ -49,10 +68,11 @@ describe('OrgPaymentsService', () => {
     expect(settings.treasuryAccountId).toBe('treasury.near');
   });
 
-  it('derives OFF when neither a contract nor a treasury exists', async () => {
+  it('defaults to TREASURY when nothing is configured', async () => {
     const { service } = serviceFor(orgDoc());
     const settings = await service.resolve('org1');
-    expect(settings.arMode).toBe('OFF');
+    expect(settings.arMode).toBe('TREASURY');
+    expect(settings.configured).toBe(false);
   });
 
   it('requires a treasury before enabling treasury mode', async () => {

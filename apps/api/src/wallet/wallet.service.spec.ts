@@ -1,10 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigService } from '@nestjs/config';
+import type { PaymentProviderFactory } from '../payments/payment-provider.factory';
 import { WalletService } from './wallet.service';
 
 const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
 
-function service(network: 'mainnet' | 'testnet' = 'mainnet') {
+function service(
+  network: 'mainnet' | 'testnet' = 'mainnet',
+  options?: {
+    mode?: 'mock' | 'intents';
+    tokens?: Array<{
+      assetId: string;
+      symbol: string;
+      blockchain: string;
+      decimals: number;
+    }>;
+  },
+) {
   const values: Record<string, string> = {
     CHAIN_NETWORK: network,
     NEAR_RPC_URL: 'https://mainnet.test',
@@ -13,7 +25,14 @@ function service(network: 'mainnet' | 'testnet' = 'mainnet') {
   const config = {
     get: (key: string) => values[key],
   } as unknown as ConfigService;
-  return new WalletService(config);
+  const provider = {
+    mode: options?.mode ?? 'mock',
+    getTokens: vi.fn(async () => options?.tokens ?? []),
+  };
+  const providerFactory = {
+    get: () => provider,
+  } as unknown as PaymentProviderFactory;
+  return new WalletService(config, providerFactory);
 }
 
 function rpcResult(value: unknown) {
@@ -188,7 +207,85 @@ describe('WalletService.overview', () => {
     expect(metadataCalls).toHaveLength(1);
   });
 
-  it('never calls the mainnet index on testnet', async () => {
+  it('reads the user NEAR Intents USDC balance on mainnet', async () => {
+    const fn = stubFetch((kind, body) => {
+      if (kind === 'index') return { tokens: [] };
+      const params = body.params;
+      if (params.request_type === 'view_account') {
+        return { result: { amount: '1', locked: '0', storage_usage: 1 } };
+      }
+      if (params.method_name === 'mt_balance_of') return rpcResult('1234567');
+      return rpcResult('0');
+    });
+
+    const result = await service().overview('alice.near');
+
+    expect(result.intents).toEqual({
+      tokenId: `nep141:${USDC}`,
+      tokenContract: USDC,
+      symbol: 'USDC',
+      decimals: 6,
+      balance: '1234567',
+    });
+
+    const intentsCall = fn.mock.calls.find(([, init]) => {
+      if (!init?.body) return false;
+      const body = JSON.parse(String(init.body)) as Body;
+      return body.params?.method_name === 'mt_balance_of';
+    });
+    expect(intentsCall).toBeDefined();
+    const body = JSON.parse(String(intentsCall?.[1]?.body)) as Body;
+    expect(body.params.account_id).toBe('intents.near');
+    const args = JSON.parse(
+      Buffer.from(String(body.params.args_base64), 'base64').toString('utf8'),
+    ) as { account_id: string; token_id: string };
+    expect(args).toEqual({
+      account_id: 'alice.near',
+      token_id: `nep141:${USDC}`,
+    });
+  });
+
+  it('keeps the wallet usable when the Intents balance cannot be read', async () => {
+    stubFetch((kind, body) => {
+      if (kind === 'index') return { tokens: [] };
+      const params = body.params;
+      if (params.request_type === 'view_account') {
+        return { result: { amount: '1', locked: '0', storage_usage: 1 } };
+      }
+      if (params.method_name === 'mt_balance_of') {
+        return { error: { message: 'contract call failed' } };
+      }
+      return rpcResult('0');
+    });
+
+    const result = await service().overview('alice.near');
+
+    expect(result.intents).toBeNull();
+    expect(result.tokens.map((token) => token.symbol)).toEqual(['wNEAR', 'USDC', 'USDT']);
+  });
+
+  it('uses the 1Click USDC token id in intents mode', async () => {
+    const tokenId = `nep141:${USDC}`;
+    const fn = stubFetch((kind, body) => {
+      if (kind === 'index') return { tokens: [] };
+      const params = body.params;
+      if (params.request_type === 'view_account') {
+        return { result: { amount: '1', locked: '0', storage_usage: 1 } };
+      }
+      return rpcResult('9');
+    });
+
+    const result = await service('mainnet', {
+      mode: 'intents',
+      tokens: [{ assetId: tokenId, symbol: 'USDC', blockchain: 'near', decimals: 6 }],
+    }).overview('alice.near');
+
+    expect(result.intents?.tokenId).toBe(tokenId);
+    expect(result.intents?.balance).toBe('9');
+    expect(fn).toHaveBeenCalled();
+  });
+
+  it('never calls the mainnet index or intents.near on testnet', async () => {
     const fn = stubFetch((_kind, body) => {
       if (body.params.request_type === 'view_account') {
         return { result: { amount: '1', locked: '0', storage_usage: 1 } };
@@ -199,10 +296,14 @@ describe('WalletService.overview', () => {
     const result = await service('testnet').overview('alice.testnet');
 
     expect(result.tokens.map((token) => token.symbol)).toEqual(['wNEAR']);
+    expect(result.intents).toBeNull();
     expect(result.partial).toBe(false);
     expect(result.network).toBe('testnet');
     expect(String(fn.mock.calls[0][0])).toBe('https://testnet.test');
     expect(fn.mock.calls.some(([url]) => String(url).includes('fastnear'))).toBe(false);
+    expect(
+      fn.mock.calls.some(([, init]) => String(init?.body).includes('mt_balance_of')),
+    ).toBe(false);
   });
 });
 

@@ -132,8 +132,9 @@ NEP-141 transfer; the indexer records it from the delivery transaction.
 
 Settings → AR collection mode writes `Organization.paymentSettings` through
 `PATCH /api/orgs/current/payments` (`arMode` = `CONTRACT` | `TREASURY` | `OFF`, plus
-`treasuryAccountId` and `arAssetId`). The effective mode falls back to an active contract,
-then a configured treasury, then `OFF`.
+`treasuryAccountId` and `arAssetId`). The effective mode is `TREASURY` by default; an
+explicitly saved `CONTRACT` or `OFF` always wins. An active collection contract does not
+override an unconfigured workspace.
 
 Settings → AR collection writes `Organization.collection` through
 `PATCH /api/orgs/current/collection`. `OrgCollectionService.validate` checks, against the

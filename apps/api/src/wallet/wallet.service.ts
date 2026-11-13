@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   parseNearAccountId,
+  type WalletIntentsBalance,
   type WalletNearBalance,
   type WalletOverview,
   type WalletRecipient,
@@ -14,6 +15,7 @@ import {
 } from '@keiz/shared';
 import { walletNetwork, type NearNetwork } from '../common/network';
 import { fetchRpcWithRetry } from '../common/rpc-client';
+import { PaymentProviderFactory } from '../payments/payment-provider.factory';
 
 interface TokenMetadata {
   symbol: string;
@@ -44,6 +46,10 @@ const MAX_TOKENS = 50;
 const CONCURRENCY = 6;
 const DEFAULT_STORAGE_DEPOSIT = '1250000000000000000000'; // 0.00125 NEAR
 
+const INTENTS_CONTRACT_ID = 'intents.near';
+const USDC_NEAR_CONTRACT = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+const INTENTS_USDC_TOKEN_ID = `nep141:${USDC_NEAR_CONTRACT}`;
+
 /**
  * The curated list guarantees the panel shows the tokens KEIZ settles with even
  * when the discovery index is unavailable. These are NEP-141 contract ids, not
@@ -58,7 +64,7 @@ const CURATED_TOKENS: Record<NearNetwork, CuratedToken[]> = {
       decimals: 24,
     },
     {
-      contractId: '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+      contractId: USDC_NEAR_CONTRACT,
       symbol: 'USDC',
       name: 'USD Coin',
       decimals: 6,
@@ -137,7 +143,10 @@ export class WalletService {
   private readonly boundsCache = new Map<string, { at: number; value: string }>();
   private readonly overviewCache = new Map<string, { at: number; value: WalletOverview }>();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly providerFactory: PaymentProviderFactory,
+  ) {}
 
   private get network(): NearNetwork {
     return walletNetwork(this.config);
@@ -164,9 +173,10 @@ export class WalletService {
     }
 
     const { exists, near } = await this.accountBalance(account);
-    const tokens = exists
-      ? await this.tokenBalances(account, network)
-      : { items: [], partial: false };
+    const [tokens, intents] = await Promise.all([
+      exists ? this.tokenBalances(account, network) : Promise.resolve({ items: [], partial: false }),
+      exists ? this.intentsBalance(account, network) : Promise.resolve(null),
+    ]);
 
     const value: WalletOverview = {
       accountId: account,
@@ -174,6 +184,7 @@ export class WalletService {
       exists,
       near,
       tokens: tokens.items,
+      intents,
       partial: tokens.partial,
       fetchedAt: new Date().toISOString(),
     };
@@ -315,6 +326,66 @@ export class WalletService {
       decimals: token.decimals,
       balance: normalized,
     } satisfies WalletTokenBalance;
+  }
+
+  /**
+   * USDC held in the Verifier contract (`intents.near`), separate from the
+   * user's on-chain NEP-141 balance. Mainnet only; a failed read must not take
+   * down the rest of the wallet panel.
+   */
+  private async intentsBalance(
+    accountId: string,
+    network: NearNetwork,
+  ): Promise<WalletIntentsBalance | null> {
+    if (network !== 'mainnet') return null;
+    const token = await this.intentsUsdcToken();
+    try {
+      const raw = await this.callFunction<string>(INTENTS_CONTRACT_ID, 'mt_balance_of', {
+        account_id: accountId,
+        token_id: token.tokenId,
+      });
+      return { ...token, balance: asIntegerString(raw) ?? '0' };
+    } catch (error) {
+      this.logger.debug(`mt_balance_of failed for ${accountId}: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  private async intentsUsdcToken(): Promise<{
+    tokenId: string;
+    tokenContract: string;
+    symbol: string;
+    decimals: number;
+  }> {
+    // In intents mode the 1Click token list is the source of truth. The mock
+    // provider's USDC is not a real contract, so it cannot be used here.
+    if (this.providerFactory.get().mode === 'intents') {
+      try {
+        const tokens = await this.providerFactory.get().getTokens();
+        const usdc = tokens.find(
+          (token) =>
+            token.blockchain.toLowerCase() === 'near' &&
+            token.symbol.toUpperCase() === 'USDC' &&
+            token.assetId.startsWith('nep141:'),
+        );
+        if (usdc) {
+          return {
+            tokenId: usdc.assetId,
+            tokenContract: usdc.assetId.slice('nep141:'.length),
+            symbol: 'USDC',
+            decimals: usdc.decimals,
+          };
+        }
+      } catch (error) {
+        this.logger.debug(`Could not resolve Intents USDC: ${(error as Error).message}`);
+      }
+    }
+    return {
+      tokenId: INTENTS_USDC_TOKEN_ID,
+      tokenContract: USDC_NEAR_CONTRACT,
+      symbol: 'USDC',
+      decimals: 6,
+    };
   }
 
   private async discoverTokens(

@@ -30,6 +30,17 @@ const usdcAsset: WalletAsset = {
   balance: '2500000',
 };
 
+const intentsAsset: WalletAsset = {
+  key: 'intents-usdc',
+  kind: 'intents',
+  tokenId: 'nep141:usdc.near',
+  tokenContract: 'usdc.near',
+  symbol: 'USDC',
+  name: 'NEAR Intents',
+  decimals: 6,
+  balance: '5000000',
+};
+
 describe('wallet transfer helpers', () => {
   it('builds a native NEAR transfer', () => {
     const [transaction] = buildTransferTransactions({
@@ -104,6 +115,76 @@ describe('wallet transfer helpers', () => {
     expect(transaction.actions[0].params.deposit).toBe(DEFAULT_FT_STORAGE_DEPOSIT.toString());
   });
 
+  it('builds a direct intents.near ft_withdraw', () => {
+    const [transaction] = buildTransferTransactions({
+      asset: intentsAsset,
+      recipient: 'bob.near',
+      amount: '2.5',
+    });
+
+    expect(transaction).toEqual({
+      receiverId: 'intents.near',
+      actions: [
+        {
+          type: 'FunctionCall',
+          params: {
+            methodName: 'ft_withdraw',
+            args: { token: 'usdc.near', receiver_id: 'bob.near', amount: '2500000' },
+            gas: '100000000000000',
+            deposit: '1',
+          },
+        },
+      ],
+    });
+  });
+
+  it('registers the recipient before an Intents withdrawal', () => {
+    const transactions = buildTransferTransactions({
+      asset: intentsAsset,
+      recipient: 'bob.near',
+      amount: '1',
+      registerStorage: true,
+      nativeBalance: parseUnits('1', 24).toString(),
+    });
+
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0]).toMatchObject({
+      receiverId: 'usdc.near',
+      actions: [
+        {
+          type: 'FunctionCall',
+          params: {
+            methodName: 'storage_deposit',
+            args: { account_id: 'bob.near' },
+            deposit: DEFAULT_FT_STORAGE_DEPOSIT.toString(),
+          },
+        },
+      ],
+    });
+    expect(transactions[1]).toMatchObject({
+      receiverId: 'intents.near',
+      actions: [{ params: { methodName: 'ft_withdraw' } }],
+    });
+  });
+
+  it('requires on-chain NEAR for the optional Intents storage deposit', () => {
+    const message = validateTransfer({
+      asset: intentsAsset,
+      recipient: 'bob.near',
+      amount: '1',
+      registerStorage: true,
+      nativeBalance: '1',
+    });
+
+    expect(message).toMatch(/Not enough NEAR/);
+  });
+
+  it('rejects an Intents amount above the intents.near balance', () => {
+    expect(
+      validateTransfer({ asset: intentsAsset, recipient: 'bob.near', amount: '6' }),
+    ).toMatch(/only have/);
+  });
+
   it('rejects an amount that would eat the NEAR fee reserve', () => {
     const message = validateTransfer({
       asset: nearAsset,
@@ -155,13 +236,21 @@ describe('wallet transfer helpers', () => {
           balance: '1',
         },
       ],
+      intents: {
+        tokenId: 'nep141:usdc.near',
+        tokenContract: 'usdc.near',
+        symbol: 'USDC',
+        decimals: 6,
+        balance: '1',
+      },
       partial: false,
       fetchedAt: new Date().toISOString(),
     });
 
-    expect(assets).toHaveLength(2);
+    expect(assets).toHaveLength(3);
     expect(assets[0]).toMatchObject({ kind: 'near', balance: '8' });
     expect(assets[1]).toMatchObject({ kind: 'token', contractId: 'usdc.near', balance: '1' });
+    expect(assets[2]).toMatchObject({ kind: 'intents', tokenContract: 'usdc.near' });
   });
 
   it('only links well-formed transaction hashes to NEARBlocks', () => {

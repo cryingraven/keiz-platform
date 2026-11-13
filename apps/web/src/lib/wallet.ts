@@ -15,6 +15,8 @@ export const NEAR_TRANSFER_RESERVE = parseUnits('0.05', 24);
 export const DEFAULT_FT_STORAGE_DEPOSIT = parseUnits('0.00125', 24);
 const FT_TRANSFER_GAS = '30000000000000';
 const FT_STORAGE_GAS = '30000000000000';
+const INTENTS_WITHDRAW_GAS = '100000000000000';
+export const INTENTS_CONTRACT_ID = 'intents.near';
 
 export type WalletAsset =
   | {
@@ -33,10 +35,20 @@ export type WalletAsset =
       name: string;
       decimals: number;
       balance: string;
+    }
+  | {
+      key: string;
+      kind: 'intents';
+      tokenId: string;
+      tokenContract: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      balance: string;
     };
 
 export function buildWalletAssets(overview: WalletOverview): WalletAsset[] {
-  return [
+  const assets: WalletAsset[] = [
     {
       key: 'near',
       kind: 'near',
@@ -55,6 +67,19 @@ export function buildWalletAssets(overview: WalletOverview): WalletAsset[] {
       balance: token.balance,
     })),
   ];
+  if (overview.intents) {
+    assets.push({
+      key: 'intents-usdc',
+      kind: 'intents',
+      tokenId: overview.intents.tokenId,
+      tokenContract: overview.intents.tokenContract,
+      symbol: overview.intents.symbol,
+      name: 'NEAR Intents',
+      decimals: overview.intents.decimals,
+      balance: overview.intents.balance,
+    });
+  }
+  return assets;
 }
 
 export function formatAssetAmount(balance: string, decimals: number): string {
@@ -86,6 +111,8 @@ export interface TransferInput {
   /** Include storage_deposit before ft_transfer for an unregistered recipient. */
   registerStorage?: boolean;
   storageDeposit?: string;
+  /** On-chain NEAR available to pay an optional storage deposit. */
+  nativeBalance?: string;
 }
 
 export function validateTransfer(input: TransferInput): string | null {
@@ -116,6 +143,14 @@ export function validateTransfer(input: TransferInput): string | null {
   if (amount > safeBigInt(input.asset.balance)) {
     return `You only have ${formatAssetAmount(input.asset.balance, input.asset.decimals)} ${input.asset.symbol}`;
   }
+
+  if (input.asset.kind === 'intents' && input.registerStorage) {
+    const deposit = BigInt(input.storageDeposit ?? DEFAULT_FT_STORAGE_DEPOSIT.toString());
+    const needed = deposit + NEAR_TRANSFER_RESERVE;
+    if (safeBigInt(input.nativeBalance ?? '0') < needed) {
+      return `Not enough NEAR to register the recipient. Leave ${formatUnits(needed, 24)} NEAR available.`;
+    }
+  }
   return null;
 }
 
@@ -137,6 +172,49 @@ export function buildTransferTransactions(input: TransferInput): PasskeyTransact
         actions: [{ type: 'Transfer', params: { deposit: amount } }],
       },
     ];
+  }
+
+  if (input.asset.kind === 'intents') {
+    const transactions: PasskeyTransaction[] = [];
+    if (input.registerStorage) {
+      transactions.push({
+        receiverId: input.asset.tokenContract,
+        actions: [
+          {
+            type: 'FunctionCall',
+            params: {
+              methodName: 'storage_deposit',
+              args: { account_id: recipient },
+              gas: FT_STORAGE_GAS,
+              deposit:
+                input.storageDeposit && /^\d+$/.test(input.storageDeposit)
+                  ? input.storageDeposit
+                  : DEFAULT_FT_STORAGE_DEPOSIT.toString(),
+            },
+          },
+        ],
+      });
+    }
+    transactions.push({
+      receiverId: INTENTS_CONTRACT_ID,
+      actions: [
+        {
+          type: 'FunctionCall',
+          params: {
+            methodName: 'ft_withdraw',
+            // Direct withdrawals take the unprefixed NEP-141 contract id.
+            args: {
+              token: input.asset.tokenContract,
+              receiver_id: recipient,
+              amount,
+            },
+            gas: INTENTS_WITHDRAW_GAS,
+            deposit: '1',
+          },
+        },
+      ],
+    });
+    return transactions;
   }
 
   const actions: PasskeyTransaction['actions'] = [];
